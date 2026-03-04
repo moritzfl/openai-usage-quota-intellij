@@ -27,6 +27,8 @@ In practice, this means IntelliJ IDEA 2025.3+ compatible platform builds.
 
 ### Option 1: Install From ZIP (Local)
 
+Hint: instead of building it yourself, check out the ["Releases"](https://github.com/moritzfl/openai-usage-quota-intellij/releases) section
+
 1. Build the plugin:
 
 ```bash
