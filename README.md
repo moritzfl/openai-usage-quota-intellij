@@ -6,6 +6,8 @@
 
 An IntelliJ plugin that shows your OpenAI Codex/ChatGPT usage quota in the status bar and inside a detailed popup.
 
+![Quota popup](docs/quota-popup-go.png)
+
 ## What It Does
 
 - Adds a status bar widget with quick quota state
@@ -62,7 +64,7 @@ Logout is available in the same settings page.
 
 ### Quota Popup
 
-![Quota popup](docs/quota-popup.png)
+![Quota popup](docs/quota-popup-go.png)
 
 ### Settings
 
