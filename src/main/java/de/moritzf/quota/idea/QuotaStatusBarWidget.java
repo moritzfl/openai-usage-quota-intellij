@@ -23,12 +23,14 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 import java.awt.event.MouseEvent;
 import java.util.Locale;
 import java.util.Objects;
 
 /**
- * Status bar widget that displays current quota state and shows a detailed popup.
+ * Status bar widget that displays the current quota state and shows a detailed popup.
  */
 public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWidget.IconPresentation {
     private final Project project;
@@ -122,7 +124,8 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
 
     private JComponent buildPopupContent() {
         JPanel panel = new JBPanel<>(new BorderLayout());
-        JPanel content = new JBPanel<>(new GridBagLayout());
+        JPanel content = new JPanel(new GridBagLayout());
+        content.setBorder(JBUI.Borders.empty(8));
         panel.add(content, BorderLayout.CENTER);
 
         GridBagConstraints constraints = new GridBagConstraints();
@@ -130,19 +133,29 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         constraints.gridy = 0;
         constraints.anchor = GridBagConstraints.WEST;
         constraints.fill = GridBagConstraints.HORIZONTAL;
-        constraints.insets = JBUI.insets(4, 8);
+        constraints.insets = JBUI.emptyInsets();
         constraints.weightx = 1.0;
 
         String planLabel = quota != null ? quota.getPlanType() : null;
-        String titleText = "Usage limits for Codex";
-        if (planLabel != null && !planLabel.isBlank()) {
-            titleText = titleText + " (" + planLabel + ")";
-        }
+        String titleText = "OpenAI Usage";
         JBLabel title = new JBLabel(titleText);
-        title.setFont(title.getFont().deriveFont(title.getFont().getStyle() | java.awt.Font.BOLD));
+        title.setFont(title.getFont().deriveFont(title.getFont().getStyle() | java.awt.Font.BOLD, title.getFont().getSize() + 2));
         content.add(title, constraints);
-
         constraints.gridy++;
+
+        if (planLabel != null && !planLabel.isBlank()) {
+            String capitalizedPlanLabel = Arrays.stream(planLabel.split("\\s+"))
+                    .map(word -> word.isEmpty() ? word : Character.toUpperCase(word.charAt(0)) + word.substring(1).toLowerCase())
+                    .collect(Collectors.joining(" "));
+            JBLabel plan = new JBLabel("Plan: " + capitalizedPlanLabel);
+            plan.setForeground(JBColor.GRAY);
+            content.add(plan, constraints);
+            constraints.gridy++;
+        }
+
+        constraints.insets = JBUI.insets(8, 0);
+        addSeparator(content, constraints);
+        constraints.insets = JBUI.emptyInsets();
 
         QuotaAuthService authService = QuotaAuthService.getInstance();
         if (!authService.isLoggedIn()) {
@@ -170,24 +183,39 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         if (limitWarning != null) {
             JBLabel warningLabel = new JBLabel(limitWarning);
             warningLabel.setForeground(JBColor.RED);
+            warningLabel.setFont(warningLabel.getFont().deriveFont(warningLabel.getFont().getStyle() | java.awt.Font.BOLD));
             content.add(warningLabel, constraints);
             constraints.gridy++;
+            constraints.insets = JBUI.insets(8, 0);
+            addSeparator(content, constraints);
+            constraints.insets = JBUI.emptyInsets();
         }
 
         addSectionTitle(content, constraints, "Codex");
         addWindow(content, constraints, quota.getPrimary(), "Primary");
         addWindow(content, constraints, quota.getSecondary(), "Secondary");
 
-        if (quota.getReviewPrimary() != null || quota.getReviewSecondary() != null
-                || quota.getReviewAllowed() != null || quota.getReviewLimitReached() != null) {
+        boolean hasReviewData = quota.getReviewPrimary() != null || quota.getReviewSecondary() != null
+                || quota.getReviewAllowed() != null || quota.getReviewLimitReached() != null;
+        if (hasReviewData) {
+            constraints.insets = JBUI.insets(12, 0, 4, 0);
+            addSeparator(content, constraints);
+            constraints.insets = JBUI.insets(4, 0);
             addSectionTitle(content, constraints, "Code Review");
             addWindow(content, constraints, quota.getReviewPrimary(), "Primary");
             addWindow(content, constraints, quota.getReviewSecondary(), "Secondary");
         }
 
+        constraints.insets = JBUI.insets(12, 0, 4, 0);
+        addSeparator(content, constraints);
+        constraints.insets = JBUI.insetsTop(4);
+
         String fetchedAt = QuotaUiUtil.formatInstant(quota.getFetchedAt());
         if (fetchedAt != null) {
-            content.add(new JBLabel("Updated " + fetchedAt), constraints);
+            JBLabel updatedLabel = new JBLabel("Last updated: " + fetchedAt);
+            updatedLabel.setFont(updatedLabel.getFont().deriveFont(updatedLabel.getFont().getSize() - 1f));
+            updatedLabel.setForeground(JBColor.GRAY);
+            content.add(updatedLabel, constraints);
         }
 
         return panel;
@@ -205,22 +233,40 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         if (resetText != null) {
             info = info + " - " + resetText;
         }
+        
+        constraints.insets = JBUI.insetsTop(4);
         content.add(new JBLabel(title), constraints);
         constraints.gridy++;
+        
+        constraints.insets = JBUI.emptyInsets();
         content.add(new JBLabel(info), constraints);
         constraints.gridy++;
 
         javax.swing.JProgressBar bar = new javax.swing.JProgressBar(0, 100);
         bar.setValue(percent);
         bar.setStringPainted(false);
+        bar.setPreferredSize(new Dimension(200, 6));
         content.add(bar, constraints);
         constraints.gridy++;
+        
+        constraints.insets = JBUI.insetsTop(4);
     }
 
     private static void addSectionTitle(JPanel content, GridBagConstraints constraints, String titleText) {
         JBLabel label = new JBLabel(titleText);
-        label.setFont(label.getFont().deriveFont(label.getFont().getStyle() | Font.BOLD));
+        label.setFont(label.getFont().deriveFont(label.getFont().getStyle() | Font.BOLD, label.getFont().getSize() + 1));
+        label.setForeground(JBColor.BLUE);
         content.add(label, constraints);
+        constraints.gridy++;
+    }
+
+    private static void addSeparator(JPanel content, GridBagConstraints constraints) {
+        JSeparator separator = new JSeparator(SwingConstants.HORIZONTAL);
+        separator.setForeground(JBColor.LIGHT_GRAY);
+        Dimension size = separator.getMinimumSize();
+        separator.setMinimumSize(new Dimension(size.width, 2));
+        separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 2));
+        content.add(separator, constraints);
         constraints.gridy++;
     }
 
