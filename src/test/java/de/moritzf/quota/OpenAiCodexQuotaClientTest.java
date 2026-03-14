@@ -6,7 +6,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -109,6 +108,66 @@ class OpenAiCodexQuotaClientTest {
         );
 
         assertEquals(200, exception.getStatusCode());
-        assertTrue(exception.getMessage().contains("did not include rate_limit windows"));
+        assertTrue(exception.getMessage().contains("did not include usable windows"));
+    }
+
+    @Test
+    void parseQuotaMapsCodeReviewRateLimitFromAnonymizedPayload() throws Exception {
+        Instant fetchedAt = Instant.parse("2026-03-14T10:00:00Z");
+        @Language("JSON")
+        String json = """
+                {
+                  "user_id": "user-anon-1",
+                  "account_id": "account-anon-1",
+                  "email": "user@example.com",
+                  "plan_type": "go",
+                  "rate_limit": {
+                    "allowed": true,
+                    "limit_reached": false,
+                    "primary_window": {
+                      "used_percent": 33,
+                      "limit_window_seconds": 604800,
+                      "reset_after_seconds": 454749,
+                      "reset_at": 1773936760
+                    },
+                    "secondary_window": null
+                  },
+                  "code_review_rate_limit": {
+                    "allowed": true,
+                    "limit_reached": false,
+                    "primary_window": {
+                      "used_percent": 0,
+                      "limit_window_seconds": 604800,
+                      "reset_after_seconds": 604800,
+                      "reset_at": 1774086811
+                    },
+                    "secondary_window": null
+                  },
+                  "additional_rate_limits": null,
+                  "credits": null,
+                  "promo": null
+                }
+                """;
+
+        OpenAiCodexQuota quota = client.parseQuota(json, fetchedAt);
+
+        assertEquals("go", quota.getPlanType());
+        assertEquals(Boolean.TRUE, quota.getAllowed());
+        assertEquals(Boolean.FALSE, quota.getLimitReached());
+        assertEquals(Boolean.TRUE, quota.getReviewAllowed());
+        assertEquals(Boolean.FALSE, quota.getReviewLimitReached());
+        assertEquals(fetchedAt, quota.getFetchedAt());
+
+        assertNotNull(quota.getPrimary());
+        assertEquals(33.0, quota.getPrimary().getUsedPercent(), 0.0);
+        assertEquals(Integer.valueOf(10080), quota.getPrimary().getWindowMinutes());
+        assertEquals(Instant.ofEpochSecond(1773936760), quota.getPrimary().getResetsAt());
+
+        assertNotNull(quota.getReviewPrimary());
+        assertEquals(0.0, quota.getReviewPrimary().getUsedPercent(), 0.0);
+        assertEquals(Integer.valueOf(10080), quota.getReviewPrimary().getWindowMinutes());
+        assertEquals(Instant.ofEpochSecond(1774086811), quota.getReviewPrimary().getResetsAt());
+
+        assertNull(quota.getReviewSecondary());
     }
 }

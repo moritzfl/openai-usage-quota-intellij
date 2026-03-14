@@ -12,6 +12,7 @@ public record UsageResponseDto(
         @JsonProperty("account_id") String accountId,
         @JsonProperty("email") String email,
         @JsonProperty("rate_limit") RateLimitDto rateLimit,
+        @JsonProperty("code_review_rate_limit") RateLimitDto codeReviewRateLimit,
         @JsonProperty("plan_type") String planType
 ) {
 }

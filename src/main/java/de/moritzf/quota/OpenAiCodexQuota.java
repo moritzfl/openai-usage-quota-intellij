@@ -8,9 +8,13 @@ import java.time.Instant;
 public class OpenAiCodexQuota {
     private UsageWindow primary;
     private UsageWindow secondary;
+    private UsageWindow reviewPrimary;
+    private UsageWindow reviewSecondary;
     private String planType;
     private Boolean allowed;
     private Boolean limitReached;
+    private Boolean reviewAllowed;
+    private Boolean reviewLimitReached;
     private Instant fetchedAt;
     private String rawJson;
     private String accountId;
@@ -30,6 +34,22 @@ public class OpenAiCodexQuota {
 
     public void setSecondary(UsageWindow secondary) {
         this.secondary = secondary;
+    }
+
+    public UsageWindow getReviewPrimary() {
+        return reviewPrimary;
+    }
+
+    public void setReviewPrimary(UsageWindow reviewPrimary) {
+        this.reviewPrimary = reviewPrimary;
+    }
+
+    public UsageWindow getReviewSecondary() {
+        return reviewSecondary;
+    }
+
+    public void setReviewSecondary(UsageWindow reviewSecondary) {
+        this.reviewSecondary = reviewSecondary;
     }
 
     public String getPlanType() {
@@ -54,6 +74,22 @@ public class OpenAiCodexQuota {
 
     public void setLimitReached(Boolean limitReached) {
         this.limitReached = limitReached;
+    }
+
+    public Boolean getReviewAllowed() {
+        return reviewAllowed;
+    }
+
+    public void setReviewAllowed(Boolean reviewAllowed) {
+        this.reviewAllowed = reviewAllowed;
+    }
+
+    public Boolean getReviewLimitReached() {
+        return reviewLimitReached;
+    }
+
+    public void setReviewLimitReached(Boolean reviewLimitReached) {
+        this.reviewLimitReached = reviewLimitReached;
     }
 
     public Instant getFetchedAt() {
@@ -93,9 +129,13 @@ public class OpenAiCodexQuota {
         return "OpenAiCodexQuota{" +
                 "primary=" + primary +
                 ", secondary=" + secondary +
+                ", reviewPrimary=" + reviewPrimary +
+                ", reviewSecondary=" + reviewSecondary +
                 ", planType='" + planType + '\'' +
                 ", allowed=" + allowed +
                 ", limitReached=" + limitReached +
+                ", reviewAllowed=" + reviewAllowed +
+                ", reviewLimitReached=" + reviewLimitReached +
                 ", fetchedAt=" + fetchedAt +
                 ", rawJson=" + (rawJson == null ? "null" : "<redacted>") +
                 ", accountId=" + (accountId == null ? "null" : "<redacted>") +

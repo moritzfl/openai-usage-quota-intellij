@@ -174,8 +174,16 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
             constraints.gridy++;
         }
 
+        addSectionTitle(content, constraints, "Codex");
         addWindow(content, constraints, quota.getPrimary(), "Primary");
         addWindow(content, constraints, quota.getSecondary(), "Secondary");
+
+        if (quota.getReviewPrimary() != null || quota.getReviewSecondary() != null
+                || quota.getReviewAllowed() != null || quota.getReviewLimitReached() != null) {
+            addSectionTitle(content, constraints, "Code Review");
+            addWindow(content, constraints, quota.getReviewPrimary(), "Primary");
+            addWindow(content, constraints, quota.getReviewSecondary(), "Secondary");
+        }
 
         String fetchedAt = QuotaUiUtil.formatInstant(quota.getFetchedAt());
         if (fetchedAt != null) {
@@ -206,6 +214,13 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         bar.setValue(percent);
         bar.setStringPainted(false);
         content.add(bar, constraints);
+        constraints.gridy++;
+    }
+
+    private static void addSectionTitle(JPanel content, GridBagConstraints constraints, String titleText) {
+        JBLabel label = new JBLabel(titleText);
+        label.setFont(label.getFont().deriveFont(label.getFont().getStyle() | Font.BOLD));
+        content.add(label, constraints);
         constraints.gridy++;
     }
 
@@ -258,6 +273,14 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         Boolean allowed = quota.getAllowed();
         if (Boolean.FALSE.equals(allowed)) {
             return "Codex usage not allowed";
+        }
+        Boolean reviewLimitReached = quota.getReviewLimitReached();
+        if (Boolean.TRUE.equals(reviewLimitReached)) {
+            return "Code review limit reached";
+        }
+        Boolean reviewAllowed = quota.getReviewAllowed();
+        if (Boolean.FALSE.equals(reviewAllowed)) {
+            return "Code review usage not allowed";
         }
         return null;
     }

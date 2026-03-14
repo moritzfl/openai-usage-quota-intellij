@@ -69,29 +69,38 @@ public class OpenAiCodexQuotaClient {
     OpenAiCodexQuota parseQuota(String json, Instant fetchedAt) throws IOException {
         UsageResponseDto dto = mapper.readValue(json, UsageResponseDto.class);
         RateLimitDto rateLimit = dto.rateLimit();
+        RateLimitDto reviewRateLimit = dto.codeReviewRateLimit();
 
         UsageWindow primary = parseWindow(rateLimit != null ? rateLimit.primaryWindow() : null);
         UsageWindow secondary = parseWindow(rateLimit != null ? rateLimit.secondaryWindow() : null);
+        UsageWindow reviewPrimary = parseWindow(reviewRateLimit != null ? reviewRateLimit.primaryWindow() : null);
+        UsageWindow reviewSecondary = parseWindow(reviewRateLimit != null ? reviewRateLimit.secondaryWindow() : null);
 
         String planType = textOrNull(dto.planType());
         String accountId = textOrNull(dto.accountId());
         String email = textOrNull(dto.email());
         Boolean allowed = rateLimit != null ? rateLimit.allowed() : null;
         Boolean limitReached = rateLimit != null ? rateLimit.limitReached() : null;
+        Boolean reviewAllowed = reviewRateLimit != null ? reviewRateLimit.allowed() : null;
+        Boolean reviewLimitReached = reviewRateLimit != null ? reviewRateLimit.limitReached() : null;
 
         OpenAiCodexQuota quota = new OpenAiCodexQuota();
         quota.setPrimary(primary);
         quota.setSecondary(secondary);
+        quota.setReviewPrimary(reviewPrimary);
+        quota.setReviewSecondary(reviewSecondary);
         quota.setPlanType(planType);
         quota.setAllowed(allowed);
         quota.setLimitReached(limitReached);
+        quota.setReviewAllowed(reviewAllowed);
+        quota.setReviewLimitReached(reviewLimitReached);
         quota.setFetchedAt(fetchedAt);
         quota.setRawJson(json);
         quota.setAccountId(accountId);
         quota.setEmail(email);
 
-        if (primary == null && secondary == null) {
-            throw new OpenAiCodexQuotaException("Usage response did not include rate_limit windows", 200);
+        if (primary == null && secondary == null && reviewPrimary == null && reviewSecondary == null) {
+            throw new OpenAiCodexQuotaException("Usage response did not include usable windows", 200);
         }
 
         return quota;
