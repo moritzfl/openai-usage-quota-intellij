@@ -64,7 +64,11 @@ Logout is available in the same settings page.
 
 ### Quota Popup
 
-![Quota popup](docs/quota-popup-go.png)
+![Quota popup Go](docs/quota-popup-go.png)
+
+![Quota popup Go - limit reached](docs/quota-popup-go-limit-reached.png)
+
+![Quota popup Plus](docs/quota-popup-plus.png)
 
 ### Settings
 
