@@ -14,6 +14,7 @@ import com.intellij.ui.JBColor;
 import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
+import com.intellij.util.IconUtil;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.ui.JBUI;
 import de.moritzf.quota.OpenAiCodexQuota;
@@ -83,12 +84,7 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
             QuotaStatusBarWidget.this.error = updatedError;
             updateWidget();
         });
-        this.connection.subscribe(QuotaSettingsListener.TOPIC, new QuotaSettingsListener() {
-            @Override
-            public void onSettingsChanged() {
-                updateWidget();
-            }
-        });
+        this.connection.subscribe(QuotaSettingsListener.TOPIC, (QuotaSettingsListener) this::updateWidget);
         this.widgetComponent.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent event) {
@@ -444,7 +440,7 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
         }
 
         private void paintCakeDiagram(Graphics2D g2d) {
-            Icon cakeIcon = getCakeIcon();
+            Icon cakeIcon = getScaledCakeIcon();
             int iconWidth = cakeIcon.getIconWidth();
             int iconHeight = cakeIcon.getIconHeight();
             int x = (getWidth() - iconWidth) / 2;
@@ -544,6 +540,26 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
             return QuotaIcons.CAKE_90;
         }
 
+        private Icon getScaledCakeIcon() {
+            Icon cakeIcon = getCakeIcon();
+            Icon statusIcon = QuotaIcons.STATUS;
+
+            int targetWidth = statusIcon.getIconWidth();
+            int targetHeight = statusIcon.getIconHeight();
+            int iconWidth = cakeIcon.getIconWidth();
+            int iconHeight = cakeIcon.getIconHeight();
+            if (iconWidth <= 0 || iconHeight <= 0 || targetWidth <= 0 || targetHeight <= 0) {
+                return cakeIcon;
+            }
+            if (iconWidth <= targetWidth && iconHeight <= targetHeight) {
+                return cakeIcon;
+            }
+
+            float widthScale = targetWidth / (float) iconWidth;
+            float heightScale = targetHeight / (float) iconHeight;
+            return IconUtil.scale(cakeIcon, this, Math.min(widthScale, heightScale));
+        }
+
         private QuotaDisplayMode getDisplayMode() {
             return QuotaSettingsState.getInstance().getStatusBarDisplayMode();
         }
@@ -571,7 +587,7 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
 
             FontMetrics fm = getFontMetrics(getFont());
             if (mode == QuotaDisplayMode.CAKE_DIAGRAM) {
-                Icon cakeIcon = getCakeIcon();
+                Icon cakeIcon = getScaledCakeIcon();
                 int width = cakeIcon.getIconWidth() + STATUS_ICON_PADDING;
                 int height = Math.max(cakeIcon.getIconHeight(), fm.getHeight()) + 4;
                 return new Dimension(width, height);
