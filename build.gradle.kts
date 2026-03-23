@@ -104,4 +104,10 @@ tasks {
     test {
         useJUnitPlatform()
     }
+
+    named("buildSearchableOptions") {
+        enabled = providers.gradleProperty("skipSearchableOptions")
+            .map { it.toBoolean().not() }
+            .getOrElse(true)
+    }
 }
