@@ -1,5 +1,6 @@
 package de.moritzf.quota.idea;
 
+import com.intellij.icons.AllIcons;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.project.Project;
@@ -21,6 +22,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.Icon;
+import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
@@ -81,7 +83,12 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
             QuotaStatusBarWidget.this.error = updatedError;
             updateWidget();
         });
-        this.connection.subscribe(QuotaSettingsListener.TOPIC, (QuotaSettingsListener) this::updateWidget);
+        this.connection.subscribe(QuotaSettingsListener.TOPIC, new QuotaSettingsListener() {
+            @Override
+            public void onSettingsChanged() {
+                updateWidget();
+            }
+        });
         this.widgetComponent.addMouseListener(new MouseAdapter() {
             @Override
             public void mouseClicked(MouseEvent event) {
@@ -153,7 +160,7 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
     private JComponent buildPopupContent() {
         JPanel panel = new JBPanel<>(new BorderLayout());
         JPanel content = new JPanel(new GridBagLayout());
-        content.setBorder(JBUI.Borders.empty(8));
+        content.setBorder(JBUI.Borders.empty(8, 8, 8, 3));
         panel.add(content, BorderLayout.CENTER);
 
         GridBagConstraints constraints = new GridBagConstraints();
@@ -165,9 +172,13 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
         constraints.weightx = 1.0;
 
         String planLabel = quota != null ? quota.getPlanType() : null;
+        JPanel titleRow = new JPanel(new BorderLayout());
+        titleRow.setOpaque(false);
         JBLabel title = new JBLabel("OpenAI usage");
         title.setFont(title.getFont().deriveFont(title.getFont().getStyle() | Font.BOLD, title.getFont().getSize() + 2));
-        content.add(title, constraints);
+        titleRow.add(title, BorderLayout.WEST);
+        titleRow.add(createOpenSettingsButton(), BorderLayout.EAST);
+        content.add(titleRow, constraints);
         constraints.gridy++;
 
         if (planLabel != null && !planLabel.isBlank()) {
@@ -246,6 +257,20 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
         }
 
         return panel;
+    }
+
+    private JButton createOpenSettingsButton() {
+        JButton settingsButton = new JButton(AllIcons.General.Settings);
+        settingsButton.setToolTipText("Open settings");
+        settingsButton.setMargin(JBUI.emptyInsets());
+        settingsButton.setBorder(JBUI.Borders.empty());
+        settingsButton.setBorderPainted(false);
+        settingsButton.setContentAreaFilled(false);
+        settingsButton.setFocusPainted(false);
+        settingsButton.setOpaque(false);
+        settingsButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        settingsButton.addActionListener(event -> openSettings());
+        return settingsButton;
     }
 
     private void addWindow(JPanel content, GridBagConstraints constraints, UsageWindow window, String fallbackLabel) {
