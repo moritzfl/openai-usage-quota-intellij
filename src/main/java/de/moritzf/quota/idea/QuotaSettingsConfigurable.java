@@ -3,6 +3,7 @@ package de.moritzf.quota.idea;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.application.ModalityState;
 import com.intellij.openapi.options.Configurable;
+import com.intellij.openapi.ui.ComboBox;
 import com.intellij.openapi.ui.Messages;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
@@ -15,6 +16,7 @@ import org.jetbrains.annotations.Nullable;
 
 import javax.swing.JButton;
 import javax.swing.JComponent;
+import javax.swing.JComboBox;
 import javax.swing.JPanel;
 import java.awt.FlowLayout;
 
@@ -28,6 +30,7 @@ public final class QuotaSettingsConfigurable implements Configurable {
     private JBTextArea responseArea;
     private JBLabel loginHeaderLabel;
     private JBLabel statusLabel;
+    private JComboBox<QuotaDisplayMode> displayModeComboBox;
     private JButton loginButton;
     private JButton cancelLoginButton;
     private JButton logoutButton;
@@ -49,6 +52,7 @@ public final class QuotaSettingsConfigurable implements Configurable {
         responseArea.setLineWrap(false);
         loginHeaderLabel = new JBLabel();
         statusLabel = new JBLabel();
+        displayModeComboBox = new ComboBox<>(QuotaDisplayMode.values());
         loginButton = new JButton("Log In");
         cancelLoginButton = new JButton("Cancel Login");
         logoutButton = new JButton("Log Out");
@@ -108,6 +112,8 @@ public final class QuotaSettingsConfigurable implements Configurable {
         responseScroll.setVerticalScrollBarPolicy(JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
 
         panel = FormBuilder.createFormBuilder()
+                .addLabeledComponent("Status bar display:", displayModeComboBox)
+                .addSeparator()
                 .addComponent(loginHeaderLabel)
                 .addComponent(authPanel)
                 .addSeparator()
@@ -137,16 +143,39 @@ public final class QuotaSettingsConfigurable implements Configurable {
 
     @Override
     public boolean isModified() {
-        return false;
+        if (displayModeComboBox == null) {
+            return false;
+        }
+        QuotaDisplayMode selected = (QuotaDisplayMode) displayModeComboBox.getSelectedItem();
+        QuotaDisplayMode saved = QuotaSettingsState.getInstance().getStatusBarDisplayMode();
+        return selected != saved;
     }
 
     @Override
     public void apply() {
-        // no-op
+        if (displayModeComboBox == null) {
+            return;
+        }
+        QuotaDisplayMode selected = (QuotaDisplayMode) displayModeComboBox.getSelectedItem();
+        if (selected == null) {
+            return;
+        }
+        QuotaSettingsState state = QuotaSettingsState.getInstance();
+        QuotaDisplayMode current = state.getStatusBarDisplayMode();
+        if (selected != current) {
+            state.setStatusBarDisplayMode(selected);
+            ApplicationManager.getApplication()
+                    .getMessageBus()
+                    .syncPublisher(QuotaSettingsListener.TOPIC)
+                    .onSettingsChanged();
+        }
     }
 
     @Override
     public void reset() {
+        if (displayModeComboBox != null) {
+            displayModeComboBox.setSelectedItem(QuotaSettingsState.getInstance().getStatusBarDisplayMode());
+        }
         updateAuthUi();
         updateAccountFields();
         updateResponseArea();
@@ -164,6 +193,7 @@ public final class QuotaSettingsConfigurable implements Configurable {
         responseArea = null;
         loginHeaderLabel = null;
         statusLabel = null;
+        displayModeComboBox = null;
         loginButton = null;
         cancelLoginButton = null;
         logoutButton = null;

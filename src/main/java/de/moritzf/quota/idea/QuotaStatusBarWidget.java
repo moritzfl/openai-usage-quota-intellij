@@ -6,14 +6,13 @@ import com.intellij.openapi.project.Project;
 import com.intellij.openapi.ui.popup.JBPopup;
 import com.intellij.openapi.ui.popup.JBPopupFactory;
 import com.intellij.openapi.util.Disposer;
+import com.intellij.openapi.wm.CustomStatusBarWidget;
 import com.intellij.openapi.wm.StatusBar;
-import com.intellij.openapi.wm.StatusBarWidget;
+import com.intellij.ui.Gray;
 import com.intellij.ui.JBColor;
-import com.intellij.ui.awt.RelativePoint;
 import com.intellij.ui.components.ActionLink;
 import com.intellij.ui.components.JBLabel;
 import com.intellij.ui.components.JBPanel;
-import com.intellij.util.Consumer;
 import com.intellij.util.messages.MessageBusConnection;
 import com.intellij.util.ui.JBUI;
 import de.moritzf.quota.OpenAiCodexQuota;
@@ -21,20 +20,52 @@ import de.moritzf.quota.UsageWindow;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import java.awt.*;
-import java.util.Arrays;
-import java.util.stream.Collectors;
+import javax.swing.Icon;
+import javax.swing.JComponent;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.JSeparator;
+import javax.swing.SwingConstants;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.FontMetrics;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.RenderingHints;
+import java.awt.Shape;
+import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.geom.RoundRectangle2D;
+import java.util.Arrays;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 /**
  * Status bar widget that displays the current quota state and shows a detailed popup.
  */
-public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWidget.IconPresentation {
+public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
+    private static final int STATUS_WARNING_PERCENT = 70;
+    private static final int STATUS_CRITICAL_PERCENT = 90;
+    private static final int STATUS_MIN_WIDTH = 110;
+    private static final int STATUS_ICON_PADDING = 8;
+
+    private static final Color COLOR_GREEN = new JBColor(new Color(144, 238, 144), new Color(60, 140, 60));
+    private static final Color COLOR_YELLOW = new JBColor(new Color(255, 245, 157), new Color(180, 160, 50));
+    private static final Color COLOR_RED = new JBColor(new Color(255, 182, 182), new Color(180, 70, 70));
+    private static final Color COLOR_GRAY = new JBColor(Gray._208, Gray._85);
+    private static final Color COLOR_BG = new JBColor(Gray._240, Gray._63);
+    private static final Color COLOR_TEXT = new JBColor(Gray._60, Gray._210);
+
     private final Project project;
     private final MessageBusConnection connection;
+    private final UsageWidgetComponent widgetComponent = new UsageWidgetComponent();
     private volatile OpenAiCodexQuota quota;
     private volatile String error;
     private StatusBar statusBar;
@@ -50,11 +81,23 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
             QuotaStatusBarWidget.this.error = updatedError;
             updateWidget();
         });
+        this.connection.subscribe(QuotaSettingsListener.TOPIC, (QuotaSettingsListener) this::updateWidget);
+        this.widgetComponent.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent event) {
+                showPopup(widgetComponent);
+            }
+        });
     }
 
     @Override
     public @NotNull String ID() {
         return QuotaStatusBarWidgetFactory.ID;
+    }
+
+    @Override
+    public @NotNull JComponent getComponent() {
+        return widgetComponent;
     }
 
     @Override
@@ -64,49 +107,19 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
     }
 
     @Override
-    public @NotNull WidgetPresentation getPresentation() {
-        return this;
-    }
-
-    @Override
-    public @NotNull Icon getIcon() {
-        return QuotaIcons.STATUS;
-    }
-
-    @Override
-    public @NotNull String getTooltipText() {
-        QuotaAuthService authService = QuotaAuthService.getInstance();
-        if (!authService.isLoggedIn()) {
-            return "OpenAI usage quota: not logged in";
-        }
-        if (error != null) {
-            return "OpenAI usage quota: " + error;
-        }
-        if (quota == null || quota.getPrimary() == null) {
-            return "OpenAI usage quota: loading";
-        }
-        UsageWindow primary = quota.getPrimary();
-        return String.format(Locale.ROOT, "OpenAI usage quota: %.0f%% used", primary.getUsedPercent());
-    }
-
-    @Override
-    public @NotNull Consumer<MouseEvent> getClickConsumer() {
-        return this::showPopup;
-    }
-
-    @Override
     public void dispose() {
         connection.dispose();
     }
 
     private void updateWidget() {
+        widgetComponent.updateUsage();
         if (statusBar != null) {
             statusBar.updateWidget(ID());
         }
     }
 
-    private void showPopup(MouseEvent event) {
-        if (event == null) {
+    private void showPopup(@Nullable Component component) {
+        if (component == null) {
             return;
         }
         QuotaUsageService.getInstance().refreshNowAsync();
@@ -119,7 +132,22 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
                 .setMovable(false)
                 .createPopup();
         Disposer.register(this, popup);
-        popup.show(new RelativePoint(event));
+        popup.showUnderneathOf(component);
+    }
+
+    private @NotNull String buildTooltipText() {
+        QuotaAuthService authService = QuotaAuthService.getInstance();
+        if (!authService.isLoggedIn()) {
+            return "OpenAI usage quota: not logged in";
+        }
+        if (error != null) {
+            return "OpenAI usage quota: " + error;
+        }
+        if (quota == null || quota.getPrimary() == null) {
+            return "OpenAI usage quota: loading";
+        }
+        UsageWindow primary = quota.getPrimary();
+        return String.format(Locale.ROOT, "OpenAI usage quota: %.0f%% used", primary.getUsedPercent());
     }
 
     private JComponent buildPopupContent() {
@@ -137,9 +165,8 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         constraints.weightx = 1.0;
 
         String planLabel = quota != null ? quota.getPlanType() : null;
-        String titleText = "OpenAI Usage";
-        JBLabel title = new JBLabel(titleText);
-        title.setFont(title.getFont().deriveFont(title.getFont().getStyle() | java.awt.Font.BOLD, title.getFont().getSize() + 2));
+        JBLabel title = new JBLabel("OpenAI usage");
+        title.setFont(title.getFont().deriveFont(title.getFont().getStyle() | Font.BOLD, title.getFont().getSize() + 2));
         content.add(title, constraints);
         constraints.gridy++;
 
@@ -183,7 +210,7 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
         if (limitWarning != null) {
             JBLabel warningLabel = new JBLabel(limitWarning);
             warningLabel.setForeground(JBColor.RED);
-            warningLabel.setFont(warningLabel.getFont().deriveFont(warningLabel.getFont().getStyle() | java.awt.Font.BOLD));
+            warningLabel.setFont(warningLabel.getFont().deriveFont(warningLabel.getFont().getStyle() | Font.BOLD));
             content.add(warningLabel, constraints);
             constraints.gridy++;
             constraints.insets = JBUI.insets(8, 0);
@@ -226,29 +253,29 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
             return;
         }
 
-        int percent = (int) Math.round(window.getUsedPercent());
+        int percent = clampPercent((int) Math.round(window.getUsedPercent()));
         String title = describeWindowLabel(window, fallbackLabel);
         String resetText = QuotaUiUtil.formatReset(window.getResetsAt());
         String info = percent + "% used";
         if (resetText != null) {
             info = info + " - " + resetText;
         }
-        
+
         constraints.insets = JBUI.insetsTop(4);
         content.add(new JBLabel(title), constraints);
         constraints.gridy++;
-        
+
         constraints.insets = JBUI.emptyInsets();
         content.add(new JBLabel(info), constraints);
         constraints.gridy++;
 
-        javax.swing.JProgressBar bar = new javax.swing.JProgressBar(0, 100);
+        JProgressBar bar = new JProgressBar(0, 100);
         bar.setValue(percent);
         bar.setStringPainted(false);
         bar.setPreferredSize(new Dimension(200, 6));
         content.add(bar, constraints);
         constraints.gridy++;
-        
+
         constraints.insets = JBUI.insetsTop(4);
     }
 
@@ -329,5 +356,216 @@ public final class QuotaStatusBarWidget implements StatusBarWidget, StatusBarWid
             return "Code review usage not allowed";
         }
         return null;
+    }
+
+    private static int clampPercent(int value) {
+        return Math.max(0, Math.min(value, 100));
+    }
+
+    private final class UsageWidgetComponent extends JPanel {
+        private UsageWidgetComponent() {
+            setOpaque(false);
+            setBorder(JBUI.Borders.empty(0, 4));
+            setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            setToolTipText(" ");
+        }
+
+        private void updateUsage() {
+            revalidate();
+            repaint();
+        }
+
+        @Override
+        public String getToolTipText(MouseEvent event) {
+            return buildTooltipText();
+        }
+
+        @Override
+        public Dimension getPreferredSize() {
+            return calculateSize();
+        }
+
+        @Override
+        public Dimension getMinimumSize() {
+            return calculateSize();
+        }
+
+        @Override
+        public Dimension getMaximumSize() {
+            return calculateSize();
+        }
+
+        @Override
+        protected void paintComponent(Graphics graphics) {
+            super.paintComponent(graphics);
+            Graphics2D g2d = (Graphics2D) graphics.create();
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
+
+            switch (getDisplayMode()) {
+                case ICON_ONLY -> paintIconOnly(g2d);
+                case CAKE_DIAGRAM -> paintCakeDiagram(g2d);
+                case PERCENTAGE_BAR -> paintPercentageBar(g2d);
+            }
+
+            g2d.dispose();
+        }
+
+        private void paintIconOnly(Graphics2D g2d) {
+            Icon icon = QuotaIcons.STATUS;
+            int x = (getWidth() - icon.getIconWidth()) / 2;
+            int y = (getHeight() - icon.getIconHeight()) / 2;
+            icon.paintIcon(this, g2d, x, y);
+        }
+
+        private void paintCakeDiagram(Graphics2D g2d) {
+            Icon cakeIcon = getCakeIcon();
+            int iconWidth = cakeIcon.getIconWidth();
+            int iconHeight = cakeIcon.getIconHeight();
+            int x = (getWidth() - iconWidth) / 2;
+            int y = (getHeight() - iconHeight) / 2;
+            cakeIcon.paintIcon(this, g2d, x, y);
+        }
+
+        private void paintPercentageBar(Graphics2D g2d) {
+            String text = getBarDisplayText();
+            FontMetrics fm = g2d.getFontMetrics();
+            int rectWidth = Math.max(fm.stringWidth(text) + 10, STATUS_MIN_WIDTH - 8);
+            int rectHeight = fm.getHeight() + 4;
+            int x = (getWidth() - rectWidth) / 2;
+            int y = (getHeight() - rectHeight) / 2;
+            Shape rect = new RoundRectangle2D.Float(x, y, rectWidth, rectHeight, 6f, 6f);
+
+            g2d.setColor(COLOR_BG);
+            g2d.fill(rect);
+
+            int percentage = getDisplayPercent();
+            if (percentage >= 0) {
+                int fillWidth = (int) Math.round(rectWidth * (percentage / 100.0));
+                if (percentage > 0 && fillWidth < 4) {
+                    fillWidth = 4;
+                }
+                if (fillWidth > 0) {
+                    g2d.setColor(getUsageColor(percentage));
+                    Shape previousClip = g2d.getClip();
+                    g2d.clip(rect);
+                    g2d.fillRect(x, y, fillWidth, rectHeight);
+                    g2d.setClip(previousClip);
+                }
+            } else if (error != null) {
+                g2d.setColor(COLOR_GRAY);
+                g2d.fill(rect);
+            }
+
+            g2d.setColor(COLOR_TEXT);
+            g2d.drawString(text, x + 5, y + fm.getAscent() + 2);
+        }
+
+        private String getBarDisplayText() {
+            QuotaAuthService authService = QuotaAuthService.getInstance();
+            if (!authService.isLoggedIn()) {
+                return "OpenAI: not logged in";
+            }
+            if (error != null) {
+                return "OpenAI: error";
+            }
+            UsageWindow primary = quota != null ? quota.getPrimary() : null;
+            if (primary == null) {
+                return "OpenAI: loading...";
+            }
+            int percent = clampPercent((int) Math.round(primary.getUsedPercent()));
+            String reset = QuotaUiUtil.formatResetCompact(primary.getResetsAt());
+            if (reset != null) {
+                return percent + "% • " + reset;
+            }
+            return percent + "%";
+        }
+
+        private Icon getCakeIcon() {
+            QuotaAuthService authService = QuotaAuthService.getInstance();
+            if (!authService.isLoggedIn() || error != null) {
+                return QuotaIcons.CAKE_UNKNOWN;
+            }
+            UsageWindow primary = quota != null ? quota.getPrimary() : null;
+            if (primary == null) {
+                return QuotaIcons.CAKE_UNKNOWN;
+            }
+            if (quota != null && Boolean.TRUE.equals(quota.getLimitReached())) {
+                return QuotaIcons.CAKE_LIMIT_REACHED;
+            }
+
+            int percent = clampPercent((int) Math.round(primary.getUsedPercent()));
+            if (percent >= 100) {
+                return QuotaIcons.CAKE_LIMIT_REACHED;
+            }
+            if (percent <= 0) {
+                return QuotaIcons.CAKE_0;
+            }
+            if (percent <= 10) {
+                return QuotaIcons.CAKE_10;
+            }
+            if (percent <= 20) {
+                return QuotaIcons.CAKE_20;
+            }
+            if (percent <= 40) {
+                return QuotaIcons.CAKE_40;
+            }
+            if (percent <= 60) {
+                return QuotaIcons.CAKE_60;
+            }
+            if (percent <= 80) {
+                return QuotaIcons.CAKE_80;
+            }
+            return QuotaIcons.CAKE_90;
+        }
+
+        private QuotaDisplayMode getDisplayMode() {
+            return QuotaSettingsState.getInstance().getStatusBarDisplayMode();
+        }
+
+        private int getDisplayPercent() {
+            QuotaAuthService authService = QuotaAuthService.getInstance();
+            if (!authService.isLoggedIn() || error != null) {
+                return -1;
+            }
+            UsageWindow primary = quota != null ? quota.getPrimary() : null;
+            if (primary == null) {
+                return -1;
+            }
+            return clampPercent((int) Math.round(primary.getUsedPercent()));
+        }
+
+        private Dimension calculateSize() {
+            QuotaDisplayMode mode = getDisplayMode();
+            if (mode == QuotaDisplayMode.ICON_ONLY) {
+                Icon icon = QuotaIcons.STATUS;
+                int width = icon.getIconWidth() + STATUS_ICON_PADDING;
+                int height = Math.max(icon.getIconHeight(), getFontMetrics(getFont()).getHeight()) + 4;
+                return new Dimension(width, height);
+            }
+
+            FontMetrics fm = getFontMetrics(getFont());
+            if (mode == QuotaDisplayMode.CAKE_DIAGRAM) {
+                Icon cakeIcon = getCakeIcon();
+                int width = cakeIcon.getIconWidth() + STATUS_ICON_PADDING;
+                int height = Math.max(cakeIcon.getIconHeight(), fm.getHeight()) + 4;
+                return new Dimension(width, height);
+            }
+
+            String text = getBarDisplayText();
+            int width = Math.max(fm.stringWidth(text) + 16, STATUS_MIN_WIDTH);
+            int height = fm.getHeight() + 6;
+            return new Dimension(width, height);
+        }
+
+        private Color getUsageColor(int percent) {
+            if (percent >= STATUS_CRITICAL_PERCENT) {
+                return COLOR_RED;
+            }
+            if (percent >= STATUS_WARNING_PERCENT) {
+                return COLOR_YELLOW;
+            }
+            return COLOR_GREEN;
+        }
     }
 }

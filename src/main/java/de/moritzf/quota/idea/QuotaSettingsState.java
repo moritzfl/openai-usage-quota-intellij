@@ -14,6 +14,7 @@ import org.jetbrains.annotations.NotNull;
 @Service(Service.Level.APP)
 public final class QuotaSettingsState implements PersistentStateComponent<QuotaSettingsState> {
     public int refreshMinutes = 5;
+    public String statusBarDisplayMode = QuotaDisplayMode.ICON_ONLY.name();
 
     public static QuotaSettingsState getInstance() {
         return ApplicationManager.getApplication().getService(QuotaSettingsState.class);
@@ -27,5 +28,14 @@ public final class QuotaSettingsState implements PersistentStateComponent<QuotaS
     @Override
     public void loadState(@NotNull QuotaSettingsState state) {
         this.refreshMinutes = state.refreshMinutes;
+        this.statusBarDisplayMode = QuotaDisplayMode.fromStorageValue(state.statusBarDisplayMode).name();
+    }
+
+    public @NotNull QuotaDisplayMode getStatusBarDisplayMode() {
+        return QuotaDisplayMode.fromStorageValue(statusBarDisplayMode);
+    }
+
+    public void setStatusBarDisplayMode(@NotNull QuotaDisplayMode displayMode) {
+        this.statusBarDisplayMode = displayMode.name();
     }
 }

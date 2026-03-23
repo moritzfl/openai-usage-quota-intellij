@@ -33,6 +33,17 @@ public final class QuotaUiUtil {
         return "Resets at " + at;
     }
 
+    public static @Nullable String formatResetCompact(@Nullable Instant resetsAt) {
+        if (resetsAt == null) {
+            return null;
+        }
+        String duration = formatDuration(Duration.between(Instant.now(), resetsAt));
+        if (duration == null) {
+            return null;
+        }
+        return duration.startsWith("in ") ? duration.substring("in ".length()) : duration;
+    }
+
     public static @Nullable String formatInstant(@Nullable Instant instant) {
         if (instant == null) {
             return null;
