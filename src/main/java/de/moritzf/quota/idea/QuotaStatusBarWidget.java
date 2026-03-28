@@ -380,7 +380,7 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
     }
 
     private static int clampPercent(int value) {
-        return Math.max(0, Math.min(value, 100));
+        return Math.clamp(value, 0, 100);
     }
 
     private final class UsageWidgetComponent extends JPanel {
@@ -522,34 +522,31 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
             if (percent <= 0) {
                 return QuotaIcons.CAKE_0;
             }
-            if (percent <= 10) {
-                return QuotaIcons.CAKE_10;
-            }
-            if (percent <= 20) {
-                return QuotaIcons.CAKE_20;
-            }
-            if (percent <= 30) {
-                return QuotaIcons.CAKE_30;
-            }
-            if (percent <= 40) {
-                return QuotaIcons.CAKE_40;
-            }
-            if (percent <= 50) {
-                return QuotaIcons.CAKE_50;
-            }
-            if (percent <= 60) {
-                return QuotaIcons.CAKE_60;
-            }
-            if (percent <= 70) {
-                return QuotaIcons.CAKE_70;
-            }
-            if (percent <= 80) {
-                return QuotaIcons.CAKE_80;
-            }
-            if (percent <= 90) {
-                return QuotaIcons.CAKE_90;
-            }
-            return QuotaIcons.CAKE_95;
+
+            // Round to the best 5er percentage step
+            int bucket = Math.min(95, ((percent + 4) / 5) * 5);
+            return switch (bucket) {
+                case 5 -> QuotaIcons.CAKE_5;
+                case 10 -> QuotaIcons.CAKE_10;
+                case 15 -> QuotaIcons.CAKE_15;
+                case 20 -> QuotaIcons.CAKE_20;
+                case 25 -> QuotaIcons.CAKE_25;
+                case 30 -> QuotaIcons.CAKE_30;
+                case 35 -> QuotaIcons.CAKE_35;
+                case 40 -> QuotaIcons.CAKE_40;
+                case 45 -> QuotaIcons.CAKE_45;
+                case 50 -> QuotaIcons.CAKE_50;
+                case 55 -> QuotaIcons.CAKE_55;
+                case 60 -> QuotaIcons.CAKE_60;
+                case 65 -> QuotaIcons.CAKE_65;
+                case 70 -> QuotaIcons.CAKE_70;
+                case 75 -> QuotaIcons.CAKE_75;
+                case 80 -> QuotaIcons.CAKE_80;
+                case 85 -> QuotaIcons.CAKE_85;
+                case 90 -> QuotaIcons.CAKE_90;
+                case 95 -> QuotaIcons.CAKE_95;
+                default -> QuotaIcons.CAKE_UNKNOWN;
+            };
         }
 
         private Icon getScaledCakeIcon() {
