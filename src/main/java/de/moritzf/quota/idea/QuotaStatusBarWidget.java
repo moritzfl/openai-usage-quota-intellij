@@ -512,12 +512,12 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
                 return QuotaIcons.CAKE_UNKNOWN;
             }
             if (quota != null && Boolean.TRUE.equals(quota.getLimitReached())) {
-                return QuotaIcons.CAKE_LIMIT_REACHED;
+                return QuotaIcons.CAKE_100;
             }
 
             int percent = clampPercent((int) Math.round(primary.getUsedPercent()));
             if (percent >= 100) {
-                return QuotaIcons.CAKE_LIMIT_REACHED;
+                return QuotaIcons.CAKE_100;
             }
             if (percent <= 0) {
                 return QuotaIcons.CAKE_0;
@@ -528,16 +528,28 @@ public final class QuotaStatusBarWidget implements CustomStatusBarWidget {
             if (percent <= 20) {
                 return QuotaIcons.CAKE_20;
             }
+            if (percent <= 30) {
+                return QuotaIcons.CAKE_30;
+            }
             if (percent <= 40) {
                 return QuotaIcons.CAKE_40;
+            }
+            if (percent <= 50) {
+                return QuotaIcons.CAKE_50;
             }
             if (percent <= 60) {
                 return QuotaIcons.CAKE_60;
             }
+            if (percent <= 70) {
+                return QuotaIcons.CAKE_70;
+            }
             if (percent <= 80) {
                 return QuotaIcons.CAKE_80;
             }
-            return QuotaIcons.CAKE_90;
+            if (percent <= 90) {
+                return QuotaIcons.CAKE_90;
+            }
+            return QuotaIcons.CAKE_95;
         }
 
         private Icon getScaledCakeIcon() {
