@@ -12,21 +12,17 @@ import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.CustomStatusBarWidget
 import com.intellij.openapi.wm.StatusBar
 import com.intellij.ui.awt.RelativePoint
-import com.intellij.ui.Gray
 import com.intellij.ui.JBColor
 import com.intellij.ui.SeparatorComponent
 import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
-import com.intellij.ui.components.JBPanel
 import com.intellij.ui.components.panels.NonOpaquePanel
-import com.intellij.ui.components.panels.VerticalLayout
 import com.intellij.util.IconUtil
 import com.intellij.util.messages.MessageBusConnection
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.OpenAiCodexQuota
 import de.moritzf.quota.UsageWindow
-import java.awt.Color
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.Dimension
@@ -256,7 +252,7 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
 
     private inner class UsageWidgetComponent : BorderLayoutPanel() {
         private val statusIconLabel = createStatusIconLabel()
-        private val percentageComponent = PercentageStatusComponent()
+        private val percentageComponent = QuotaPercentageIndicator()
 
         init {
             isOpaque = false
@@ -279,7 +275,7 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
                 }
 
                 QuotaDisplayMode.PERCENTAGE_BAR -> {
-                    percentageComponent.updateDisplay()
+                    updatePercentageDisplay()
                     showContent(percentageComponent)
                 }
             }
@@ -390,108 +386,26 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
             return clampPercent(primary.usedPercent.roundToInt())
         }
 
-        private fun usageColor(percent: Int): Color {
-            return when {
-                percent >= STATUS_CRITICAL_PERCENT -> COLOR_RED
-                percent >= STATUS_WARNING_PERCENT -> COLOR_YELLOW
-                else -> COLOR_GREEN
-            }
-        }
-
-        private inner class PercentageStatusComponent : NonOpaquePanel(VerticalLayout(1, 0)) {
-            private val textLabel = JBLabel()
-            private val progressBar = CompactUsageBar()
-
-            init {
-                textLabel.horizontalAlignment = SwingConstants.LEFT
-                textLabel.verticalAlignment = SwingConstants.CENTER
-                textLabel.border = JBUI.Borders.emptyLeft(2)
-                textLabel.font = textLabel.font.deriveFont(textLabel.font.size2D - 1f)
-
-                add(textLabel)
-                add(progressBar)
-            }
-
-            fun updateDisplay() {
-                textLabel.text = barDisplayText()
-                textLabel.foreground = COLOR_TEXT
-
-                val percentage = displayPercent()
-                if (percentage >= 0) {
-                    progressBar.setFraction(percentage / 100.0)
-                    progressBar.fillColor = usageColor(percentage)
-                } else {
-                    progressBar.setFraction(0.0)
-                    progressBar.fillColor = COLOR_GRAY
-                }
-
-                revalidate()
-                repaint()
-            }
-
-            override fun getPreferredSize(): Dimension {
-                val textSize = textLabel.preferredSize
-                val width = maxOf(textSize.width + 4, STATUS_MIN_WIDTH)
-                val height = textSize.height + 1 + progressBar.preferredSize.height
-                return Dimension(width, height)
-            }
-
-            override fun getMinimumSize(): Dimension = preferredSize
-
-            override fun getMaximumSize(): Dimension = preferredSize
-        }
-
-        private inner class CompactUsageBar : JBPanel<CompactUsageBar>(null) {
-            var fillColor: Color = COLOR_GREEN
-                set(value) {
-                    field = value
-                    fillPanel.background = value
-                    repaint()
-                }
-
-            private var fraction: Double = 0.0
-            private val fillPanel = JBPanel<JBPanel<*>>(null).apply {
-                isOpaque = true
-                background = fillColor
-            }
-
-            init {
-                isOpaque = true
-                background = COLOR_PROGRESS_BACKGROUND
-                preferredSize = Dimension(STATUS_MIN_WIDTH - 8, 4)
-                minimumSize = Dimension(STATUS_MIN_WIDTH - 8, 4)
-                maximumSize = Dimension(Int.MAX_VALUE, 4)
-                add(fillPanel)
-            }
-
-            fun setFraction(value: Double) {
-                fraction = value.coerceIn(0.0, 1.0)
-                revalidate()
-                repaint()
-            }
-
-            override fun doLayout() {
-                val fillWidth = when {
-                    fraction <= 0.0 -> 0
-                    fraction >= 1.0 -> width
-                    else -> maxOf(4, (width * fraction).roundToInt())
-                }
-                fillPanel.setBounds(0, 0, fillWidth, height)
+        private fun updatePercentageDisplay() {
+            val percentage = displayPercent()
+            if (percentage >= 0) {
+                percentageComponent.update(
+                    text = barDisplayText(),
+                    fraction = percentage / 100.0,
+                    fillColor = QuotaUsageColors.usageColor(percentage),
+                )
+            } else {
+                percentageComponent.update(
+                    text = barDisplayText(),
+                    fraction = 0.0,
+                    fillColor = QuotaUsageColors.GRAY,
+                )
             }
         }
     }
 
     companion object {
-        private const val STATUS_WARNING_PERCENT = 70
-        private const val STATUS_CRITICAL_PERCENT = 90
         private const val STATUS_MIN_WIDTH = 110
-
-        private val COLOR_GREEN = JBColor(Color(144, 238, 144), Color(60, 140, 60))
-        private val COLOR_YELLOW = JBColor(Color(255, 245, 157), Color(180, 160, 50))
-        private val COLOR_RED = JBColor(Color(255, 182, 182), Color(180, 70, 70))
-        private val COLOR_GRAY = JBColor(Gray._208, Gray._85)
-        private val COLOR_PROGRESS_BACKGROUND = JBColor(Gray._220, Gray._95)
-        private val COLOR_TEXT = JBColor(Gray._60, Gray._210)
 
         private fun describeWindowLabel(window: UsageWindow, fallbackLabel: String): String {
             val minutes = window.windowDuration?.inWholeMinutes ?: return "$fallbackLabel limit"
