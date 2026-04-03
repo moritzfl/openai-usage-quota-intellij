@@ -12,7 +12,7 @@ An IntelliJ plugin that tracks OpenAI Codex and Code Review usage quotas across 
 
 Install from JetBrains Marketplace: [OpenAI Usage Quota](https://plugins.jetbrains.com/plugin/30690-openai-usage-quota)
 
-![Quota popup](docs/quota-popup-go.png)
+![Quota popup](docs/quota-popup.png)
 
 ## What It Does
 
@@ -77,21 +77,17 @@ Logout is available in the same settings page.
 
 ### Quota Popup
 
-![Quota popup Go](docs/quota-popup-go.png)
+![Quota popup](docs/quota-popup.png)
 
 ![Quota popup Go - limit reached](docs/quota-popup-go-limit-reached.png)
 
-![Quota popup Plus](docs/quota-popup-plus.png)
-
 ### Status bar
 
-![quota-statusbar-modes.png](docs/quota-statusbar-modes.png)
+![Status bar icon only](docs/quota-statusbar-icon.png)
 
-![quota-icon-only.png](docs/quota-icon-only.png)
+![Status bar cake icon](docs/quota-statusbar-cake.png)
 
-![quota-cake.png](docs/quota-cake.png)
-
-![quota-percentage-bar.png](docs/quota-percentage-bar.png)
+![Status bar percentage](docs/quota-statusbar-percentage.png)
 
 ### Chat (MCP integration)
 
@@ -99,7 +95,7 @@ Logout is available in the same settings page.
 
 ### Settings
 
-![Settings](docs/settings.png)
+![Settings](docs/quota-settings.png)
 
 ## How It Works
 
