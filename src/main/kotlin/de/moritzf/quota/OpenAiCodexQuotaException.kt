@@ -1,0 +1,8 @@
+package de.moritzf.quota
+
+import java.io.IOException
+
+/**
+ * Signals a quota API request or response error with the associated HTTP status code.
+ */
+class OpenAiCodexQuotaException(message: String, val statusCode: Int) : IOException(message)

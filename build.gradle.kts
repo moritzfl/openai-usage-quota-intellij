@@ -2,8 +2,8 @@ import org.jetbrains.changelog.Changelog
 import org.jetbrains.intellij.platform.gradle.TestFrameworkType
 
 plugins {
-    id("java") // Java support
     alias(libs.plugins.kotlin.jvm) // Kotlin support
+    alias(libs.plugins.kotlin.serialization) // Kotlin serialization
     alias(libs.plugins.intelliJPlatform) // IntelliJ Platform Gradle Plugin
     alias(libs.plugins.changelog) // Gradle Changelog Plugin
     alias(libs.plugins.kover) // Gradle Kover Plugin
@@ -29,10 +29,10 @@ repositories {
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/version_catalogs.html
 dependencies {
-    implementation(libs.jackson.databind)
-    testImplementation(libs.junit)
-    testImplementation(libs.opentest4j)
-    testImplementation(libs.junit.jupiter)
+    implementation(libs.kotlinx.datetime)
+    implementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.kotlin.test.junit5)
+    testRuntimeOnly(libs.junit4)
     testRuntimeOnly(libs.junit.platform.launcher)
 
     // IntelliJ Platform Gradle Plugin Dependencies Extension - read more: https://plugins.jetbrains.com/docs/intellij/tools-intellij-platform-gradle-plugin-dependencies-extension.html
