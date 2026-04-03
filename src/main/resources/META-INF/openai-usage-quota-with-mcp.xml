@@ -1,0 +1,5 @@
+<idea-plugin>
+    <extensions defaultExtensionNs="com.intellij">
+        <mcpServer.mcpToolset implementation="de.moritzf.quota.idea.mcp.OpenAiUsageQuotaMcpToolset"/>
+    </extensions>
+</idea-plugin>
