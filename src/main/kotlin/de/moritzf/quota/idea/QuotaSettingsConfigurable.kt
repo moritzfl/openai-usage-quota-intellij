@@ -1,11 +1,15 @@
 package de.moritzf.quota.idea
 
+import com.intellij.lang.Language
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
+import com.intellij.openapi.fileTypes.PlainTextFileType
 import com.intellij.openapi.options.Configurable
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.Messages
+import com.intellij.ui.EditorTextField
+import com.intellij.ui.LanguageTextField
 import com.intellij.ui.components.*
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.RightGap
@@ -17,15 +21,17 @@ import com.intellij.util.ui.components.BorderLayoutPanel
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.SwingConstants
+import java.awt.Dimension
 
 /**
  * Settings UI that manages authentication actions and shows latest quota payload data.
  */
 class QuotaSettingsConfigurable : Configurable {
+    private var rootComponent: JComponent? = null
     private var panel: DialogPanel? = null
     private var accountIdField: JBTextField? = null
     private var emailField: JBTextField? = null
-    private var responseArea: JBTextArea? = null
+    private var responseViewer: EditorTextField? = null
     private var loginHeaderLabel: JBLabel? = null
     private var statusLabel: JBLabel? = null
     private var displayModeComboBox: ComboBox<QuotaDisplayMode>? = null
@@ -40,10 +46,7 @@ class QuotaSettingsConfigurable : Configurable {
     override fun createComponent(): JComponent? {
         accountIdField = JBTextField().apply { isEditable = false }
         emailField = JBTextField().apply { isEditable = false }
-        responseArea = JBTextArea().apply {
-            isEditable = false
-            lineWrap = false
-        }
+        responseViewer = createResponseViewer()
         loginHeaderLabel = JBLabel()
         statusLabel = JBLabel()
         displayModeComboBox = ComboBox(QuotaDisplayMode.entries.toTypedArray())
@@ -101,11 +104,6 @@ class QuotaSettingsConfigurable : Configurable {
             QuotaUsageService.getInstance().refreshNowAsync()
         }
 
-        val responseScroll = JBScrollPane(responseArea).apply {
-            horizontalScrollBarPolicy = JBScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED
-            verticalScrollBarPolicy = JBScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-        }
-
         panel = panel {
             row("Status bar display:") {
                 cell(displayModeComboBox!!)
@@ -138,15 +136,6 @@ class QuotaSettingsConfigurable : Configurable {
 
             separator()
 
-            row {
-                label("Last quota response (JSON):")
-            }
-            row {
-                scrollCell(responseScroll)
-                    .resizableColumn()
-                    .align(AlignX.FILL)
-            }.resizableRow()
-
             onApply {
                 val selected = displayModeComboBox?.selectedItem as? QuotaDisplayMode ?: return@onApply
                 val state = QuotaSettingsState.getInstance()
@@ -175,20 +164,37 @@ class QuotaSettingsConfigurable : Configurable {
             preferredFocusedComponent = displayModeComboBox
         }
 
+        rootComponent = BorderLayoutPanel().apply {
+            isOpaque = false
+            addToTop(panel!!)
+            addToCenter(
+                BorderLayoutPanel().apply {
+                    isOpaque = false
+                    border = JBUI.Borders.emptyTop(8)
+                    addToTop(
+                        JBLabel("Last quota response (JSON):").apply {
+                            border = JBUI.Borders.emptyBottom(6)
+                        },
+                    )
+                    addToCenter(responseViewer!!)
+                },
+            )
+        }
+
         connection = ApplicationManager.getApplication().messageBus.connect()
         connection!!.subscribe(QuotaUsageListener.TOPIC, QuotaUsageListener { _, _ ->
-            val currentPanel = panel ?: return@QuotaUsageListener
-            ApplicationManager.getApplication().invokeLater({
-                if (panel == null || responseArea == null || accountIdField == null || emailField == null) {
-                    return@invokeLater
-                }
-                updateAccountFields()
-                updateResponseArea()
-            }, ModalityState.stateForComponent(currentPanel))
+                val currentPanel = rootComponent ?: panel ?: return@QuotaUsageListener
+                ApplicationManager.getApplication().invokeLater({
+                    if ((rootComponent == null && panel == null) || responseViewer == null || accountIdField == null || emailField == null) {
+                        return@invokeLater
+                    }
+                    updateAccountFields()
+                    updateResponseArea()
+                }, ModalityState.stateForComponent(currentPanel))
         })
 
         reset()
-        return panel
+        return rootComponent
     }
 
     override fun isModified(): Boolean {
@@ -206,10 +212,11 @@ class QuotaSettingsConfigurable : Configurable {
     override fun disposeUIResources() {
         connection?.disconnect()
         connection = null
+        rootComponent = null
         panel = null
         accountIdField = null
         emailField = null
-        responseArea = null
+        responseViewer = null
         loginHeaderLabel = null
         statusLabel = null
         displayModeComboBox = null
@@ -232,10 +239,40 @@ class QuotaSettingsConfigurable : Configurable {
     }
 
     private fun updateResponseArea() {
-        val area = responseArea ?: return
+        val area = responseViewer ?: return
         val json = QuotaUsageService.getInstance().getLastResponseJson()
         area.text = if (json.isNullOrBlank()) "No quota response yet." else json
-        area.caretPosition = 0
+        area.setCaretPosition(0)
+    }
+
+    private fun createResponseViewer(): EditorTextField {
+        val jsonLanguage = Language.findLanguageByID("JSON")
+        val viewer = if (jsonLanguage != null) {
+            LanguageTextField(jsonLanguage, null, "", false)
+        } else {
+            EditorTextField("", null, PlainTextFileType.INSTANCE)
+        }
+
+        return viewer.apply {
+            setOneLineMode(false)
+            isViewer = true
+            setFontInheritedFromLAF(false)
+            preferredSize = Dimension(1, JBUI.scale(220))
+            minimumSize = Dimension(1, JBUI.scale(120))
+            addSettingsProvider { editor ->
+                editor.settings.apply {
+                    isLineNumbersShown = false
+                    isFoldingOutlineShown = false
+                    isLineMarkerAreaShown = false
+                    isIndentGuidesShown = false
+                    additionalLinesCount = 0
+                    additionalColumnsCount = 0
+                    isRightMarginShown = false
+                }
+                editor.setHorizontalScrollbarVisible(true)
+                editor.setVerticalScrollbarVisible(true)
+            }
+        }
     }
 
     private fun updateAccountFields() {
