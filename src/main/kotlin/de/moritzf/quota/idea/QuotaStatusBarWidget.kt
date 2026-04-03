@@ -405,8 +405,6 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
     }
 
     companion object {
-        private const val STATUS_MIN_WIDTH = 110
-
         private fun describeWindowLabel(window: UsageWindow, fallbackLabel: String): String {
             val minutes = window.windowDuration?.inWholeMinutes ?: return "$fallbackLabel limit"
             return when {
