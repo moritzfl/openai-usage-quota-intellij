@@ -42,6 +42,7 @@ class QuotaAuthService {
     private val tokenClient = OAuthTokenClient(httpClient, OAUTH_CONFIG)
     private val credentialsStore = OAuthCredentialsStore(SERVICE_NAME, USER_NAME)
     private val credentialsLock = Any()
+    private val refreshLock = Any()
     private val cachedCredentials = AtomicReference<OAuthCredentials?>()
     private val cacheLoading = AtomicBoolean(false)
     private val authInProgress = AtomicBoolean(false)
@@ -108,7 +109,7 @@ class QuotaAuthService {
     fun getAccessTokenBlocking(): String? {
         var credentials = getCredentialsBlocking() ?: return null
         if (isExpired(credentials)) {
-            credentials = refreshCredentialsBlocking(credentials) ?: return null
+            credentials = refreshCredentialsBlocking() ?: return null
         }
         return credentials.accessToken
     }
@@ -196,17 +197,24 @@ class QuotaAuthService {
         credentialsStore.save(credentials)
     }
 
-    private fun refreshCredentialsBlocking(existing: OAuthCredentials): OAuthCredentials? {
-        val clearMarker = currentCredentialClearMarker()
-        return try {
-            val refreshed = runBlocking {
-                tokenClient.refreshCredentials(existing)
+    private fun refreshCredentialsBlocking(): OAuthCredentials? {
+        synchronized(refreshLock) {
+            val latestCredentials = getCredentialsBlocking() ?: return null
+            if (!isExpired(latestCredentials)) {
+                return latestCredentials
             }
-            persistCredentialsIfCurrent(clearMarker, refreshed, "refresh")
-        } catch (exception: Exception) {
-            LOG.warn("Token refresh failed", exception)
-            clearCredentials()
-            null
+
+            val clearMarker = currentCredentialClearMarker()
+            return try {
+                val refreshed = runBlocking {
+                    tokenClient.refreshCredentials(latestCredentials)
+                }
+                persistCredentialsIfCurrent(clearMarker, refreshed, "refresh")
+            } catch (exception: Exception) {
+                LOG.warn("Token refresh failed", exception)
+                clearCredentialsIfUnchanged(latestCredentials)
+                null
+            }
         }
     }
 
@@ -231,6 +239,19 @@ class QuotaAuthService {
             cachedCredentials.set(credentials)
             return credentials
         }
+    }
+
+    private fun clearCredentialsIfUnchanged(expected: OAuthCredentials) {
+        synchronized(credentialsLock) {
+            if (!sameCredentials(cachedCredentials.get(), expected)) {
+                LOG.info("Skipped clearing OAuth credentials after refresh failure because credentials changed")
+                return
+            }
+            credentialClearCounter.incrementAndGet()
+            cachedCredentials.set(null)
+            credentialsStore.clear()
+        }
+        LOG.info("Cleared stored OAuth credentials after refresh failure")
     }
 
     fun dispose() {
@@ -267,6 +288,16 @@ class QuotaAuthService {
 
         private fun isExpired(credentials: OAuthCredentials): Boolean {
             return System.currentTimeMillis() >= credentials.expiresAt - 5.minutes.inWholeMilliseconds
+        }
+
+        private fun sameCredentials(left: OAuthCredentials?, right: OAuthCredentials?): Boolean {
+            if (left == null || right == null) {
+                return left == right
+            }
+            return left.accessToken == right.accessToken &&
+                left.refreshToken == right.refreshToken &&
+                left.expiresAt == right.expiresAt &&
+                left.accountId == right.accountId
         }
     }
 }
