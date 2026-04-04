@@ -1,6 +1,7 @@
 package de.moritzf.quota.idea
 
 import com.intellij.ide.BrowserUtil
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
@@ -29,7 +30,7 @@ import kotlin.time.Duration.Companion.minutes
  * Coordinates OAuth login, credential storage, and token refresh for quota requests.
  */
 @Service(Service.Level.APP)
-class QuotaAuthService {
+class QuotaAuthService : Disposable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val httpClient = HttpClient(CIO) {
         expectSuccess = false
@@ -254,7 +255,7 @@ class QuotaAuthService {
         LOG.info("Cleared stored OAuth credentials after refresh failure")
     }
 
-    fun dispose() {
+    override fun dispose() {
         scope.cancel()
         httpClient.close()
     }
