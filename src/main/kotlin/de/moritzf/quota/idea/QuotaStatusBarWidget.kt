@@ -86,8 +86,9 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         }
 
         QuotaUsageService.getInstance().refreshNowAsync()
-        val content = buildPopupContent()
-        val popup: JBPopup = JBPopupFactory.getInstance()
+        var popup: JBPopup? = null
+        val content = buildPopupContent { openSettings { popup?.cancel() } }
+        popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(content, content)
             .setRequestFocus(true)
             .setFocusable(true)
@@ -114,7 +115,7 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         return "OpenAI usage quota: ${clampPercent(primary.usedPercent.roundToInt())}% used"
     }
 
-    private fun buildPopupContent(): JComponent {
+    private fun buildPopupContent(onOpenSettings: () -> Unit): JComponent {
         val currentQuota = quota
         val hasReviewData = currentQuota != null && (
                 currentQuota.reviewPrimary != null || currentQuota.reviewSecondary != null ||
@@ -122,7 +123,7 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
                 )
 
         val content = createPopupStack().apply {
-            add(createHeaderRow())
+            add(createHeaderRow(onOpenSettings))
 
             val planLabel = quota?.planType?.toDisplayLabel()
             if (!planLabel.isNullOrBlank()) {
@@ -135,12 +136,12 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
             when {
                 !authService.isLoggedIn() -> {
                     add(withVerticalInsets(JBLabel("Not logged in."), top = 1))
-                    add(withVerticalInsets(ActionLink("Open Settings") { openSettings() }, top = 3))
+                    add(withVerticalInsets(ActionLink("Open Settings") { onOpenSettings() }, top = 3))
                 }
 
                 error != null -> {
                     add(withVerticalInsets(createWarningLabel("Error: $error"), top = 1))
-                    add(withVerticalInsets(ActionLink("Open Settings") { openSettings() }, top = 3))
+                    add(withVerticalInsets(ActionLink("Open Settings") { onOpenSettings() }, top = 3))
                 }
 
                 currentQuota == null -> {
@@ -179,8 +180,8 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         return content
     }
 
-    private fun createOpenSettingsButton(): ActionLink {
-        return ActionLink("") { openSettings() }.apply {
+    private fun createOpenSettingsButton(onOpenSettings: () -> Unit): ActionLink {
+        return ActionLink("") { onOpenSettings() }.apply {
             icon = AllIcons.General.Settings
             autoHideOnDisable = false
             toolTipText = "Open settings"
@@ -200,11 +201,11 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         }
     }
 
-    private fun createHeaderRow(): JComponent {
+    private fun createHeaderRow(onOpenSettings: () -> Unit): JComponent {
         return BorderLayoutPanel().apply {
             isOpaque = false
             addToLeft(createPopupTitleLabel("OpenAI usage"))
-            addToRight(createOpenSettingsButton())
+            addToRight(createOpenSettingsButton(onOpenSettings))
         }
     }
 
@@ -237,7 +238,7 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         }
     }
 
-    private fun openSettings() {
+    private fun openSettings(beforeOpen: () -> Unit = {}) {
         if (project.isDisposed) {
             return
         }
@@ -245,7 +246,10 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         val modality = statusBar?.component?.let { ModalityState.stateForComponent(it) }
             ?: ModalityState.defaultModalityState()
         ApplicationManager.getApplication().invokeLater(
-            { ShowSettingsUtil.getInstance().showSettingsDialog(project, QuotaSettingsConfigurable::class.java) },
+            {
+                beforeOpen()
+                ShowSettingsUtil.getInstance().showSettingsDialog(project, QuotaSettingsConfigurable::class.java)
+            },
             modality,
         )
     }
