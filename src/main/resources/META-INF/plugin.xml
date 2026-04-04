@@ -14,6 +14,7 @@
         <applicationConfigurable
                 id="openai.usage.quota.settings"
                 displayName="OpenAI Usage Quota"
+                parentId="tools"
                 instance="de.moritzf.quota.idea.QuotaSettingsConfigurable"/>
         <statusBarWidgetFactory implementation="de.moritzf.quota.idea.QuotaStatusBarWidgetFactory" id="openai.usage.quota.widget"/>
     </extensions>
