@@ -14,6 +14,7 @@ import com.intellij.ui.components.*
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
+import com.intellij.ui.JBColor
 import com.intellij.util.IconUtil
 import com.intellij.util.messages.MessageBusConnection
 import com.intellij.util.ui.JBUI
@@ -21,6 +22,8 @@ import com.intellij.util.ui.components.BorderLayoutPanel
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.SwingConstants
+import javax.swing.UIManager
+import java.awt.Color
 import java.awt.Dimension
 
 /**
@@ -34,6 +37,8 @@ class QuotaSettingsConfigurable : Configurable {
     private var responseViewer: EditorTextField? = null
     private var loginHeaderLabel: JBLabel? = null
     private var statusLabel: JBLabel? = null
+    private var statusLabelDefaultForeground: Color? = null
+    private var authStatusMessage: AuthStatusMessage? = null
     private var displayModeComboBox: ComboBox<QuotaDisplayMode>? = null
     private var displayModePreview: DisplayModePreviewComponent? = null
     private var loginButton: ActionLink? = null
@@ -48,7 +53,8 @@ class QuotaSettingsConfigurable : Configurable {
         emailField = JBTextField().apply { isEditable = false }
         responseViewer = createResponseViewer()
         loginHeaderLabel = JBLabel()
-        statusLabel = JBLabel()
+        statusLabel = JBLabel().apply { isVisible = false }
+        statusLabelDefaultForeground = statusLabel!!.foreground ?: UIManager.getColor("Label.foreground")
         displayModeComboBox = ComboBox(QuotaDisplayMode.entries.toTypedArray())
         displayModePreview = DisplayModePreviewComponent()
         loginButton = createActionLink("Log In")
@@ -67,7 +73,7 @@ class QuotaSettingsConfigurable : Configurable {
             }
 
             loginButton!!.isEnabled = false
-            statusLabel!!.text = "Opening browser..."
+            setStatusMessage("Opening browser...")
             authService.startLoginFlow { result ->
                 val currentPanel = panel ?: return@startLoginFlow
                 ApplicationManager.getApplication().invokeLater({
@@ -76,12 +82,15 @@ class QuotaSettingsConfigurable : Configurable {
                     }
 
                     if (result.success) {
-                        statusLabel!!.text = "Logged in"
+                        setStatusMessage("Logged in")
                         QuotaUsageService.getInstance().refreshNowAsync()
                     } else {
                         val message = result.message ?: "Login failed"
-                        statusLabel!!.text = "Login failed"
-                        Messages.showErrorDialog(currentPanel, message, "OpenAI Login")
+                        val benignFailure = message == "Login canceled" || message == "Logged out"
+                        setStatusMessage(if (benignFailure) message else "Login failed", isError = !benignFailure)
+                        if (!benignFailure) {
+                            Messages.showErrorDialog(currentPanel, message, "OpenAI Login")
+                        }
                     }
                     loginButton!!.isEnabled = true
                     updateAuthUi()
@@ -93,12 +102,13 @@ class QuotaSettingsConfigurable : Configurable {
 
         cancelLoginButton!!.addActionListener {
             val aborted = QuotaAuthService.getInstance().abortLogin("Login canceled")
-            statusLabel!!.text = if (aborted) "Login canceled" else "No login in progress"
+            setStatusMessage(if (aborted) "Login canceled" else "No login in progress")
             updateAuthUi()
         }
 
         logoutButton!!.addActionListener {
             QuotaAuthService.getInstance().clearCredentials()
+            setStatusMessage("Logged out")
             updateAuthUi()
             updateAccountFields()
             QuotaUsageService.getInstance().refreshNowAsync()
@@ -119,6 +129,11 @@ class QuotaSettingsConfigurable : Configurable {
                 cell(loginButton!!).gap(RightGap.SMALL)
                 cell(cancelLoginButton!!).gap(RightGap.SMALL)
                 cell(logoutButton!!)
+            }
+            row {
+                cell(statusLabel!!)
+                    .resizableColumn()
+                    .align(AlignX.FILL)
             }
 
             separator()
@@ -149,6 +164,7 @@ class QuotaSettingsConfigurable : Configurable {
             }
 
             onReset {
+                authStatusMessage = null
                 displayModeComboBox?.selectedItem = QuotaSettingsState.getInstance().displayMode()
                 updateDisplayModePreview()
                 updateAuthUi()
@@ -219,6 +235,8 @@ class QuotaSettingsConfigurable : Configurable {
         responseViewer = null
         loginHeaderLabel = null
         statusLabel = null
+        statusLabelDefaultForeground = null
+        authStatusMessage = null
         displayModeComboBox = null
         displayModePreview = null
         loginButton = null
@@ -230,12 +248,23 @@ class QuotaSettingsConfigurable : Configurable {
         val authService = QuotaAuthService.getInstance()
         val loggedIn = authService.isLoggedIn()
         val inProgress = authService.isLoginInProgress()
-        val statusText = if (loggedIn) "Logged in" else "Not logged in"
-        loginHeaderLabel?.text = "Login ($statusText)"
-        statusLabel?.text = statusText
-        loginButton?.isEnabled = !inProgress && !loggedIn
-        cancelLoginButton?.isEnabled = inProgress
-        logoutButton?.isEnabled = loggedIn
+        val uiState = QuotaSettingsAuthUiState.create(loggedIn, inProgress, authStatusMessage)
+        loginHeaderLabel?.text = uiState.headerText
+        loginButton?.isEnabled = uiState.loginEnabled
+        cancelLoginButton?.isEnabled = uiState.cancelEnabled
+        logoutButton?.isEnabled = uiState.logoutEnabled
+        renderStatusMessage(uiState.visibleStatusMessage)
+    }
+
+    private fun setStatusMessage(text: String, isError: Boolean = false) {
+        authStatusMessage = AuthStatusMessage(text, isError)
+    }
+
+    private fun renderStatusMessage(message: AuthStatusMessage?) {
+        val label = statusLabel ?: return
+        label.text = message?.text.orEmpty()
+        label.foreground = if (message?.isError == true) JBColor.RED else statusLabelDefaultForeground ?: label.foreground
+        label.isVisible = !message?.text.isNullOrBlank()
     }
 
     private fun updateResponseArea() {
@@ -349,6 +378,41 @@ class QuotaSettingsConfigurable : Configurable {
             val widthScale = targetWidth / iconWidth.toFloat()
             val heightScale = targetHeight / iconHeight.toFloat()
             return IconUtil.scale(cakeIcon, component, minOf(widthScale, heightScale))
+        }
+    }
+}
+
+internal data class AuthStatusMessage(
+    val text: String,
+    val isError: Boolean = false,
+)
+
+internal data class QuotaSettingsAuthUiState(
+    val headerText: String,
+    val visibleStatusMessage: AuthStatusMessage?,
+    val loginEnabled: Boolean,
+    val cancelEnabled: Boolean,
+    val logoutEnabled: Boolean,
+) {
+    companion object {
+        fun create(loggedIn: Boolean, inProgress: Boolean, statusMessage: AuthStatusMessage?): QuotaSettingsAuthUiState {
+            val stateText = when {
+                inProgress -> "In progress"
+                loggedIn -> "Logged in"
+                else -> "Not logged in"
+            }
+            val visibleStatusMessage = statusMessage ?: if (inProgress) {
+                AuthStatusMessage("Complete the login in your browser.")
+            } else {
+                null
+            }
+            return QuotaSettingsAuthUiState(
+                headerText = "Login ($stateText)",
+                visibleStatusMessage = visibleStatusMessage,
+                loginEnabled = !inProgress && !loggedIn,
+                cancelEnabled = inProgress,
+                logoutEnabled = loggedIn,
+            )
         }
     }
 }
