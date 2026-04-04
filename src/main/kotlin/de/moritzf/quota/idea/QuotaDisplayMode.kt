@@ -12,6 +12,19 @@ enum class QuotaDisplayMode(private val displayName: String) {
 
     companion object {
         @JvmStatic
+        fun supportedFor(location: QuotaIndicatorLocation): List<QuotaDisplayMode> {
+            return when (location) {
+                QuotaIndicatorLocation.STATUS_BAR -> entries
+                QuotaIndicatorLocation.MAIN_TOOLBAR -> listOf(ICON_ONLY, CAKE_DIAGRAM)
+            }
+        }
+
+        @JvmStatic
+        fun sanitizeFor(location: QuotaIndicatorLocation, displayMode: QuotaDisplayMode): QuotaDisplayMode {
+            return if (displayMode in supportedFor(location)) displayMode else ICON_ONLY
+        }
+
+        @JvmStatic
         fun fromStorageValue(value: String?): QuotaDisplayMode {
             if (value.isNullOrBlank()) {
                 return ICON_ONLY

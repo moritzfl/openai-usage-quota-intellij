@@ -46,6 +46,7 @@ class QuotaSettingsConfigurable : Configurable {
     private var cancelLoginButton: ActionLink? = null
     private var logoutButton: ActionLink? = null
     private var connection: MessageBusConnection? = null
+    private var updatingDisplayModeChoices: Boolean = false
 
     override fun getDisplayName(): String = "OpenAI Usage Quota"
 
@@ -63,7 +64,15 @@ class QuotaSettingsConfigurable : Configurable {
         cancelLoginButton = createActionLink("Cancel Login")
         logoutButton = createActionLink("Log Out")
 
+        locationComboBox!!.addActionListener {
+            updateDisplayModeChoices()
+            updateDisplayModePreview()
+        }
+
         displayModeComboBox!!.addActionListener {
+            if (updatingDisplayModeChoices) {
+                return@addActionListener
+            }
             updateDisplayModePreview()
         }
 
@@ -160,14 +169,15 @@ class QuotaSettingsConfigurable : Configurable {
             onApply {
                 val selectedLocation = locationComboBox?.selectedItem as? QuotaIndicatorLocation ?: return@onApply
                 val selectedDisplayMode = displayModeComboBox?.selectedItem as? QuotaDisplayMode ?: return@onApply
+                val sanitizedDisplayMode = QuotaDisplayMode.sanitizeFor(selectedLocation, selectedDisplayMode)
                 val state = QuotaSettingsState.getInstance()
                 val locationChanged = selectedLocation != state.location()
-                val displayModeChanged = selectedDisplayMode != state.displayMode()
+                val displayModeChanged = sanitizedDisplayMode != state.displayMode()
                 if (locationChanged) {
                     state.setLocation(selectedLocation)
                 }
                 if (displayModeChanged) {
-                    state.setDisplayMode(selectedDisplayMode)
+                    state.setDisplayMode(sanitizedDisplayMode)
                 }
                 if (locationChanged || displayModeChanged) {
                     ApplicationManager.getApplication().messageBus
@@ -180,7 +190,7 @@ class QuotaSettingsConfigurable : Configurable {
             onReset {
                 authStatusMessage = null
                 locationComboBox?.selectedItem = QuotaSettingsState.getInstance().location()
-                displayModeComboBox?.selectedItem = QuotaSettingsState.getInstance().displayMode()
+                updateDisplayModeChoices(QuotaSettingsState.getInstance().displayMode())
                 updateDisplayModePreview()
                 updateAuthUi()
                 updateAccountFields()
@@ -191,7 +201,8 @@ class QuotaSettingsConfigurable : Configurable {
                 val selectedLocation = locationComboBox?.selectedItem as? QuotaIndicatorLocation ?: return@onIsModified false
                 val selectedDisplayMode = displayModeComboBox?.selectedItem as? QuotaDisplayMode ?: return@onIsModified false
                 val state = QuotaSettingsState.getInstance()
-                selectedLocation != state.location() || selectedDisplayMode != state.displayMode()
+                selectedLocation != state.location() ||
+                    QuotaDisplayMode.sanitizeFor(selectedLocation, selectedDisplayMode) != state.displayMode()
             }
         }.apply {
             preferredFocusedComponent = locationComboBox
@@ -260,6 +271,22 @@ class QuotaSettingsConfigurable : Configurable {
         loginButton = null
         cancelLoginButton = null
         logoutButton = null
+        updatingDisplayModeChoices = false
+    }
+
+    private fun updateDisplayModeChoices(preferredMode: QuotaDisplayMode? = null) {
+        val combo = displayModeComboBox ?: return
+        val location = locationComboBox?.selectedItem as? QuotaIndicatorLocation ?: return
+        val selectedMode = preferredMode ?: combo.selectedItem as? QuotaDisplayMode ?: QuotaSettingsState.getInstance().displayMode()
+        val sanitizedMode = QuotaDisplayMode.sanitizeFor(location, selectedMode)
+        updatingDisplayModeChoices = true
+        try {
+            combo.removeAllItems()
+            QuotaDisplayMode.supportedFor(location).forEach(combo::addItem)
+            combo.selectedItem = sanitizedMode
+        } finally {
+            updatingDisplayModeChoices = false
+        }
     }
 
     private fun updateAuthUi() {

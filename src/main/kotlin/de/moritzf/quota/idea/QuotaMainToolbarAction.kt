@@ -38,7 +38,10 @@ class QuotaMainToolbarAction : AnAction(), CustomComponentAction, RightAlignedTo
         component.updateUsage(
             quota = QuotaUsageService.getInstance().getLastQuota(),
             error = QuotaUsageService.getInstance().getLastError(),
-            displayMode = QuotaSettingsState.getInstance().displayMode(),
+            displayMode = QuotaDisplayMode.sanitizeFor(
+                QuotaIndicatorLocation.MAIN_TOOLBAR,
+                QuotaSettingsState.getInstance().displayMode(),
+            ),
         )
     }
 
