@@ -41,6 +41,7 @@ class QuotaAuthService {
     }
     private val tokenClient = OAuthTokenClient(httpClient, OAUTH_CONFIG)
     private val credentialsStore = OAuthCredentialsStore(SERVICE_NAME, USER_NAME)
+    private val credentialsLock = Any()
     private val cachedCredentials = AtomicReference<OAuthCredentials?>()
     private val cacheLoading = AtomicBoolean(false)
     private val authInProgress = AtomicBoolean(false)
@@ -87,10 +88,12 @@ class QuotaAuthService {
     }
 
     fun clearCredentials() {
-        credentialClearCounter.incrementAndGet()
         abortLogin("Logged out")
-        cachedCredentials.set(null)
-        credentialsStore.clear()
+        synchronized(credentialsLock) {
+            credentialClearCounter.incrementAndGet()
+            cachedCredentials.set(null)
+            credentialsStore.clear()
+        }
         LOG.info("Cleared stored OAuth credentials")
     }
 
@@ -150,9 +153,11 @@ class QuotaAuthService {
             return LoginResult.error("No authorization code received")
         }
 
+        val clearMarker = currentCredentialClearMarker()
         val credentials = tokenClient.exchangeAuthorizationCode(callback.code, flow.codeVerifier)
-        saveCredentials(credentials)
-        cachedCredentials.set(credentials)
+        if (persistCredentialsIfCurrent(clearMarker, credentials, "login") == null) {
+            return LoginResult.error("Login canceled")
+        }
         return LoginResult.success()
     }
 
@@ -175,14 +180,16 @@ class QuotaAuthService {
     }
 
     private fun getCredentialsBlocking(): OAuthCredentials? {
-        val clearMarker = credentialClearCounter.get()
+        val clearMarker = currentCredentialClearMarker()
         val credentials = credentialsStore.load()
-        if (credentialClearCounter.get() != clearMarker) {
-            cachedCredentials.set(null)
-            return null
+        synchronized(credentialsLock) {
+            if (credentialClearCounter.get() != clearMarker) {
+                cachedCredentials.set(null)
+                return null
+            }
+            cachedCredentials.set(credentials)
+            return credentials
         }
-        cachedCredentials.set(credentials)
-        return credentials
     }
 
     private fun saveCredentials(credentials: OAuthCredentials) {
@@ -190,17 +197,39 @@ class QuotaAuthService {
     }
 
     private fun refreshCredentialsBlocking(existing: OAuthCredentials): OAuthCredentials? {
+        val clearMarker = currentCredentialClearMarker()
         return try {
-            runBlocking {
+            val refreshed = runBlocking {
                 tokenClient.refreshCredentials(existing)
-            }.also { refreshed ->
-                saveCredentials(refreshed)
-                cachedCredentials.set(refreshed)
             }
+            persistCredentialsIfCurrent(clearMarker, refreshed, "refresh")
         } catch (exception: Exception) {
             LOG.warn("Token refresh failed", exception)
             clearCredentials()
             null
+        }
+    }
+
+    private fun currentCredentialClearMarker(): Long {
+        return synchronized(credentialsLock) {
+            credentialClearCounter.get()
+        }
+    }
+
+    private fun persistCredentialsIfCurrent(
+        clearMarker: Long,
+        credentials: OAuthCredentials,
+        operation: String,
+    ): OAuthCredentials? {
+        synchronized(credentialsLock) {
+            if (credentialClearCounter.get() != clearMarker) {
+                cachedCredentials.set(null)
+                LOG.info("Discarded OAuth credentials from $operation after logout")
+                return null
+            }
+            saveCredentials(credentials)
+            cachedCredentials.set(credentials)
+            return credentials
         }
     }
 
