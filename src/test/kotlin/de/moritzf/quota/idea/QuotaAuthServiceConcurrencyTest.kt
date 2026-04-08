@@ -4,11 +4,10 @@ import de.moritzf.quota.idea.auth.OAuthClientConfig
 import de.moritzf.quota.idea.auth.OAuthCredentialStore
 import de.moritzf.quota.idea.auth.OAuthCredentials
 import de.moritzf.quota.idea.auth.OAuthTokenOperations
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import java.net.http.HttpClient
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -102,7 +101,7 @@ class QuotaAuthServiceConcurrencyTest {
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         return QuotaAuthService(
             scope = testScope,
-            httpClient = HttpClient(CIO),
+            httpClient = HttpClient.newHttpClient(),
             tokenOperations = tokenOperations,
             credentialStore = store,
             loginFlowStarter = { _: OAuthClientConfig -> error("Login flow should not be started in this test") },

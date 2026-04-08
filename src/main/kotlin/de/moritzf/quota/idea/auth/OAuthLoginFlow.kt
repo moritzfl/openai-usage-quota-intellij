@@ -1,18 +1,10 @@
 package de.moritzf.quota.idea.auth
 
 import com.intellij.openapi.diagnostic.Logger
-import io.ktor.server.application.Application
-import io.ktor.http.ContentType
-import io.ktor.http.HttpStatusCode
-import io.ktor.server.cio.CIO
-import io.ktor.server.engine.EmbeddedServer
-import io.ktor.server.engine.embeddedServer
-import io.ktor.server.request.host
-import io.ktor.server.request.queryString
-import io.ktor.server.response.respondText
-import io.ktor.server.routing.get
-import io.ktor.server.routing.routing
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -21,9 +13,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.intellij.lang.annotations.Language
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.concurrent.Executors
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -36,9 +31,16 @@ class OAuthLoginFlow private constructor(
     private val state: String,
     val authorizationUrl: String,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val callbackDeferred = CompletableDeferred<OAuthCallbackResult>()
-    private var server: EmbeddedServer<*, *>? = null
+    private val exceptionHandler = CoroutineExceptionHandler { _, exception ->
+        LOG.warn("OAuth server coroutine failed", exception)
+        if (!callbackDeferred.isCompleted) {
+            val details = exception.message?.takeIf { it.isNotBlank() } ?: exception::class.java.simpleName
+            callbackDeferred.complete(OAuthCallbackResult(error = "Login server failed: $details"))
+        }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
+    private var server: HttpServer? = null
 
     suspend fun waitForCallback(): OAuthCallbackResult {
         return try {
@@ -63,24 +65,17 @@ class OAuthLoginFlow private constructor(
 
     private fun startServer() {
         try {
-            val module: Application.() -> Unit = {
-                routing {
-                    get("/auth/ping") {
-                        call.respondText("OK")
-                    }
-                    get("/auth/callback") {
-                        handleCallback(
-                            remoteHost = call.request.host(),
-                            query = call.request.queryString(),
-                            respond = { status, responseText ->
-                                call.respondText(responseText, ContentType.Text.Html, status)
-                            },
-                        )
-                    }
-                }
+            val engine = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), config.callbackPort), 0)
+            engine.executor = Executors.newCachedThreadPool { runnable ->
+                Thread(runnable, "oauth-callback-server").apply { isDaemon = true }
             }
-            val engine = embeddedServer(CIO, host = "localhost", port = config.callbackPort, module = module)
-            engine.start(wait = false)
+            engine.createContext("/auth/ping") { exchange ->
+                handlePing(exchange)
+            }
+            engine.createContext("/auth/callback") { exchange ->
+                handleCallback(exchange)
+            }
+            engine.start()
             server = engine
         } catch (exception: Exception) {
             LOG.warn("Failed to bind OAuth callback server to ${config.redirectUri}", exception)
@@ -89,19 +84,28 @@ class OAuthLoginFlow private constructor(
         LOG.info("OAuth callback server started at ${config.redirectUri}")
     }
 
-    private suspend fun handleCallback(
-        remoteHost: String,
-        query: String,
-        respond: suspend (HttpStatusCode, String) -> Unit,
-    ) {
-        if (remoteHost !in setOf("127.0.0.1", "localhost", "::1")) {
-            LOG.warn("Rejected non-loopback callback from $remoteHost")
-            respond(HttpStatusCode.Forbidden, "")
+    private fun handlePing(exchange: HttpExchange) {
+        if (exchange.requestMethod != "GET") {
+            sendResponse(exchange, 405, "Method Not Allowed", "text/plain; charset=utf-8")
             return
         }
+        sendResponse(exchange, 200, "OK", "text/plain; charset=utf-8")
+    }
 
+    private fun handleCallback(exchange: HttpExchange) {
         val responseText = try {
-            val params = OAuthUrlCodec.parseQuery(query)
+            if (exchange.requestMethod != "GET") {
+                sendResponse(exchange, 405, "Method Not Allowed", "text/plain; charset=utf-8")
+                return
+            }
+            val remoteAddress = exchange.remoteAddress?.address
+            if (remoteAddress == null || !remoteAddress.isLoopbackAddress) {
+                LOG.warn("Rejected non-loopback callback from ${exchange.remoteAddress}")
+                sendResponse(exchange, 403, "", "text/plain; charset=utf-8")
+                return
+            }
+
+            val params = OAuthUrlCodec.parseQuery(exchange.requestURI.rawQuery)
             val error = params["error"]
             when {
                 error != null -> {
@@ -134,17 +138,36 @@ class OAuthLoginFlow private constructor(
             }
         } catch (exception: Exception) {
             LOG.warn("Callback handling failed", exception)
-            callbackDeferred.complete(OAuthCallbackResult(error = exception.message))
+            val details = exception.message?.takeIf { it.isNotBlank() } ?: "Internal callback handler error"
+            callbackDeferred.complete(OAuthCallbackResult(error = details))
             buildHtmlResponse("Authentication Failed", "Authentication failed.", false)
         }
 
-        respond(HttpStatusCode.OK, responseText)
+        sendResponse(exchange, 200, responseText, "text/html; charset=utf-8")
+    }
+
+    private fun sendResponse(exchange: HttpExchange, status: Int, body: String, contentType: String) {
+        try {
+            val bytes = body.toByteArray(Charsets.UTF_8)
+            exchange.responseHeaders.set("Content-Type", contentType)
+            exchange.sendResponseHeaders(status, bytes.size.toLong())
+            exchange.responseBody.use { output ->
+                output.write(bytes)
+            }
+        } finally {
+            exchange.close()
+        }
     }
 
     private fun stopServer() {
-        server?.stop(0, 0)
-        if (server != null) {
-            LOG.info("OAuth callback server stopped")
+        val currentServer = server
+        if (currentServer != null) {
+            try {
+                currentServer.stop(0)
+                LOG.info("OAuth callback server stopped")
+            } catch (exception: Exception) {
+                LOG.warn("Failed to stop OAuth callback server cleanly", exception)
+            }
         }
         server = null
         scope.cancel()

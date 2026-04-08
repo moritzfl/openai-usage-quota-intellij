@@ -4,15 +4,14 @@ import com.intellij.openapi.diagnostic.Logger
 import de.moritzf.quota.JsonSupport
 import de.moritzf.quota.dto.OAuthTokenResponseDto
 import de.moritzf.quota.idea.QuotaTokenUtil
-import io.ktor.client.HttpClient
-import io.ktor.client.call.body
-import io.ktor.client.request.forms.FormDataContent
-import io.ktor.client.request.post
-import io.ktor.client.request.setBody
-import io.ktor.client.statement.bodyAsText
-import io.ktor.http.Parameters
-import io.ktor.http.isSuccess
 import java.io.IOException
+import java.net.URI
+import java.net.URLEncoder
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.charset.StandardCharsets
+import java.time.Duration
 
 /**
  * Performs OAuth token exchange and refresh requests against the configured token endpoint.
@@ -24,17 +23,17 @@ class OAuthTokenClient(
     override suspend fun exchangeAuthorizationCode(code: String, codeVerifier: String): OAuthCredentials {
         LOG.info("Exchanging authorization code for tokens")
         val response = postForm(
-            Parameters.build {
-                append("grant_type", "authorization_code")
-                append("client_id", config.clientId)
-                append("code", code)
-                append("redirect_uri", config.redirectUri)
-                append("code_verifier", codeVerifier)
-            },
+            linkedMapOf(
+                "grant_type" to "authorization_code",
+                "client_id" to config.clientId,
+                "code" to code,
+                "redirect_uri" to config.redirectUri,
+                "code_verifier" to codeVerifier,
+            ),
         )
-        if (!response.status.isSuccess()) {
-            LOG.warn("Token exchange failed: ${response.status.value}")
-            throw IOException("Token exchange failed: ${response.status.value} ${response.bodyAsText()}")
+        if (response.statusCode() !in 200..299) {
+            LOG.warn("Token exchange failed: ${response.statusCode()}")
+            throw IOException("Token exchange failed: ${response.statusCode()} ${response.body()}")
         }
 
         val tokenResponse = parseResponse(response.body())
@@ -50,15 +49,15 @@ class OAuthTokenClient(
     override suspend fun refreshCredentials(existing: OAuthCredentials): OAuthCredentials {
         LOG.info("Refreshing OAuth token")
         val response = postForm(
-            Parameters.build {
-                append("grant_type", "refresh_token")
-                append("client_id", config.clientId)
-                append("refresh_token", existing.refreshToken.orEmpty())
-            },
+            linkedMapOf(
+                "grant_type" to "refresh_token",
+                "client_id" to config.clientId,
+                "refresh_token" to existing.refreshToken.orEmpty(),
+            ),
         )
-        if (!response.status.isSuccess()) {
-            LOG.warn("Token refresh failed: ${response.status.value}")
-            throw IOException("Token refresh failed: HTTP ${response.status.value}")
+        if (response.statusCode() !in 200..299) {
+            LOG.warn("Token refresh failed: ${response.statusCode()}")
+            throw IOException("Token refresh failed: HTTP ${response.statusCode()}")
         }
 
         val tokenResponse = parseResponse(response.body())
@@ -70,8 +69,16 @@ class OAuthTokenClient(
         }
     }
 
-    private suspend fun postForm(parameters: Parameters) = httpClient.post(config.tokenEndpoint) {
-        setBody(FormDataContent(parameters))
+    private fun postForm(parameters: Map<String, String>): HttpResponse<String> {
+        val body = formUrlEncode(parameters)
+        val request = HttpRequest.newBuilder()
+            .uri(URI.create(config.tokenEndpoint))
+            .timeout(Duration.ofSeconds(30))
+            .header("Content-Type", "application/x-www-form-urlencoded")
+            .header("Accept", "application/json")
+            .POST(HttpRequest.BodyPublishers.ofString(body))
+            .build()
+        return httpClient.send(request, HttpResponse.BodyHandlers.ofString())
     }
 
     private fun createCredentials(tokenResponse: OAuthTokenResponseDto): OAuthCredentials {
@@ -91,6 +98,16 @@ class OAuthTokenClient(
     private fun resolveAccountId(response: OAuthTokenResponseDto): String? {
         return QuotaTokenUtil.extractChatGptAccountId(response.idToken)
             ?: QuotaTokenUtil.extractChatGptAccountId(response.accessToken)
+    }
+
+    private fun formUrlEncode(parameters: Map<String, String>): String {
+        return parameters.entries.joinToString("&") { (key, value) ->
+            "${encode(key)}=${encode(value)}"
+        }
+    }
+
+    private fun encode(value: String): String {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8)
     }
 
     companion object {

@@ -12,16 +12,16 @@ import de.moritzf.quota.idea.auth.OAuthCredentialsStore
 import de.moritzf.quota.idea.auth.OAuthLoginFlow
 import de.moritzf.quota.idea.auth.OAuthTokenClient
 import de.moritzf.quota.idea.auth.OAuthTokenOperations
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.get
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -51,7 +51,7 @@ class QuotaAuthService(
         refreshCacheAsync()
     }
 
-    fun startLoginFlow(callback: (LoginResult) -> Unit) {
+    fun startLoginFlow(callback: (LoginResult) -> Unit, onAuthUrl: ((String) -> Unit)? = null) {
         if (!authInProgress.compareAndSet(false, true)) {
             LOG.warn("Login requested while another login is already in progress")
             callback(LoginResult.error("Login already in progress"))
@@ -60,7 +60,7 @@ class QuotaAuthService(
 
         scope.launch {
             val result = try {
-                runLoginFlow()
+                runLoginFlow(onAuthUrl)
             } catch (exception: Exception) {
                 LOG.warn("Login flow failed", exception)
                 var message = exception.message
@@ -128,48 +128,62 @@ class QuotaAuthService(
         }
     }
 
-    private suspend fun runLoginFlow(): LoginResult {
+    private suspend fun runLoginFlow(onAuthUrl: ((String) -> Unit)? = null): LoginResult {
         LOG.info("Starting OAuth login flow")
         val flow = loginFlowStarter(OAUTH_CONFIG)
         pendingFlow.set(flow)
+        return try {
+            val callbackError = pingCallbackEndpoint()
+            if (callbackError != null) {
+                return LoginResult.error(callbackError)
+            }
 
-        val callbackError = pingCallbackEndpoint()
-        if (callbackError != null) {
+            try {
+                onAuthUrl?.invoke(flow.authorizationUrl)
+            } catch (exception: Exception) {
+                LOG.warn("Failed to publish authorization URL to UI", exception)
+            }
+
+            openAuthorizationUi(flow.authorizationUrl)
+            val callback = flow.waitForCallback()
+            LOG.info("OAuth callback received; success=${callback.error == null}")
+
+            if (callback.error != null) {
+                return LoginResult.error(callback.error)
+            }
+            if (callback.code.isNullOrBlank()) {
+                return LoginResult.error("No authorization code received")
+            }
+
+            val clearMarker = currentCredentialClearMarker()
+            val credentials = tokenOperations.exchangeAuthorizationCode(callback.code, flow.codeVerifier)
+            if (persistCredentialsIfCurrent(clearMarker, credentials, "login") == null) {
+                return LoginResult.error("Login canceled")
+            }
+            LoginResult.success()
+        } finally {
             pendingFlow.compareAndSet(flow, null)
             flow.stopServerNow()
-            return LoginResult.error(callbackError)
         }
-
-        openAuthorizationUi(flow.authorizationUrl)
-        val callback = flow.waitForCallback()
-        pendingFlow.compareAndSet(flow, null)
-        LOG.info("OAuth callback received; success=${callback.error == null}")
-
-        if (callback.error != null) {
-            return LoginResult.error(callback.error)
-        }
-        if (callback.code.isNullOrBlank()) {
-            return LoginResult.error("No authorization code received")
-        }
-
-        val clearMarker = currentCredentialClearMarker()
-        val credentials = tokenOperations.exchangeAuthorizationCode(callback.code, flow.codeVerifier)
-        if (persistCredentialsIfCurrent(clearMarker, credentials, "login") == null) {
-            return LoginResult.error("Login canceled")
-        }
-        return LoginResult.success()
     }
 
     private suspend fun pingCallbackEndpoint(): String? {
         return try {
-            val response = httpClient.get("http://localhost:${OAUTH_CONFIG.callbackPort}/auth/ping")
-            if (response.status.value in 200..299) {
+            val request = HttpRequest.newBuilder()
+                .uri(URI.create("http://localhost:${OAUTH_CONFIG.callbackPort}/auth/ping"))
+                .timeout(Duration.ofSeconds(30))
+                .GET()
+                .build()
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            if (response.statusCode() in 200..299) {
                 null
             } else {
-                "Callback test failed (HTTP ${response.status.value})"
+                "Callback test failed (HTTP ${response.statusCode()})"
             }
         } catch (exception: Exception) {
-            "Callback not reachable: ${exception::class.java.simpleName}"
+            LOG.warn("Callback endpoint ping failed", exception)
+            val details = exception.message?.takeIf { it.isNotBlank() } ?: exception::class.java.simpleName
+            "Callback not reachable: $details"
         }
     }
 
@@ -254,7 +268,6 @@ class QuotaAuthService(
 
     override fun dispose() {
         scope.cancel()
-        httpClient.close()
     }
 
     class LoginResult private constructor(@JvmField val success: Boolean, @JvmField val message: String?) {
@@ -299,14 +312,9 @@ class QuotaAuthService(
         }
 
         private fun createHttpClient(): HttpClient {
-            return HttpClient(CIO) {
-                expectSuccess = false
-                install(HttpTimeout) {
-                    requestTimeoutMillis = 30_000
-                    connectTimeoutMillis = 30_000
-                    socketTimeoutMillis = 30_000
-                }
-            }
+            return HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(30))
+                .build()
         }
 
         private const val EXPIRY_SKEW_MS: Long = 5 * 60 * 1000L

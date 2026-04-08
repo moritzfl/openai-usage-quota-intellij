@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-04-08
+- Switched OAuth networking and callback server handling from Ktor to Java standard classes (`java.net.http.HttpClient` and `HttpServer`) to avoid runtime conflicts on IntelliJ 2025.3
+- Improved OAuth login error handling and callback reachability diagnostics
+- Added a "Copy URL" fallback action during login in plugin settings
+
 ## [0.7.0] - 2026-04-04
 - Added an indicator location setting so the quota icon can live in the main toolbar or the status bar
 

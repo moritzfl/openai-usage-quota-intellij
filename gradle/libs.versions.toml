@@ -1,5 +1,4 @@
 [versions]
-ktor = "3.4.2"
 kotlinx-datetime = "0.7.1-0.6.x-compat"
 kotlinx-serialization-json = "1.10.0"
 junit4 = "4.13.2"
@@ -12,8 +11,6 @@ junit-platform-launcher = "6.0.3"
 junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
 junit-platform-launcher = { group = "org.junit.platform", name = "junit-platform-launcher", version.ref = "junit-platform-launcher" }
 kotlin-test-junit5 = { group = "org.jetbrains.kotlin", name = "kotlin-test-junit5", version.ref = "kotlin" }
-ktor-client-cio = { group = "io.ktor", name = "ktor-client-cio-jvm", version.ref = "ktor" }
-ktor-server-cio = { group = "io.ktor", name = "ktor-server-cio-jvm", version.ref = "ktor" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
 
@@ -23,3 +20,4 @@ kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", versi
 intelliJPlatform = { id = "org.jetbrains.intellij.platform", version = "2.13.1" }
 changelog = { id = "org.jetbrains.changelog", version.ref = "changelog" }
 kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
+shadow = { id = "com.gradleup.shadow", version = "9.4.1" }

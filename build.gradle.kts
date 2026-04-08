@@ -29,10 +29,9 @@ repositories {
 
 // Dependencies are managed with Gradle version catalog - read more: https://docs.gradle.org/current/userguide/version_catalogs.html
 dependencies {
-    implementation(libs.ktor.client.cio)
-    implementation(libs.ktor.server.cio)
     implementation(libs.kotlinx.datetime)
     implementation(libs.kotlinx.serialization.json)
+
     testImplementation(libs.kotlin.test.junit5)
     testRuntimeOnly(libs.junit4)
     testRuntimeOnly(libs.junit.platform.launcher)
