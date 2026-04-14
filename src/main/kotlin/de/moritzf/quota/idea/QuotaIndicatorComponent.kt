@@ -5,6 +5,7 @@ import com.intellij.util.IconUtil
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.OpenAiCodexQuota
+import de.moritzf.quota.UsageWindow
 import java.awt.Component
 import java.awt.Cursor
 import java.awt.event.MouseAdapter
@@ -92,7 +93,14 @@ internal class QuotaIndicatorComponent(
             return "OpenAI: error"
         }
 
-        val primary = quota?.primary ?: return "OpenAI: loading..."
+        quota?.primary ?: return "OpenAI: loading..."
+        if (quota?.limitReached == true) {
+            val resetWindow = limitingWindow(quota)
+            val reset = QuotaUiUtil.formatResetCompact(resetWindow?.resetsAt)
+            return if (reset != null) "100% • $reset" else "100%"
+        }
+
+        val primary = quota!!.primary!!
         val percent = clampPercent(primary.usedPercent.roundToInt())
         val reset = QuotaUiUtil.formatResetCompact(primary.resetsAt)
         return if (reset != null) "$percent% • $reset" else "$percent%"
@@ -153,6 +161,7 @@ internal class QuotaIndicatorComponent(
         }
 
         val primary = quota?.primary ?: return -1
+        if (quota?.limitReached == true) return 100
         return clampPercent(primary.usedPercent.roundToInt())
     }
 
@@ -184,10 +193,24 @@ internal fun buildQuotaTooltipText(quota: OpenAiCodexQuota?, error: String?): St
     }
 
     val primary = quota?.primary ?: return "OpenAI usage quota: loading"
-    return "OpenAI usage quota: ${clampPercent(primary.usedPercent.roundToInt())}% used"
+    val percent = if (quota?.limitReached == true) 100 else clampPercent(primary.usedPercent.roundToInt())
+    return "OpenAI usage quota: $percent% used"
 }
 
 internal fun clampPercent(value: Int): Int = value.coerceIn(0, 100)
+
+/**
+ * Returns the window that is at 100% usage and has the latest reset time.
+ * Falls back to whichever window resets latest if none are explicitly at 100%.
+ */
+internal fun limitingWindow(quota: OpenAiCodexQuota?): UsageWindow? {
+    val windows = listOfNotNull(quota?.primary, quota?.secondary)
+    if (windows.isEmpty()) return null
+    return windows
+        .filter { it.usedPercent >= 100.0 }
+        .maxByOrNull { it.resetsAt?.toEpochMilliseconds() ?: Long.MIN_VALUE }
+        ?: windows.maxByOrNull { it.resetsAt?.toEpochMilliseconds() ?: Long.MIN_VALUE }
+}
 
 internal fun scaleIconToQuotaStatusSize(icon: Icon, component: JComponent): Icon {
     val statusIcon = QuotaIcons.STATUS
