@@ -19,6 +19,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
@@ -175,7 +176,9 @@ class QuotaAuthService(
                 .timeout(Duration.ofSeconds(30))
                 .GET()
                 .build()
-            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            val response = withContext(Dispatchers.IO) {
+                httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+            }
             if (response.statusCode() in 200..299) {
                 null
             } else {
