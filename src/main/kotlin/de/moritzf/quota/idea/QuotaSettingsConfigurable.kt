@@ -143,10 +143,10 @@ class QuotaSettingsConfigurable : Configurable {
 
         logoutButton!!.addActionListener {
             QuotaAuthService.getInstance().clearCredentials()
+            QuotaUsageService.getInstance().clearUsageData("Not logged in")
             setStatusMessage("Logged out")
             updateAuthUi()
             updateAccountFields()
-            QuotaUsageService.getInstance().refreshNowAsync()
         }
 
         panel = panel {

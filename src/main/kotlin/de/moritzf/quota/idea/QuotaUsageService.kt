@@ -18,9 +18,23 @@ import java.util.concurrent.atomic.AtomicReference
  * Periodically fetches quota data and publishes updates to the IDE message bus.
  */
 @Service(Service.Level.APP)
-class QuotaUsageService : Disposable {
-    private val client = OpenAiCodexQuotaClient()
-    private val scheduler: ScheduledExecutorService = AppExecutorUtil.getAppScheduledExecutorService()
+class QuotaUsageService(
+    private val quotaFetcher: (String, String?) -> OpenAiCodexQuota = { accessToken, accountId ->
+        OpenAiCodexQuotaClient().fetchQuota(accessToken, accountId)
+    },
+    private val accessTokenProvider: () -> String? = { QuotaAuthService.getInstance().getAccessTokenBlocking() },
+    private val accountIdProvider: () -> String? = { QuotaAuthService.getInstance().getAccountId() },
+    private val scheduler: ScheduledExecutorService = AppExecutorUtil.getAppScheduledExecutorService(),
+    private val updatePublisher: (OpenAiCodexQuota?, String?) -> Unit = { quota, error ->
+        ApplicationManager.getApplication().invokeLater {
+            ApplicationManager.getApplication().messageBus
+                .syncPublisher(QuotaUsageListener.TOPIC)
+                .onQuotaUpdated(quota, error)
+            ActivityTracker.getInstance().inc()
+        }
+    },
+    scheduleOnInit: Boolean = true,
+) : Disposable {
     private val refreshing = AtomicBoolean(false)
     private val lastQuotaRef = AtomicReference<OpenAiCodexQuota?>()
     private val lastErrorRef = AtomicReference<String?>()
@@ -28,7 +42,9 @@ class QuotaUsageService : Disposable {
     private var scheduled: ScheduledFuture<*>? = null
 
     init {
-        scheduleRefresh()
+        if (scheduleOnInit) {
+            scheduleRefresh()
+        }
     }
 
     fun getLastQuota(): OpenAiCodexQuota? = lastQuotaRef.get()
@@ -45,6 +61,10 @@ class QuotaUsageService : Disposable {
         refreshNow()
     }
 
+    fun clearUsageData(error: String? = null) {
+        publishUpdate(null, error, rawResponseJson = null, clearRawResponseJson = true)
+    }
+
     private fun scheduleRefresh() {
         val minutes = maxOf(1, QuotaSettingsState.getInstance().refreshMinutes)
         scheduled = scheduler.scheduleWithFixedDelay(::refreshNow, 0, minutes.toLong(), TimeUnit.MINUTES)
@@ -56,17 +76,16 @@ class QuotaUsageService : Disposable {
         }
 
         try {
-            val authService = QuotaAuthService.getInstance()
-            val accessToken = authService.getAccessTokenBlocking()
+            val accessToken = accessTokenProvider()
             if (accessToken.isNullOrBlank()) {
                 publishUpdate(null, "Not logged in")
                 return
             }
 
-            val quota = client.fetchQuota(accessToken, authService.getAccountId())
-            publishUpdate(quota, null)
+            val quota = quotaFetcher(accessToken, accountIdProvider())
+            publishUpdate(quota, null, quota.rawJson)
         } catch (exception: OpenAiCodexQuotaException) {
-            publishUpdate(null, "Request failed (${exception.statusCode})")
+            publishUpdate(null, "Request failed (${exception.statusCode})", exception.rawBody)
         } catch (exception: Exception) {
             publishUpdate(null, exception.message ?: "Request failed")
         } finally {
@@ -74,18 +93,20 @@ class QuotaUsageService : Disposable {
         }
     }
 
-    private fun publishUpdate(quota: OpenAiCodexQuota?, error: String?) {
-        if (quota?.rawJson != null) {
-            lastResponseJsonRef.set(quota.rawJson)
+    private fun publishUpdate(
+        quota: OpenAiCodexQuota?,
+        error: String?,
+        rawResponseJson: String? = null,
+        clearRawResponseJson: Boolean = false,
+    ) {
+        if (clearRawResponseJson) {
+            lastResponseJsonRef.set(rawResponseJson)
+        } else if (rawResponseJson != null) {
+            lastResponseJsonRef.set(rawResponseJson)
         }
         lastQuotaRef.set(quota)
         lastErrorRef.set(error)
-        ApplicationManager.getApplication().invokeLater {
-            ApplicationManager.getApplication().messageBus
-                .syncPublisher(QuotaUsageListener.TOPIC)
-                .onQuotaUpdated(quota, error)
-            ActivityTracker.getInstance().inc()
-        }
+        updatePublisher(quota, error)
     }
 
     override fun dispose() {

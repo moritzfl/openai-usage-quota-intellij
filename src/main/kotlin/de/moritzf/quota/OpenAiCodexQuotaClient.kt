@@ -7,6 +7,7 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import kotlinx.serialization.SerializationException
 
 /**
  * HTTP client for fetching and parsing OpenAI Codex usage quota responses.
@@ -35,12 +36,18 @@ class OpenAiCodexQuotaClient(
         val body = response.body()
 
         if (status !in 200..299) {
-            throw OpenAiCodexQuotaException("Usage request failed: $status $body", status)
+            throw OpenAiCodexQuotaException("Usage request failed: $status $body", status, body)
         }
 
-        val quota = JsonSupport.json.decodeFromString<OpenAiCodexQuota>(body)
+        val quota = try {
+            JsonSupport.json.decodeFromString<OpenAiCodexQuota>(body)
+        } catch (exception: SerializationException) {
+            throw OpenAiCodexQuotaException("Usage response could not be parsed", status, body, exception)
+        } catch (exception: IllegalArgumentException) {
+            throw OpenAiCodexQuotaException("Usage response could not be parsed", status, body, exception)
+        }
         if (!quota.hasUsageState()) {
-            throw OpenAiCodexQuotaException("Usage response did not include usable quota state", 200)
+            throw OpenAiCodexQuotaException("Usage response did not include usable quota state", status, body)
         }
 
         quota.fetchedAt = Clock.System.now()
