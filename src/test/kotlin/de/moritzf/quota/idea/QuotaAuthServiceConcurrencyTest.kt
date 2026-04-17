@@ -3,6 +3,7 @@ package de.moritzf.quota.idea
 import de.moritzf.quota.idea.auth.OAuthClientConfig
 import de.moritzf.quota.idea.auth.OAuthCredentialStore
 import de.moritzf.quota.idea.auth.OAuthCredentials
+import de.moritzf.quota.idea.auth.OAuthTokenRequestException
 import de.moritzf.quota.idea.auth.OAuthTokenOperations
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -90,6 +91,49 @@ class QuotaAuthServiceConcurrencyTest {
             assertEquals("shared-token", store.current()?.accessToken)
         } finally {
             executor.shutdownNow()
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun transientRefreshFailureKeepsStoredCredentials() {
+        val existing = expiredCredentials(accessToken = "old-token", refreshToken = "refresh-token")
+        val store = InMemoryCredentialStore(existing)
+        val service = createService(
+            store = store,
+            tokenOperations = TestTokenOperations(
+                onRefresh = {
+                    throw IllegalStateException("timeout")
+                },
+            ),
+        )
+
+        try {
+            assertNull(service.getAccessTokenBlocking())
+            assertEquals("old-token", store.current()?.accessToken)
+            assertTrue(service.isLoggedIn())
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun terminalRefreshFailureClearsStoredCredentials() {
+        val store = InMemoryCredentialStore(expiredCredentials(accessToken = "old-token", refreshToken = "refresh-token"))
+        val service = createService(
+            store = store,
+            tokenOperations = TestTokenOperations(
+                onRefresh = {
+                    throw OAuthTokenRequestException("invalid grant", 400, "invalid_grant")
+                },
+            ),
+        )
+
+        try {
+            assertNull(service.getAccessTokenBlocking())
+            assertNull(store.current())
+            assertFalse(service.isLoggedIn())
+        } finally {
             service.dispose()
         }
     }

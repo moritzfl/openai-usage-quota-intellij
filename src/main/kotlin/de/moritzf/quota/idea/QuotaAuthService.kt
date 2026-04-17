@@ -11,6 +11,7 @@ import de.moritzf.quota.idea.auth.OAuthCredentials
 import de.moritzf.quota.idea.auth.OAuthCredentialsStore
 import de.moritzf.quota.idea.auth.OAuthLoginFlow
 import de.moritzf.quota.idea.auth.OAuthTokenClient
+import de.moritzf.quota.idea.auth.OAuthTokenRequestException
 import de.moritzf.quota.idea.auth.OAuthTokenOperations
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -222,9 +223,14 @@ class QuotaAuthService(
                     tokenOperations.refreshCredentials(latestCredentials)
                 }
                 persistCredentialsIfCurrent(clearMarker, refreshed, "refresh")
+            } catch (exception: OAuthTokenRequestException) {
+                LOG.warn("Token refresh failed", exception)
+                if (exception.isTerminalAuthFailure()) {
+                    clearCredentialsIfUnchanged(latestCredentials)
+                }
+                null
             } catch (exception: Exception) {
                 LOG.warn("Token refresh failed", exception)
-                clearCredentialsIfUnchanged(latestCredentials)
                 null
             }
         }

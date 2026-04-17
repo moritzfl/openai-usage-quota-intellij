@@ -12,4 +12,6 @@ class OAuthTokenResponseDto(
     @SerialName("refresh_token") var refreshToken: String? = null,
     @SerialName("id_token") var idToken: String? = null,
     @SerialName("expires_in") var expiresIn: Long = 0,
+    @SerialName("error") var error: String? = null,
+    @SerialName("error_description") var errorDescription: String? = null,
 )

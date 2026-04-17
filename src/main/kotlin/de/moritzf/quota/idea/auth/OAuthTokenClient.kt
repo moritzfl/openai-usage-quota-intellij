@@ -33,7 +33,7 @@ class OAuthTokenClient(
         )
         if (response.statusCode() !in 200..299) {
             LOG.warn("Token exchange failed: ${response.statusCode()}")
-            throw IOException("Token exchange failed: ${response.statusCode()} ${response.body()}")
+            throw createRequestException("Token exchange failed", response)
         }
 
         val tokenResponse = parseResponse(response.body())
@@ -57,7 +57,7 @@ class OAuthTokenClient(
         )
         if (response.statusCode() !in 200..299) {
             LOG.warn("Token refresh failed: ${response.statusCode()}")
-            throw IOException("Token refresh failed: HTTP ${response.statusCode()}")
+            throw createRequestException("Token refresh failed", response)
         }
 
         val tokenResponse = parseResponse(response.body())
@@ -93,6 +93,24 @@ class OAuthTokenClient(
 
     private fun parseResponse(body: String): OAuthTokenResponseDto {
         return JsonSupport.json.decodeFromString(body)
+    }
+
+    private fun createRequestException(prefix: String, response: HttpResponse<String>): OAuthTokenRequestException {
+        val tokenResponse = runCatching { parseResponse(response.body()) }.getOrNull()
+        val oauthError = tokenResponse?.error?.takeUnless { it.isBlank() }
+        val description = tokenResponse?.errorDescription?.takeUnless { it.isBlank() }
+        val fallbackBody = response.body().takeUnless { it.isBlank() }
+        val detail = description ?: oauthError ?: fallbackBody
+        val message = buildString {
+            append(prefix)
+            append(": HTTP ")
+            append(response.statusCode())
+            if (!detail.isNullOrBlank()) {
+                append(" ")
+                append(detail)
+            }
+        }
+        return OAuthTokenRequestException(message, response.statusCode(), oauthError)
     }
 
     private fun resolveAccountId(response: OAuthTokenResponseDto): String? {
