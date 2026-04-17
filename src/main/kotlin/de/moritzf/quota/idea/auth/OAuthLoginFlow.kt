@@ -18,6 +18,7 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.security.MessageDigest
 import java.security.SecureRandom
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
@@ -41,6 +42,7 @@ class OAuthLoginFlow private constructor(
     }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + exceptionHandler)
     private var server: HttpServer? = null
+    private var serverExecutor: ExecutorService? = null
 
     suspend fun waitForCallback(): OAuthCallbackResult {
         return try {
@@ -66,9 +68,11 @@ class OAuthLoginFlow private constructor(
     private fun startServer() {
         try {
             val engine = HttpServer.create(InetSocketAddress(InetAddress.getLoopbackAddress(), config.callbackPort), 0)
-            engine.executor = Executors.newCachedThreadPool { runnable ->
-                Thread(runnable, "oauth-callback-server").apply { isDaemon = true }
+            val executor = Executors.newSingleThreadExecutor { runnable ->
+                Thread(runnable).apply { isDaemon = true }
             }
+            engine.executor = executor
+            serverExecutor = executor
             engine.createContext("/auth/ping") { exchange ->
                 handlePing(exchange)
             }
@@ -161,6 +165,7 @@ class OAuthLoginFlow private constructor(
 
     private fun stopServer() {
         val currentServer = server
+        val currentExecutor = serverExecutor
         if (currentServer != null) {
             try {
                 currentServer.stop(0)
@@ -170,6 +175,8 @@ class OAuthLoginFlow private constructor(
             }
         }
         server = null
+        currentExecutor?.shutdownNow()
+        serverExecutor = null
         scope.cancel()
     }
 
