@@ -23,7 +23,7 @@ import kotlin.test.assertTrue
 class QuotaAuthServiceConcurrencyTest {
     @Test
     fun logoutDuringRefreshDiscardsRefreshedCredentials() {
-        val store = InMemoryCredentialStore(expiredCredentials(accessToken = "old-token", refreshToken = "refresh-token"))
+        val store = InMemoryCredentialStore(expiredCredentials())
         val refreshStarted = CountDownLatch(1)
         val allowRefreshToFinish = CountDownLatch(1)
         val refreshCalls = AtomicInteger(0)
@@ -60,7 +60,7 @@ class QuotaAuthServiceConcurrencyTest {
 
     @Test
     fun concurrentAccessRefreshesExpiredCredentialsOnlyOnce() {
-        val store = InMemoryCredentialStore(expiredCredentials(accessToken = "old-token", refreshToken = "refresh-token"))
+        val store = InMemoryCredentialStore(expiredCredentials())
         val refreshStarted = CountDownLatch(1)
         val allowRefreshToFinish = CountDownLatch(1)
         val refreshCalls = AtomicInteger(0)
@@ -97,7 +97,7 @@ class QuotaAuthServiceConcurrencyTest {
 
     @Test
     fun transientRefreshFailureKeepsStoredCredentials() {
-        val existing = expiredCredentials(accessToken = "old-token", refreshToken = "refresh-token")
+        val existing = expiredCredentials()
         val store = InMemoryCredentialStore(existing)
         val service = createService(
             store = store,
@@ -119,7 +119,7 @@ class QuotaAuthServiceConcurrencyTest {
 
     @Test
     fun terminalRefreshFailureClearsStoredCredentials() {
-        val store = InMemoryCredentialStore(expiredCredentials(accessToken = "old-token", refreshToken = "refresh-token"))
+        val store = InMemoryCredentialStore(expiredCredentials())
         val service = createService(
             store = store,
             tokenOperations = TestTokenOperations(
@@ -153,10 +153,10 @@ class QuotaAuthServiceConcurrencyTest {
         )
     }
 
-    private fun expiredCredentials(accessToken: String, refreshToken: String): OAuthCredentials {
+    private fun expiredCredentials(): OAuthCredentials {
         return OAuthCredentials(
-            accessToken = accessToken,
-            refreshToken = refreshToken,
+            accessToken = "old-token",
+            refreshToken = "refresh-token",
             expiresAt = System.currentTimeMillis() - 60_000,
             accountId = "account-1",
         )
