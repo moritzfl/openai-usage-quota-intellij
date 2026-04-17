@@ -11,10 +11,14 @@ class OAuthTokenRequestException(
     val oauthError: String? = null,
 ) : IOException(message) {
     fun isTerminalAuthFailure(): Boolean {
-        return statusCode == 400 || statusCode == 401 || oauthError == INVALID_GRANT
+        return oauthError
+            ?.trim()
+            ?.lowercase()
+            ?.let(UNRECOVERABLE_AUTH_ERRORS::contains) == true
     }
 
     companion object {
         private const val INVALID_GRANT = "invalid_grant"
+        private val UNRECOVERABLE_AUTH_ERRORS = setOf(INVALID_GRANT)
     }
 }

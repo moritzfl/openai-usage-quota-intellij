@@ -139,6 +139,28 @@ class QuotaAuthServiceConcurrencyTest {
     }
 
     @Test
+    fun nonTerminalOauthRefreshFailureKeepsStoredCredentials() {
+        val existing = expiredCredentials()
+        val store = InMemoryCredentialStore(existing)
+        val service = createService(
+            store = store,
+            tokenOperations = TestTokenOperations(
+                onRefresh = {
+                    throw OAuthTokenRequestException("invalid request", 400, "invalid_request")
+                },
+            ),
+        )
+
+        try {
+            assertNull(service.getAccessTokenBlocking())
+            assertEquals("old-token", store.current()?.accessToken)
+            assertTrue(service.isLoggedIn())
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
     fun isLoggedInLoadsPersistedCredentialsOnFirstAccess() {
         val store = InMemoryCredentialStore(validCredentials(accessToken = "persisted-token", refreshToken = "persisted-refresh-token"))
         val service = createService(
