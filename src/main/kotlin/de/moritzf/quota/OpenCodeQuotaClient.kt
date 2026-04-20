@@ -1,0 +1,222 @@
+package de.moritzf.quota
+
+import kotlinx.datetime.Clock
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import java.io.IOException
+import java.time.Duration
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.util.concurrent.atomic.AtomicReference
+import java.util.logging.Logger
+
+/**
+ * HTTP client for fetching OpenCode Go subscription quota via SolidStart RPC.
+ */
+open class OpenCodeQuotaClient(
+    private val httpClient: HttpClient = HttpClient.newHttpClient(),
+    private val endpoint: URI = DEFAULT_ENDPOINT,
+) {
+    @Throws(IOException::class, InterruptedException::class)
+    open fun fetchQuota(sessionCookie: String, workspaceId: String): OpenCodeQuota {
+        require(sessionCookie.isNotBlank()) { "sessionCookie must not be null or blank" }
+        require(workspaceId.isNotBlank()) { "workspaceId must not be null or blank" }
+
+        val functionId = resolveFunctionId(sessionCookie, workspaceId)
+        val argsJson = """["$workspaceId"]"""
+        val encodedArgs = java.net.URLEncoder.encode(argsJson, Charsets.UTF_8)
+        val uri = URI.create("${endpoint}?id=$functionId&args=$encodedArgs")
+
+        LOG.info("Fetching OpenCode quota: $uri")
+
+        val request = HttpRequest.newBuilder()
+            .uri(uri)
+            .timeout(Duration.ofSeconds(30))
+            .header("Cookie", "auth=$sessionCookie")
+            .header("Accept", "application/json")
+            .header("X-Server-Id", functionId)
+            .header("X-Server-Instance", "server-fn:1")
+            .header("Referer", "https://opencode.ai/workspace/$workspaceId/go")
+            .header("Origin", "https://opencode.ai")
+            .GET()
+            .build()
+
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        val status = response.statusCode()
+        val body = response.body()
+
+        LOG.info("OpenCode quota response: status=$status, body=${body.take(200)}")
+
+        if (status !in 200..299) {
+            throw OpenCodeQuotaException("OpenCode quota request failed: HTTP $status - ${body.take(500)}", status, body)
+        }
+
+        val quota = parseSolidStartResponse(body)
+        quota.fetchedAt = Clock.System.now()
+        quota.rawJson = body
+        return quota
+    }
+
+    /**
+     * Discovers the workspace ID from the user's opencode.ai console.
+     */
+    @Throws(IOException::class, InterruptedException::class)
+    open fun discoverWorkspaceId(sessionCookie: String): String {
+        require(sessionCookie.isNotBlank()) { "sessionCookie must not be null or blank" }
+
+        // Call the workspaces list RPC
+        val uri = URI.create("https://opencode.ai/_server?id=$WORKSPACES_FUNCTION_ID&args=%5B%5D")
+        LOG.info("Discovering workspace ID: $uri")
+
+        val request = HttpRequest.newBuilder()
+            .uri(uri)
+            .timeout(Duration.ofSeconds(15))
+            .header("Cookie", "auth=$sessionCookie")
+            .header("Accept", "application/json")
+            .header("X-Server-Id", WORKSPACES_FUNCTION_ID)
+            .header("X-Server-Instance", "server-fn:2")
+            .GET()
+            .build()
+
+        val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        LOG.info("Workspace discovery response: status=${response.statusCode()}, body=${response.body().take(200)}")
+
+        if (response.statusCode() !in 200..299) {
+            throw OpenCodeQuotaException(
+                "Could not discover workspace ID: HTTP ${response.statusCode()} - ${response.body().take(500)}",
+                response.statusCode(), response.body()
+            )
+        }
+
+        val match = WORKSPACE_ID_PATTERN.find(response.body())
+            ?: throw OpenCodeQuotaException(
+                "No workspace found. Please ensure you have an active OpenCode Go subscription.",
+                200, response.body()
+            )
+        return match.groupValues[1]
+    }
+
+    /**
+     * Resolves the server function ID, using a cached value if available.
+     * Falls back to extracting it from the JS bundle.
+     */
+    private fun resolveFunctionId(sessionCookie: String, workspaceId: String): String {
+        cachedFunctionId.get()?.takeIf { it.workspaceId == workspaceId }?.let { return it.functionId }
+
+        val functionId = extractFunctionIdFromBundle(sessionCookie, workspaceId)
+            ?: throw OpenCodeQuotaException(
+                "Could not discover OpenCode server function ID. " +
+                    "The opencode console may have been updated. Please report this issue.",
+                0, null
+            )
+        cachedFunctionId.set(CachedFunctionId(workspaceId, functionId))
+        return functionId
+    }
+
+    /**
+     * Fetches the Go page JS bundle and extracts the queryLiteSubscription server function hash.
+     */
+    private fun extractFunctionIdFromBundle(sessionCookie: String, workspaceId: String): String? {
+        val pageRequest = HttpRequest.newBuilder()
+            .uri(URI.create("https://opencode.ai/workspace/$workspaceId/go"))
+            .timeout(Duration.ofSeconds(15))
+            .header("Cookie", "auth=$sessionCookie")
+            .header("Accept", "text/html")
+            .GET()
+            .build()
+
+        val pageResponse = httpClient.send(pageRequest, HttpResponse.BodyHandlers.ofString())
+        if (pageResponse.statusCode() !in 200..299) return null
+
+        val bundleMatches = Regex("""_build/assets/([^.]+)\.js""").findAll(pageResponse.body())
+        for (match in bundleMatches) {
+            val bundlePath = match.value
+            val bundleRequest = HttpRequest.newBuilder()
+                .uri(URI.create("https://opencode.ai/$bundlePath"))
+                .timeout(Duration.ofSeconds(15))
+                .header("Cookie", "auth=$sessionCookie")
+                .GET()
+                .build()
+
+            val bundleResponse = httpClient.send(bundleRequest, HttpResponse.BodyHandlers.ofString())
+            if (bundleResponse.statusCode() !in 200..299) continue
+
+            val extracted = FUNCTION_ID_PATTERN.find(bundleResponse.body())?.groupValues?.get(1)
+            if (extracted != null) return extracted
+        }
+        return null
+    }
+
+    companion object {
+        @JvmField
+        val DEFAULT_ENDPOINT: URI = URI.create("https://opencode.ai/_server")
+
+        private val LOG = Logger.getLogger(OpenCodeQuotaClient::class.java.name)
+        private val cachedFunctionId = AtomicReference<CachedFunctionId?>()
+
+        private const val WORKSPACES_FUNCTION_ID = "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f"
+
+        private val FUNCTION_ID_PATTERN = Regex(
+            """queryLiteSubscription_query\s*=\s*createServerReference\("([a-f0-9]{64})"\)"""
+        )
+
+        private val WORKSPACE_ID_PATTERN = Regex(
+            """id:"(wrk_[A-Za-z0-9]+)",name:"([^"]*)""""
+        )
+
+        /** Clear the cached function ID to force re-discovery. */
+        fun clearCachedFunctionId() {
+            cachedFunctionId.set(null)
+        }
+
+        fun parseSolidStartResponse(body: String): OpenCodeQuota {
+            val rootAssignmentIndex = body.indexOf(ROOT_ASSIGNMENT_MARKER)
+            if (rootAssignmentIndex < 0) {
+                throw OpenCodeQuotaException("Could not parse OpenCode response: unexpected format", 200, body)
+            }
+
+            val parser = SolidStartValueParser(body, rootAssignmentIndex + ROOT_ASSIGNMENT_MARKER.length)
+            val rootElement = try {
+                parser.parseValue()
+            } catch (exception: OpenCodeQuotaException) {
+                throw exception
+            } catch (exception: Exception) {
+                throw OpenCodeQuotaException(
+                    "Could not parse OpenCode quota response",
+                    200,
+                    body,
+                    exception,
+                )
+            }
+
+            if (rootElement == JsonNull) {
+                throw OpenCodeQuotaException("Could not parse OpenCode response: unexpected format", 200, body)
+            }
+
+            val rootObject = rootElement as? JsonObject
+                ?: throw OpenCodeQuotaException("Could not parse OpenCode response: unexpected format", 200, body)
+
+            return try {
+                JsonSupport.json.decodeFromJsonElement<OpenCodeQuota>(rootObject)
+            } catch (exception: Exception) {
+                throw OpenCodeQuotaException(
+                    "Could not parse OpenCode quota response",
+                    200,
+                    body,
+                    exception,
+                )
+            }
+        }
+
+        private const val ROOT_ASSIGNMENT_MARKER = "\$R[0]="
+
+        private data class CachedFunctionId(
+            val workspaceId: String,
+            val functionId: String,
+        )
+
+    }
+}

@@ -14,7 +14,12 @@ import javax.swing.JComponent
 class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget {
     private val connection: MessageBusConnection
     private val widgetComponent = QuotaIndicatorComponent(horizontalPadding = 4) { component, currentQuota, currentError ->
-        QuotaPopupSupport.showPopup(project, component, currentQuota, currentError, QuotaPopupLocation.ABOVE)
+        val service = QuotaUsageService.getInstance()
+        QuotaPopupSupport.showPopup(
+            project, component, currentQuota, currentError,
+            service.getLastOpenCodeQuota(), service.getLastOpenCodeError(),
+            QuotaPopupLocation.ABOVE,
+        )
     }
     @Volatile
     private var quota: OpenAiCodexQuota?
@@ -27,10 +32,12 @@ class QuotaStatusBarWidget(private val project: Project) : CustomStatusBarWidget
         quota = usageService.getLastQuota()
         error = usageService.getLastError()
         connection = ApplicationManager.getApplication().messageBus.connect(this)
-        connection.subscribe(QuotaUsageListener.TOPIC, QuotaUsageListener { updatedQuota, updatedError ->
-            quota = updatedQuota
-            error = updatedError
-            updateWidget()
+        connection.subscribe(QuotaUsageListener.TOPIC, object : QuotaUsageListener {
+            override fun onQuotaUpdated(updatedQuota: OpenAiCodexQuota?, updatedError: String?) {
+                quota = updatedQuota
+                error = updatedError
+                updateWidget()
+            }
         })
         connection.subscribe(QuotaSettingsListener.TOPIC, QuotaSettingsListener { updateWidget() })
         updateWidget()

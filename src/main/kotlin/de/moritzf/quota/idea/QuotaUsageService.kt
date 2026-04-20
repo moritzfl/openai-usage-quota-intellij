@@ -8,6 +8,9 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import de.moritzf.quota.OpenAiCodexQuota
 import de.moritzf.quota.OpenAiCodexQuotaClient
 import de.moritzf.quota.OpenAiCodexQuotaException
+import de.moritzf.quota.OpenCodeQuota
+import de.moritzf.quota.OpenCodeQuotaClient
+import de.moritzf.quota.OpenCodeQuotaException
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -22,14 +25,17 @@ class QuotaUsageService(
     private val quotaFetcher: (String, String?) -> OpenAiCodexQuota = { accessToken, accountId ->
         OpenAiCodexQuotaClient().fetchQuota(accessToken, accountId)
     },
+    private val openCodeClient: OpenCodeQuotaClient = OpenCodeQuotaClient(),
     private val accessTokenProvider: () -> String? = { QuotaAuthService.getInstance().getAccessTokenBlocking() },
     private val accountIdProvider: () -> String? = { QuotaAuthService.getInstance().getAccountId() },
+    private val openCodeCookieProvider: () -> String? = { OpenCodeSessionCookieStore.getInstance().loadBlocking() },
     private val scheduler: ScheduledExecutorService = AppExecutorUtil.getAppScheduledExecutorService(),
-    private val updatePublisher: (OpenAiCodexQuota?, String?) -> Unit = { quota, error ->
+    private val updatePublisher: (OpenAiCodexQuota?, String?, OpenCodeQuota?, String?) -> Unit = { quota, error, openCodeQuota, openCodeError ->
         ApplicationManager.getApplication().invokeLater {
-            ApplicationManager.getApplication().messageBus
+            val publisher = ApplicationManager.getApplication().messageBus
                 .syncPublisher(QuotaUsageListener.TOPIC)
-                .onQuotaUpdated(quota, error)
+            publisher.onQuotaUpdated(quota, error)
+            publisher.onOpenCodeQuotaUpdated(openCodeQuota, openCodeError)
             ActivityTracker.getInstance().inc()
         }
     },
@@ -39,6 +45,10 @@ class QuotaUsageService(
     private val lastQuotaRef = AtomicReference<OpenAiCodexQuota?>()
     private val lastErrorRef = AtomicReference<String?>()
     private val lastResponseJsonRef = AtomicReference<String?>()
+    private val lastOpenCodeQuotaRef = AtomicReference<OpenCodeQuota?>()
+    private val lastOpenCodeErrorRef = AtomicReference<String?>()
+    private val lastOpenCodeCookieRef = AtomicReference<String?>()
+    private val cachedWorkspaceId = AtomicReference<String?>()
     private var scheduled: ScheduledFuture<*>? = null
 
     init {
@@ -53,6 +63,10 @@ class QuotaUsageService(
 
     fun getLastResponseJson(): String? = lastResponseJsonRef.get()
 
+    fun getLastOpenCodeQuota(): OpenCodeQuota? = lastOpenCodeQuotaRef.get()
+
+    fun getLastOpenCodeError(): String? = lastOpenCodeErrorRef.get()
+
     fun refreshNowAsync() {
         AppExecutorUtil.getAppExecutorService().execute(::refreshNow)
     }
@@ -62,7 +76,18 @@ class QuotaUsageService(
     }
 
     fun clearUsageData(error: String? = null) {
-        publishUpdate(null, error, rawResponseJson = null, clearRawResponseJson = true)
+        clearCodexUsageData(error)
+        clearOpenCodeUsageData()
+    }
+
+    fun clearCodexUsageData(error: String? = null) {
+        publishCodexUpdate(null, error, rawResponseJson = null, clearRawResponseJson = true)
+    }
+
+    fun clearOpenCodeUsageData(error: String? = "No session cookie configured") {
+        resetOpenCodeCaches()
+        lastOpenCodeCookieRef.set(null)
+        publishOpenCodeUpdate(null, error)
     }
 
     private fun scheduleRefresh() {
@@ -76,24 +101,90 @@ class QuotaUsageService(
         }
 
         try {
+            // Fetch OpenAI Codex quota
             val accessToken = accessTokenProvider()
             if (accessToken.isNullOrBlank()) {
-                publishUpdate(null, "Not logged in")
-                return
+                publishCodexUpdate(null, "Not logged in")
+            } else {
+                try {
+                    val quota = quotaFetcher(accessToken, accountIdProvider())
+                    publishCodexUpdate(quota, null, quota.rawJson)
+                } catch (exception: OpenAiCodexQuotaException) {
+                    publishCodexUpdate(null, "Request failed (${exception.statusCode})", exception.rawBody)
+                } catch (exception: Exception) {
+                    publishCodexUpdate(null, exception.message ?: "Request failed")
+                }
             }
 
-            val quota = quotaFetcher(accessToken, accountIdProvider())
-            publishUpdate(quota, null, quota.rawJson)
-        } catch (exception: OpenAiCodexQuotaException) {
-            publishUpdate(null, "Request failed (${exception.statusCode})", exception.rawBody)
-        } catch (exception: Exception) {
-            publishUpdate(null, exception.message ?: "Request failed")
+            // Fetch OpenCode Go quota
+            val openCodeCookie = openCodeCookieProvider()
+            if (openCodeCookie.isNullOrBlank()) {
+                clearOpenCodeUsageData()
+            } else {
+                refreshOpenCodeQuota(openCodeCookie)
+            }
         } finally {
             refreshing.set(false)
         }
     }
 
-    private fun publishUpdate(
+    private fun refreshOpenCodeQuota(sessionCookie: String) {
+        resetOpenCodeCachesIfCookieChanged(sessionCookie)
+
+        try {
+            publishOpenCodeUpdate(fetchOpenCodeQuota(sessionCookie), null)
+            return
+        } catch (exception: OpenCodeQuotaException) {
+            if (shouldRetryOpenCode(exception)) {
+                resetOpenCodeCaches()
+                try {
+                    publishOpenCodeUpdate(fetchOpenCodeQuota(sessionCookie), null)
+                    return
+                } catch (retryException: OpenCodeQuotaException) {
+                    publishOpenCodeUpdate(null, retryException.message ?: "Request failed (${retryException.statusCode})")
+                    return
+                } catch (retryException: Exception) {
+                    publishOpenCodeUpdate(null, retryException.message ?: "Request failed")
+                    return
+                }
+            }
+            publishOpenCodeUpdate(null, exception.message ?: "Request failed (${exception.statusCode})")
+        } catch (exception: Exception) {
+            publishOpenCodeUpdate(null, exception.message ?: "Request failed")
+        }
+    }
+
+    private fun fetchOpenCodeQuota(sessionCookie: String): OpenCodeQuota {
+        val workspaceId = resolveWorkspaceId(sessionCookie)
+        return openCodeClient.fetchQuota(sessionCookie, workspaceId)
+    }
+
+    private fun resolveWorkspaceId(sessionCookie: String): String {
+        cachedWorkspaceId.get()?.let { return it }
+        val workspaceId = openCodeClient.discoverWorkspaceId(sessionCookie)
+        cachedWorkspaceId.set(workspaceId)
+        return workspaceId
+    }
+
+    private fun resetOpenCodeCachesIfCookieChanged(sessionCookie: String) {
+        val previousCookie = lastOpenCodeCookieRef.getAndSet(sessionCookie)
+        if (previousCookie != null && previousCookie != sessionCookie) {
+            resetOpenCodeCaches()
+        }
+    }
+
+    private fun resetOpenCodeCaches() {
+        cachedWorkspaceId.set(null)
+        OpenCodeQuotaClient.clearCachedFunctionId()
+    }
+
+    private fun shouldRetryOpenCode(exception: OpenCodeQuotaException): Boolean {
+        return exception.statusCode == 0 ||
+            exception.statusCode in 400..499 ||
+            exception.message?.contains("Could not parse OpenCode quota response") == true
+    }
+
+    private fun publishCodexUpdate(
         quota: OpenAiCodexQuota?,
         error: String?,
         rawResponseJson: String? = null,
@@ -106,7 +197,16 @@ class QuotaUsageService(
         }
         lastQuotaRef.set(quota)
         lastErrorRef.set(error)
-        updatePublisher(quota, error)
+        updatePublisher(quota, error, lastOpenCodeQuotaRef.get(), lastOpenCodeErrorRef.get())
+    }
+
+    private fun publishOpenCodeUpdate(
+        openCodeQuota: OpenCodeQuota?,
+        openCodeError: String?,
+    ) {
+        lastOpenCodeQuotaRef.set(openCodeQuota)
+        lastOpenCodeErrorRef.set(openCodeError)
+        updatePublisher(lastQuotaRef.get(), lastErrorRef.get(), openCodeQuota, openCodeError)
     }
 
     override fun dispose() {

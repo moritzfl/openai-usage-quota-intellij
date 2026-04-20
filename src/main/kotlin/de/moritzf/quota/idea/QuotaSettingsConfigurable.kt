@@ -20,9 +20,13 @@ import com.intellij.ui.JBColor
 import com.intellij.util.messages.MessageBusConnection
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
+import de.moritzf.quota.OpenAiCodexQuota
+import de.moritzf.quota.OpenCodeQuota
 import javax.swing.Icon
 import javax.swing.JButton
 import javax.swing.JComponent
+import javax.swing.JPanel
+import javax.swing.JTabbedPane
 import javax.swing.SwingConstants
 import javax.swing.UIManager
 import java.awt.Color
@@ -38,6 +42,11 @@ class QuotaSettingsConfigurable : Configurable {
     private var panel: DialogPanel? = null
     private var accountIdField: JBTextField? = null
     private var emailField: JBTextField? = null
+    private var openCodeCookieField: JBPasswordField? = null
+    private var openCodeStatusLabel: JBLabel? = null
+    private var codexResponseViewer: EditorTextField? = null
+    private var openCodeResponseViewer: EditorTextField? = null
+    private var responseTabbedPane: JTabbedPane? = null
     private var responseViewer: EditorTextField? = null
     private var loginHeaderLabel: JBLabel? = null
     private var statusLabel: JBLabel? = null
@@ -59,7 +68,18 @@ class QuotaSettingsConfigurable : Configurable {
     override fun createComponent(): JComponent? {
         accountIdField = JBTextField().apply { isEditable = false }
         emailField = JBTextField().apply { isEditable = false }
-        responseViewer = createResponseViewer()
+        openCodeCookieField = JBPasswordField().apply {
+            columns = 40
+            toolTipText = "Session cookie from opencode.ai (extract from browser DevTools)"
+        }
+        openCodeStatusLabel = JBLabel().apply { isVisible = false }
+        codexResponseViewer = createResponseViewer()
+        openCodeResponseViewer = createResponseViewer()
+        responseViewer = codexResponseViewer
+        responseTabbedPane = JTabbedPane().apply {
+            addTab("OpenAI Codex", codexResponseViewer)
+            addTab("OpenCode Go", openCodeResponseViewer)
+        }
         loginHeaderLabel = JBLabel()
         statusLabel = JBLabel().apply { isVisible = false }
         statusLabelDefaultForeground = statusLabel!!.foreground ?: UIManager.getColor("Label.foreground")
@@ -189,6 +209,38 @@ class QuotaSettingsConfigurable : Configurable {
 
             separator()
 
+            row {
+                label("OpenCode Go").bold()
+            }
+            row("Session cookie:") {
+                cell(openCodeCookieField!!)
+                    .resizableColumn()
+                    .align(AlignX.FILL)
+                button("Save") {
+                    val cookie = String(openCodeCookieField!!.password)
+                    if (cookie.isNotBlank()) {
+                        OpenCodeSessionCookieStore.getInstance().save(cookie)
+                        openCodeCookieField!!.text = ""
+                        updateOpenCodeStatus()
+                        QuotaUsageService.getInstance().refreshNowAsync()
+                    }
+                }
+                button("Clear") {
+                    OpenCodeSessionCookieStore.getInstance().clear()
+                    openCodeCookieField!!.text = ""
+                    updateOpenCodeStatus()
+                    QuotaUsageService.getInstance().clearOpenCodeUsageData()
+                }
+            }
+            row {
+                cell(openCodeStatusLabel!!)
+            }
+            row {
+                label("Extract from opencode.ai → DevTools → Storage → Cookies → \"auth\" cookie value. Valid for 1 year.")
+            }
+
+            separator()
+
             onApply {
                 val selectedLocation = locationComboBox?.selectedItem as? QuotaIndicatorLocation ?: return@onApply
                 val selectedDisplayMode = displayModeComboBox?.selectedItem as? QuotaDisplayMode ?: return@onApply
@@ -218,6 +270,8 @@ class QuotaSettingsConfigurable : Configurable {
                 updateAuthUi()
                 updateAccountFields()
                 updateResponseArea()
+                updateOpenCodeResponseArea()
+                updateOpenCodeFields()
             }
 
             onIsModified {
@@ -243,21 +297,35 @@ class QuotaSettingsConfigurable : Configurable {
                             border = JBUI.Borders.emptyBottom(6)
                         },
                     )
-                    addToCenter(responseViewer!!)
+                    addToCenter(responseTabbedPane!!)
                 },
             )
         }
 
         connection = ApplicationManager.getApplication().messageBus.connect()
-        connection!!.subscribe(QuotaUsageListener.TOPIC, QuotaUsageListener { _, _ ->
-                val currentPanel = rootComponent ?: panel ?: return@QuotaUsageListener
+        connection!!.subscribe(QuotaUsageListener.TOPIC, object : QuotaUsageListener {
+            override fun onQuotaUpdated(quota: OpenAiCodexQuota?, error: String?) {
+                val currentPanel = rootComponent ?: panel ?: return@onQuotaUpdated
                 ApplicationManager.getApplication().invokeLater({
-                    if ((rootComponent == null && panel == null) || responseViewer == null || accountIdField == null || emailField == null) {
+                    if ((rootComponent == null && panel == null) || codexResponseViewer == null || accountIdField == null || emailField == null) {
                         return@invokeLater
                     }
                     updateAccountFields()
                     updateResponseArea()
+                    updateOpenCodeStatus()
                 }, ModalityState.stateForComponent(currentPanel))
+            }
+
+            override fun onOpenCodeQuotaUpdated(quota: OpenCodeQuota?, error: String?) {
+                val currentPanel = rootComponent ?: panel ?: return@onOpenCodeQuotaUpdated
+                ApplicationManager.getApplication().invokeLater({
+                    if (rootComponent == null && panel == null) {
+                        return@invokeLater
+                    }
+                    updateOpenCodeResponseArea()
+                    updateOpenCodeStatus()
+                }, ModalityState.stateForComponent(currentPanel))
+            }
         })
 
         reset()
@@ -283,6 +351,11 @@ class QuotaSettingsConfigurable : Configurable {
         panel = null
         accountIdField = null
         emailField = null
+        openCodeCookieField = null
+        openCodeStatusLabel = null
+        codexResponseViewer = null
+        openCodeResponseViewer = null
+        responseTabbedPane = null
         responseViewer = null
         loginHeaderLabel = null
         statusLabel = null
@@ -342,9 +415,22 @@ class QuotaSettingsConfigurable : Configurable {
     }
 
     private fun updateResponseArea() {
-        val area = responseViewer ?: return
+        val area = codexResponseViewer ?: return
         val json = QuotaUsageService.getInstance().getLastResponseJson()
         area.text = if (json.isNullOrBlank()) "No quota response yet." else json
+        area.setCaretPosition(0)
+    }
+
+    private fun updateOpenCodeResponseArea() {
+        val area = openCodeResponseViewer ?: return
+        val quota = QuotaUsageService.getInstance().getLastOpenCodeQuota()
+        val error = QuotaUsageService.getInstance().getLastOpenCodeError()
+        val json = quota?.rawJson
+        area.text = when {
+            error != null -> "Error: $error"
+            json.isNullOrBlank() -> "No OpenCode response yet."
+            else -> json
+        }
         area.setCaretPosition(0)
     }
 
@@ -387,6 +473,39 @@ class QuotaSettingsConfigurable : Configurable {
         val email = if (authService.isLoggedIn()) QuotaUsageService.getInstance().getLastQuota()?.email else null
         accountField.text = accountId.orEmpty()
         emailField.text = email.orEmpty()
+    }
+
+    private fun updateOpenCodeFields() {
+        openCodeCookieField?.text = ""
+        updateOpenCodeStatus()
+    }
+
+    private fun updateOpenCodeStatus() {
+        val label = openCodeStatusLabel ?: return
+        val cookieStore = OpenCodeSessionCookieStore.getInstance()
+        val cookie = cookieStore.load()
+        val openCodeQuota = QuotaUsageService.getInstance().getLastOpenCodeQuota()
+        val openCodeError = QuotaUsageService.getInstance().getLastOpenCodeError()
+
+        when {
+            cookie == null -> {
+                label.text = "No session cookie configured"
+                label.foreground = JBColor.GRAY
+            }
+            openCodeError != null -> {
+                label.text = "Error: $openCodeError"
+                label.foreground = JBColor.RED
+            }
+            openCodeQuota != null -> {
+                label.text = "Connected - Go subscription active"
+                label.foreground = JBColor.GREEN.darker()
+            }
+            else -> {
+                label.text = "Session cookie stored securely"
+                label.foreground = JBColor.GRAY
+            }
+        }
+        label.isVisible = true
     }
 
     private fun updateDisplayModePreview() {

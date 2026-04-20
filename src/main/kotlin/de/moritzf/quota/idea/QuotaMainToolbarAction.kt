@@ -47,6 +47,11 @@ class QuotaMainToolbarAction : AnAction(), CustomComponentAction, RightAlignedTo
 
     private fun showPopup(component: Component, quota: OpenAiCodexQuota?, error: String?) {
         val project = ProjectUtil.getProjectForComponent(component) ?: return
-        QuotaPopupSupport.showPopup(project, component, quota, error, QuotaPopupLocation.BELOW)
+        val service = QuotaUsageService.getInstance()
+        QuotaPopupSupport.showPopup(
+            project, component, quota, error,
+            service.getLastOpenCodeQuota(), service.getLastOpenCodeError(),
+            QuotaPopupLocation.BELOW,
+        )
     }
 }

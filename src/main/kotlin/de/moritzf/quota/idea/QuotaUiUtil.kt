@@ -50,6 +50,20 @@ object QuotaUiUtil {
         return ago ?: formatAbsoluteInstant(instant)
     }
 
+    @JvmStatic
+    fun formatResetInSeconds(resetInSec: Long): String? {
+        if (resetInSec <= 0) {
+            return null
+        }
+
+        val duration = Duration.ofSeconds(resetInSec)
+        val remaining = formatDuration(duration)
+        if (remaining != null) {
+            return "Resets $remaining"
+        }
+        return null
+    }
+
     private fun formatDuration(duration: Duration): String? {
         if (duration.isNegative) {
             return null
