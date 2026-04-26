@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-26
+- Added support for OpenCode Go subscription usage quotas
+- Added MCP tooling support for OpenCode usage queries
+- Renamed plugin to "LLM Subscription Usage"
+- Various UI and UX improvements
+- Fixed classpath issue with `kotlinx.serialization.json` dependency
+
 ## [0.7.3] - 2026-04-18
 - Improved login stability to avoid incorrect signed-out states and unnecessary credential resets
 - Made quota parsing and persistence more robust when OpenAI returns incomplete or unexpected responses
