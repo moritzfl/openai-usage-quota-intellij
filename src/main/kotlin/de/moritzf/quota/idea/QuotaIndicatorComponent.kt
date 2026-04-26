@@ -5,6 +5,7 @@ import com.intellij.util.IconUtil
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.OpenAiCodexQuota
+import de.moritzf.quota.OpenCodeQuota
 import de.moritzf.quota.UsageWindow
 import java.awt.Component
 import java.awt.Cursor
@@ -29,17 +30,15 @@ internal data class IndicatorQuotaState(
 
 internal class QuotaIndicatorComponent(
     horizontalPadding: Int,
-    private val onClick: (Component, Any?, String?) -> Unit,
+    private val onClick: (Component, QuotaIndicatorData) -> Unit,
 ) : BorderLayoutPanel() {
     private val statusIconLabel = createStatusIconLabel()
     private val sourceIconLabel = createSourceIconLabel()
     private val percentageComponent = QuotaPercentageIndicator()
-    private var quota: OpenAiCodexQuota? = null
-    private var openCodeQuota: de.moritzf.quota.OpenCodeQuota? = null
-    private var error: String? = null
+    private var data: QuotaIndicatorData = QuotaIndicatorData.OpenAi(quota = null, error = null)
     private val clickListener = object : MouseAdapter() {
         override fun mouseClicked(event: MouseEvent) {
-            onClick(this@QuotaIndicatorComponent, openCodeQuota ?: quota, error)
+            onClick(this@QuotaIndicatorComponent, data)
         }
     }
 
@@ -57,16 +56,11 @@ internal class QuotaIndicatorComponent(
         percentageComponent.cursor = cursor
     }
 
-    fun updateUsage(quota: Any?, error: String?, displayMode: QuotaDisplayMode) {
-        val openAiQuota = quota as? OpenAiCodexQuota
-        val openCodeQuota = quota as? de.moritzf.quota.OpenCodeQuota
-        this.quota = openAiQuota
-        this.openCodeQuota = openCodeQuota
-        this.error = error
-        val tooltip = if (openCodeQuota != null) {
-            buildOpenCodeTooltipText(openCodeQuota, error)
-        } else {
-            buildQuotaTooltipText(openAiQuota, error)
+    fun updateUsage(data: QuotaIndicatorData, displayMode: QuotaDisplayMode) {
+        this.data = data
+        val tooltip = when (data) {
+            is QuotaIndicatorData.OpenAi -> buildQuotaTooltipText(data.quota, data.error)
+            is QuotaIndicatorData.OpenCode -> buildOpenCodeTooltipText(data.quota, data.error)
         }
         toolTipText = tooltip
         statusIconLabel.toolTipText = tooltip
@@ -101,10 +95,9 @@ internal class QuotaIndicatorComponent(
     }
 
     override fun getToolTipText(event: MouseEvent?): String {
-        return if (openCodeQuota != null) {
-            buildOpenCodeTooltipText(openCodeQuota, error)
-        } else {
-            buildQuotaTooltipText(quota, error)
+        return when (val currentData = data) {
+            is QuotaIndicatorData.OpenAi -> buildQuotaTooltipText(currentData.quota, currentData.error)
+            is QuotaIndicatorData.OpenCode -> buildOpenCodeTooltipText(currentData.quota, currentData.error)
         }
     }
 
@@ -122,10 +115,9 @@ internal class QuotaIndicatorComponent(
     }
 
     private fun resolveSourceIcon(): Icon? {
-        return when {
-            openCodeQuota != null -> QuotaIcons.OPENCODE
-            quota != null -> QuotaIcons.OPENAI
-            else -> null
+        return when (data) {
+            is QuotaIndicatorData.OpenAi -> QuotaIcons.OPENAI
+            is QuotaIndicatorData.OpenCode -> QuotaIcons.OPENCODE
         }
     }
 
@@ -145,53 +137,27 @@ internal class QuotaIndicatorComponent(
     }
 
     private fun barDisplayText(): String {
-        val ocQuota = openCodeQuota
-        if (ocQuota != null) {
-            return openCodeBarDisplayText(ocQuota, error)
-        }
-        val authService = QuotaAuthService.getInstance()
-        return indicatorBarDisplayText(quota, error, authService.isLoggedIn())
-    }
-
-    internal fun openCodeBarDisplayText(quota: de.moritzf.quota.OpenCodeQuota, error: String?): String {
-        if (error != null) return "error"
-        val window = quota.rollingUsage ?: quota.weeklyUsage ?: quota.monthlyUsage
-        val balanceText = if (quota.useBalance) quota.availableBalance?.let { "$${QuotaUiUtil.formatOpenCodeBalance(it)}" } else null
-        return when {
-            window == null -> if (balanceText != null) "no data \u2022 $balanceText" else "no data"
-            window.isRateLimited -> if (balanceText != null) "rate limited \u2022 $balanceText" else "rate limited"
-            else -> {
-                val percent = window.usagePercent
-                val reset = formatResetTime(window.resetInSec)
-                val parts = mutableListOf("$percent%")
-                if (balanceText != null) parts.add(balanceText)
-                if (reset != null) parts.add(reset)
-                parts.joinToString(" \u2022 ")
+        return when (val currentData = data) {
+            is QuotaIndicatorData.OpenAi -> {
+                val authService = QuotaAuthService.getInstance()
+                indicatorBarDisplayText(currentData.quota, currentData.error, authService.isLoggedIn())
             }
-        }
-    }
-
-    private fun formatResetTime(resetInSec: Long): String? {
-        if (resetInSec <= 0) return null
-        return when {
-            resetInSec < 60 -> "${resetInSec}s"
-            resetInSec < 3600 -> "${resetInSec / 60}m"
-            resetInSec < 86400 -> "${resetInSec / 3600}h"
-            else -> "${resetInSec / 86400}d"
+            is QuotaIndicatorData.OpenCode -> openCodeBarDisplayText(currentData.quota, currentData.error)
         }
     }
 
     private fun cakeIcon(): Icon {
-        val ocQuota = openCodeQuota
-        if (ocQuota != null) {
-            return openCodeCakeIcon(ocQuota)
+        val currentData = data
+        if (currentData is QuotaIndicatorData.OpenCode) {
+            return currentData.quota?.let(::openCodeCakeIcon) ?: QuotaIcons.CAKE_UNKNOWN
         }
+        val openAiData = currentData as QuotaIndicatorData.OpenAi
         val authService = QuotaAuthService.getInstance()
-        if (!authService.isLoggedIn() || error != null) {
+        if (!authService.isLoggedIn() || openAiData.error != null) {
             return QuotaIcons.CAKE_UNKNOWN
         }
 
-        val state = indicatorQuotaState(quota) ?: return QuotaIcons.CAKE_UNKNOWN
+        val state = indicatorQuotaState(openAiData.quota) ?: return QuotaIcons.CAKE_UNKNOWN
         if (state.limitReached) {
             return QuotaIcons.CAKE_100
         }
@@ -290,13 +256,14 @@ internal class QuotaIndicatorComponent(
     }
 
     private fun displayPercent(): Int {
-        val ocQuota = openCodeQuota
-        if (ocQuota != null) {
-            val window = ocQuota.rollingUsage ?: ocQuota.weeklyUsage ?: ocQuota.monthlyUsage
+        val currentData = data
+        if (currentData is QuotaIndicatorData.OpenCode) {
+            val window = currentData.quota?.let { it.rollingUsage ?: it.weeklyUsage ?: it.monthlyUsage }
             return window?.usagePercent ?: -1
         }
+        val openAiData = currentData as QuotaIndicatorData.OpenAi
         val authService = QuotaAuthService.getInstance()
-        return indicatorDisplayPercent(quota, error, authService.isLoggedIn())
+        return indicatorDisplayPercent(openAiData.quota, openAiData.error, authService.isLoggedIn())
     }
 
     private fun updatePercentageDisplay() {
@@ -323,7 +290,7 @@ internal fun buildQuotaTooltipText(quota: OpenAiCodexQuota?, error: String?): St
     return buildQuotaTooltipText(quota, error, authService.isLoggedIn())
 }
 
-internal fun buildOpenCodeTooltipText(quota: de.moritzf.quota.OpenCodeQuota?, error: String?): String {
+internal fun buildOpenCodeTooltipText(quota: OpenCodeQuota?, error: String?): String {
     if (error != null) {
         return "OpenCode quota: $error"
     }
@@ -338,6 +305,36 @@ internal fun buildOpenCodeTooltipText(quota: de.moritzf.quota.OpenCodeQuota?, er
         quota.useBalance && availableBalance != null ->
             "OpenCode quota: ${window.usagePercent}% used, balance $${QuotaUiUtil.formatOpenCodeBalance(availableBalance)}"
         else -> "OpenCode quota: ${window.usagePercent}% used"
+    }
+}
+
+internal fun openCodeBarDisplayText(quota: OpenCodeQuota?, error: String?): String {
+    if (error != null) return "error"
+    if (quota == null) return "loading..."
+
+    val window = quota.rollingUsage ?: quota.weeklyUsage ?: quota.monthlyUsage
+    val balanceText = if (quota.useBalance) quota.availableBalance?.let { "$${QuotaUiUtil.formatOpenCodeBalance(it)}" } else null
+    return when {
+        window == null -> if (balanceText != null) "no data \u2022 $balanceText" else "no data"
+        window.isRateLimited -> if (balanceText != null) "rate limited \u2022 $balanceText" else "rate limited"
+        else -> {
+            val percent = window.usagePercent
+            val reset = formatOpenCodeResetTime(window.resetInSec)
+            val parts = mutableListOf("$percent%")
+            if (balanceText != null) parts.add(balanceText)
+            if (reset != null) parts.add(reset)
+            parts.joinToString(" \u2022 ")
+        }
+    }
+}
+
+private fun formatOpenCodeResetTime(resetInSec: Long): String? {
+    if (resetInSec <= 0) return null
+    return when {
+        resetInSec < 60 -> "${resetInSec}s"
+        resetInSec < 3600 -> "${resetInSec / 60}m"
+        resetInSec < 86400 -> "${resetInSec / 3600}h"
+        else -> "${resetInSec / 86400}d"
     }
 }
 

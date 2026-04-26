@@ -74,6 +74,21 @@ class QuotaUsageService(
 
     fun getLastOpenCodeResponseJson(): String? = lastOpenCodeQuotaRef.get()?.rawJson
 
+    internal fun getEffectiveIndicatorData(): QuotaIndicatorData {
+        val settings = settingsProvider()
+        val source = when (settings?.source() ?: QuotaIndicatorSource.OPEN_AI) {
+            QuotaIndicatorSource.LAST_USED -> settings?.lastUsedSource() ?: QuotaIndicatorSource.OPEN_AI
+            QuotaIndicatorSource.OPEN_AI -> QuotaIndicatorSource.OPEN_AI
+            QuotaIndicatorSource.OPEN_CODE -> QuotaIndicatorSource.OPEN_CODE
+        }
+
+        return when (source) {
+            QuotaIndicatorSource.OPEN_AI -> QuotaIndicatorData.OpenAi(lastQuotaRef.get(), lastErrorRef.get())
+            QuotaIndicatorSource.OPEN_CODE -> QuotaIndicatorData.OpenCode(lastOpenCodeQuotaRef.get(), lastOpenCodeErrorRef.get())
+            QuotaIndicatorSource.LAST_USED -> QuotaIndicatorData.OpenAi(lastQuotaRef.get(), lastErrorRef.get())
+        }
+    }
+
     fun refreshNowAsync() {
         AppExecutorUtil.getAppExecutorService().execute(::refreshNow)
     }

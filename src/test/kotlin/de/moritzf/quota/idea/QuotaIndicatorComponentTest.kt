@@ -57,75 +57,69 @@ class QuotaIndicatorComponentTest {
 
     @Test
     fun openCodeBarDisplayTextShowsPercentAndReset() {
-        val component = QuotaIndicatorComponent(horizontalPadding = 4, onClick = { _, _, _ -> })
         val quota = OpenCodeQuota(
             rollingUsage = OpenCodeUsageWindow(usagePercent = 42, resetInSec = 3661),
         )
 
-        val text = component.openCodeBarDisplayText(quota, error = null)
+        val text = openCodeBarDisplayText(quota, error = null)
         assertEquals("42% \u2022 1h", text)
     }
 
     @Test
     fun openCodeBarDisplayTextOmitsBalanceWhenUseBalanceIsFalse() {
-        val component = QuotaIndicatorComponent(horizontalPadding = 4, onClick = { _, _, _ -> })
         val quota = OpenCodeQuota(
             rollingUsage = OpenCodeUsageWindow(usagePercent = 42, resetInSec = 3661),
             availableBalance = 1_234_567_890L,
             useBalance = false,
         )
 
-        val text = component.openCodeBarDisplayText(quota, error = null)
+        val text = openCodeBarDisplayText(quota, error = null)
         assertEquals("42% \u2022 1h", text)
     }
 
     @Test
     fun openCodeBarDisplayTextIncludesBalanceWhenUseBalanceIsTrue() {
-        val component = QuotaIndicatorComponent(horizontalPadding = 4, onClick = { _, _, _ -> })
         val quota = OpenCodeQuota(
             rollingUsage = OpenCodeUsageWindow(usagePercent = 42, resetInSec = 3661),
             availableBalance = 1_234_567_890L,
             useBalance = true,
         )
 
-        val text = component.openCodeBarDisplayText(quota, error = null)
+        val text = openCodeBarDisplayText(quota, error = null)
         assertEquals("42% \u2022 $12.35 \u2022 1h", text)
     }
 
     @Test
     fun openCodeBarDisplayTextShowsRateLimitedWithBalanceWhenUseBalanceIsTrue() {
-        val component = QuotaIndicatorComponent(horizontalPadding = 4, onClick = { _, _, _ -> })
         val quota = OpenCodeQuota(
             rollingUsage = OpenCodeUsageWindow(usagePercent = 100, resetInSec = 0, status = "rate-limited"),
             availableBalance = 500_000_000L,
             useBalance = true,
         )
 
-        val text = component.openCodeBarDisplayText(quota, error = null)
+        val text = openCodeBarDisplayText(quota, error = null)
         assertEquals("rate limited \u2022 $5.00", text)
     }
 
     @Test
     fun openCodeBarDisplayTextShowsNoDataWithBalanceWhenUseBalanceIsTrue() {
-        val component = QuotaIndicatorComponent(horizontalPadding = 4, onClick = { _, _, _ -> })
         val quota = OpenCodeQuota(
             availableBalance = 1_000_000_000L,
             useBalance = true,
         )
 
-        val text = component.openCodeBarDisplayText(quota, error = null)
+        val text = openCodeBarDisplayText(quota, error = null)
         assertEquals("no data \u2022 $10.00", text)
     }
 
     @Test
     fun openCodeBarDisplayTextReturnsErrorWhenErrorPresent() {
-        val component = QuotaIndicatorComponent(horizontalPadding = 4, onClick = { _, _, _ -> })
         val quota = OpenCodeQuota(
             rollingUsage = OpenCodeUsageWindow(usagePercent = 42),
             availableBalance = 1_000_000_000L,
         )
 
-        val text = component.openCodeBarDisplayText(quota, error = "Network timeout")
+        val text = openCodeBarDisplayText(quota, error = "Network timeout")
         assertEquals("error", text)
     }
 }
