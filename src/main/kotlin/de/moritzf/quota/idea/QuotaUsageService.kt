@@ -72,6 +72,8 @@ class QuotaUsageService(
 
     fun getLastOpenCodeError(): String? = lastOpenCodeErrorRef.get()
 
+    fun getLastOpenCodeResponseJson(): String? = lastOpenCodeQuotaRef.get()?.rawJson
+
     fun refreshNowAsync() {
         AppExecutorUtil.getAppExecutorService().execute(::refreshNow)
     }

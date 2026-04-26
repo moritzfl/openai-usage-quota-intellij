@@ -10,7 +10,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /**
- * Exposes the latest OpenAI usage JSON through IntelliJ's MCP server.
+ * Exposes the latest OpenAI and OpenCode Go usage JSON through IntelliJ's MCP server.
  */
 class OpenAiUsageQuotaMcpToolset : McpToolset {
     @McpTool(name = "openai_usage_quota")
@@ -27,6 +27,24 @@ class OpenAiUsageQuotaMcpToolset : McpToolset {
         val json = usageService.getLastResponseJson()
         if (json.isNullOrBlank()) {
             return errorResult("No usage response available")
+        }
+        return successResult(json)
+    }
+
+    @McpTool(name = "opencode_usage_quota")
+    @McpDescription(description = "Returns the latest OpenCode Go usage quota response JSON.")
+    fun opencode_usage_quota(): McpToolCallResult {
+        val usageService = QuotaUsageService.getInstance()
+        usageService.refreshNowBlocking()
+
+        val error = usageService.getLastOpenCodeError()
+        if (!error.isNullOrBlank()) {
+            return errorResult(error)
+        }
+
+        val json = usageService.getLastOpenCodeResponseJson()
+        if (json.isNullOrBlank()) {
+            return errorResult("No OpenCode usage response available")
         }
         return successResult(json)
     }
