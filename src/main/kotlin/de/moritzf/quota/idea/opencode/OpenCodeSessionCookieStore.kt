@@ -6,6 +6,7 @@ import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.util.concurrency.AppExecutorUtil
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
@@ -20,13 +21,21 @@ class OpenCodeSessionCookieStore {
     private val cachedCookie = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
+    private val loadCallbacks = CopyOnWriteArrayList<() -> Unit>()
 
     /**
      * Returns the cached cookie value, or null if not yet loaded.
      * Safe to call from the EDT.
      */
-    fun load(): String? {
+    fun load(onLoaded: (() -> Unit)? = null): String? {
         if (!loaded.get()) {
+            if (onLoaded != null) {
+                loadCallbacks += onLoaded
+                if (loaded.get() && loadCallbacks.remove(onLoaded)) {
+                    ApplicationManager.getApplication().invokeLater(onLoaded)
+                    return cachedCookie.get()
+                }
+            }
             if (loading.compareAndSet(false, true)) {
                 loadAsync()
             }
@@ -34,6 +43,8 @@ class OpenCodeSessionCookieStore {
         }
         return cachedCookie.get()
     }
+
+    fun isLoaded(): Boolean = loaded.get()
 
     /**
      * Loads the cookie from PasswordSafe on a background thread.
@@ -51,6 +62,7 @@ class OpenCodeSessionCookieStore {
             } finally {
                 loaded.set(true)
                 loading.set(false)
+                notifyLoadedCallbacks()
             }
         }
     }
@@ -69,6 +81,7 @@ class OpenCodeSessionCookieStore {
         cachedCookie.set(cookie)
         loaded.set(true)
         LOG.fine("Loaded cookie: len=${cookie?.length ?: 0}, present=${cookie != null}")
+        notifyLoadedCallbacks()
         return cookie
     }
 
@@ -82,6 +95,7 @@ class OpenCodeSessionCookieStore {
         loaded.set(true)
         loading.set(false)
         LOG.fine("Saved cookie (len=${cookie.length})")
+        notifyLoadedCallbacks()
     }
 
     fun clear() {
@@ -92,6 +106,19 @@ class OpenCodeSessionCookieStore {
         }
         cachedCookie.set(null)
         loaded.set(true)
+        loading.set(false)
+        notifyLoadedCallbacks()
+    }
+
+    private fun notifyLoadedCallbacks() {
+        if (loadCallbacks.isEmpty()) {
+            return
+        }
+        val callbacks = loadCallbacks.toList()
+        loadCallbacks.clear()
+        callbacks.forEach { callback ->
+            ApplicationManager.getApplication().invokeLater(callback)
+        }
     }
 
     companion object {

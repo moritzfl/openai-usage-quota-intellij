@@ -44,6 +44,7 @@ internal class OpenCodeSettingsPanel(
     private val workspaceLoadingLabel = JBLabel("Loading workspaces...").apply { isVisible = false }
     private val openCodeJsonViewer = createResponseViewer()
     private var updatingWorkspaceComboBox: Boolean = false
+    private var awaitingCookieLoadRefresh: Boolean = false
 
     init {
         workspaceComboBox.addActionListener {
@@ -119,26 +120,36 @@ internal class OpenCodeSettingsPanel(
     }
 
     fun updateOpenCodeFields() {
-        val cookie = OpenCodeSessionCookieStore.getInstance().load()
+        val cookieStore = OpenCodeSessionCookieStore.getInstance()
+        val cookie = cookieStore.load(onLoaded = ::refreshAfterCookieLoad)
         openCodeCookieField.text = if (cookie.isNullOrBlank()) "" else OPENCODE_COOKIE_PLACEHOLDER
         if (!cookie.isNullOrBlank()) {
             loadWorkspaces(cookie)
-        } else {
+        } else if (cookieStore.isLoaded()) {
             workspaceComboBox.removeAllItems()
             workspaceComboBox.isVisible = false
             workspaceLabel.isVisible = false
             workspaceLoadingLabel.isVisible = false
+        } else {
+            workspaceLoadingLabel.text = "Loading session cookie..."
+            workspaceLoadingLabel.isVisible = true
+            workspaceLabel.isVisible = false
+            workspaceComboBox.isVisible = false
         }
         updateOpenCodeStatus()
     }
 
     fun updateOpenCodeStatus() {
         val cookieStore = OpenCodeSessionCookieStore.getInstance()
-        val cookie = cookieStore.load()
+        val cookie = cookieStore.load(onLoaded = ::refreshAfterCookieLoad)
         val openCodeQuota = QuotaUsageService.getInstance().getLastOpenCodeQuota()
         val openCodeError = QuotaUsageService.getInstance().getLastOpenCodeError()
 
         when {
+            !cookieStore.isLoaded() -> {
+                openCodeStatusLabel.text = formatStatusText("Loading session cookie...", AuthStatusKind.PENDING)
+                openCodeStatusLabel.foreground = statusLabelDefaultForeground ?: openCodeStatusLabel.foreground
+            }
             cookie == null -> {
                 openCodeStatusLabel.text = formatStatusText("No session cookie configured", AuthStatusKind.DISCONNECTED)
                 openCodeStatusLabel.foreground = statusLabelDefaultForeground ?: openCodeStatusLabel.foreground
@@ -183,6 +194,7 @@ internal class OpenCodeSettingsPanel(
     }
 
     private fun loadWorkspaces(cookie: String) {
+        workspaceLoadingLabel.text = "Loading workspaces..."
         workspaceLoadingLabel.isVisible = true
         workspaceLabel.isVisible = false
         workspaceComboBox.isVisible = false
@@ -224,6 +236,17 @@ internal class OpenCodeSettingsPanel(
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@OpenCodeSettingsPanel))
             }
         }
+    }
+
+    private fun refreshAfterCookieLoad() {
+        if (awaitingCookieLoadRefresh) {
+            return
+        }
+        awaitingCookieLoadRefresh = true
+        ApplicationManager.getApplication().invokeLater({
+            awaitingCookieLoadRefresh = false
+            updateOpenCodeFields()
+        }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
     }
 
     private fun createResponseViewer(): com.intellij.ui.components.JBTextArea {
