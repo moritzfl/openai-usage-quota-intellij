@@ -12,6 +12,7 @@ import de.moritzf.quota.idea.common.QuotaUsageListener
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
+import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.opencode.OpenCodeQuota
 import java.awt.Component
@@ -160,12 +161,38 @@ internal object QuotaPopupSupport {
                 buildOpenAiPopupContent(currentQuota, currentError, showCodexSection, hasReviewData).forEach { add(it) }
                 buildOpenCodePopupContent(openCodeQuota, openCodeError, showOpenCodeSection).forEach { add(it) }
 
-                val fetchedAt = if (showCodexSection) de.moritzf.quota.idea.ui.QuotaUiUtil.formatInstant(currentQuota?.fetchedAt) else null
-                if (fetchedAt != null) {
+                val updatedAtLabels = buildUpdatedAtLabels(
+                    showCodexSection,
+                    currentQuota,
+                    showOpenCodeSection,
+                    openCodeQuota,
+                )
+                if (updatedAtLabels.isNotEmpty()) {
                     add(createSeparatedBlock())
-                    add(withVerticalInsets(createMutedLabel("Last updated: $fetchedAt"), top = 1))
+                    updatedAtLabels.forEach { label ->
+                        add(withVerticalInsets(createMutedLabel(label), top = 1))
+                    }
                 }
             }
+        }
+    }
+
+    private fun buildUpdatedAtLabels(
+        showCodexSection: Boolean,
+        currentQuota: OpenAiCodexQuota?,
+        showOpenCodeSection: Boolean,
+        openCodeQuota: OpenCodeQuota?,
+    ): List<String> {
+        val openAiFetchedAt = if (showCodexSection) QuotaUiUtil.formatInstant(currentQuota?.fetchedAt) else null
+        val openCodeFetchedAt = if (showOpenCodeSection) QuotaUiUtil.formatInstant(openCodeQuota?.fetchedAt) else null
+        return when {
+            openAiFetchedAt != null && openCodeFetchedAt != null -> listOf(
+                "OpenAI updated: $openAiFetchedAt",
+                "OpenCode updated: $openCodeFetchedAt",
+            )
+            openAiFetchedAt != null -> listOf("Last updated: $openAiFetchedAt")
+            openCodeFetchedAt != null -> listOf("Last updated: $openCodeFetchedAt")
+            else -> emptyList()
         }
     }
 }

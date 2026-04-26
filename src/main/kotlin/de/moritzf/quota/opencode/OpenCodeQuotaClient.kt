@@ -85,7 +85,7 @@ open class OpenCodeQuotaClient(
             )
         }
 
-        return workspaces.parallelStream().map { (id, name) ->
+        return workspaces.map { (id, name) ->
             val (mine, hasGo) = try {
                 val quota = fetchQuota(sessionCookie, id)
                 quota.mine to quota.hasUsageState()
@@ -186,7 +186,7 @@ open class OpenCodeQuotaClient(
      * Falls back to extracting it from the JS bundle.
      */
     private fun resolveFunctionId(sessionCookie: String, workspaceId: String): String {
-        cachedFunctionId.get()?.takeIf { it.workspaceId == workspaceId }?.let { return it.functionId }
+        cachedFunctionId.get()?.let { return it }
 
         val functionId = extractFunctionIdFromBundle(sessionCookie, workspaceId)
             ?: throw OpenCodeQuotaException(
@@ -194,7 +194,7 @@ open class OpenCodeQuotaClient(
                     "The opencode console may have been updated. Please report this issue.",
                 0, null
             )
-        cachedFunctionId.set(CachedFunctionId(workspaceId, functionId))
+        cachedFunctionId.set(functionId)
         return functionId
     }
 
@@ -287,7 +287,7 @@ open class OpenCodeQuotaClient(
         val DEFAULT_ENDPOINT: URI = URI.create("https://opencode.ai/_server")
 
         private val LOG = Logger.getLogger(OpenCodeQuotaClient::class.java.name)
-        private val cachedFunctionId = AtomicReference<CachedFunctionId?>()
+        private val cachedFunctionId = AtomicReference<String?>()
 
         private const val WORKSPACES_FUNCTION_ID = "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f"
         private const val BILLING_INFO_FUNCTION_ID = "c83b78a614689c38ebee981f9b39a8b377716db85c1fd7dbab604adc02d3313d"
@@ -365,11 +365,6 @@ open class OpenCodeQuotaClient(
         }
 
         private const val ROOT_ASSIGNMENT_MARKER = "\$R[0]="
-
-        private data class CachedFunctionId(
-            val workspaceId: String,
-            val functionId: String,
-        )
 
     }
 }

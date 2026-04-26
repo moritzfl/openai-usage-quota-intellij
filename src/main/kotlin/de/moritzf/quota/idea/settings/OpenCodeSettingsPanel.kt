@@ -231,7 +231,11 @@ internal class OpenCodeSettingsPanel(
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@OpenCodeSettingsPanel))
             } catch (e: Exception) {
                 ApplicationManager.getApplication().invokeLater({
+                    workspaceComboBox.removeAllItems()
+                    workspaceComboBox.isVisible = false
+                    workspaceLabel.isVisible = false
                     workspaceLoadingLabel.text = "Could not load workspaces: ${e.message}"
+                    workspaceLoadingLabel.isVisible = true
                     updateOpenCodeStatus()
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@OpenCodeSettingsPanel))
             }
