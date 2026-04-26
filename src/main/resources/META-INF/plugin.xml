@@ -15,13 +15,13 @@
                 id="openai.usage.quota.settings"
                 displayName="LLM Subscription Usage"
                 parentId="tools"
-                instance="de.moritzf.quota.idea.QuotaSettingsConfigurable"/>
-        <statusBarWidgetFactory implementation="de.moritzf.quota.idea.QuotaStatusBarWidgetFactory" id="openai.usage.quota.widget"/>
+                instance="de.moritzf.quota.idea.settings.QuotaSettingsConfigurable"/>
+        <statusBarWidgetFactory implementation="de.moritzf.quota.idea.ui.toolbar.QuotaStatusBarWidgetFactory" id="openai.usage.quota.widget"/>
     </extensions>
 
     <actions>
         <action id="openai.usage.quota.mainToolbar"
-                class="de.moritzf.quota.idea.QuotaMainToolbarAction"
+                class="de.moritzf.quota.idea.ui.toolbar.QuotaMainToolbarAction"
                 text="LLM Subscription Usage">
             <add-to-group group-id="MainToolbarRight"/>
         </action>
