@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+## [1.6.9] - 2026-07-24
 - OpenAI/Codex proxy now prefers the plugin’s verified Codex client version over an older local Codex install; a newer local/npm version can still raise it.
 
 ## [1.6.8] - 2026-07-23
