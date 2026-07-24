@@ -12,28 +12,45 @@ import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 object CodexClientVersionResolver {
-    // Must support every Codex model the proxy advertises when local/npm lookup is unavailable.
+    // Functionally verified against advertised Codex models. Default over a possibly stale local CLI.
     const val FALLBACK_CODEX_CLIENT_VERSION: String = "0.139.0"
     private val VERSION_PATTERN = Regex("\\b\\d+\\.\\d+\\.\\d+\\b")
     private const val REGISTRY_URL = "https://registry.npmjs.org/@openai/codex/latest"
     private val cache = ConcurrentHashMap<String, String>()
+    private val SEMVER_COMPARATOR: Comparator<String> =
+        Comparator { left, right ->
+            val leftParts = left.split('.').map { it.toIntOrNull() ?: 0 }
+            val rightParts = right.split('.').map { it.toIntOrNull() ?: 0 }
+            val length = maxOf(leftParts.size, rightParts.size)
+            for (index in 0 until length) {
+                val leftPart = leftParts.getOrElse(index) { 0 }
+                val rightPart = rightParts.getOrElse(index) { 0 }
+                val cmp = leftPart.compareTo(rightPart)
+                if (cmp != 0) {
+                    return@Comparator cmp
+                }
+            }
+            0
+        }
     fun resolve(configuredVersion: String?): String {
         val trimmedVersion = configuredVersion?.trim()
         if (!trimmedVersion.isNullOrEmpty()) {
             return trimmedVersion
         }
         return cache.computeIfAbsent("default") {
-            resolveLocalCodexVersion()
-                ?: resolveRemoteCodexVersion()
-                ?: run {
-                    System.err.println(
-                        "Could not determine the Codex API version automatically. " +
-                            "Falling back to $FALLBACK_CODEX_CLIENT_VERSION. " +
-                            "Pass a version explicitly with --codex-version if you need to override it.",
-                    )
-                    FALLBACK_CODEX_CLIENT_VERSION
-                }
+            // Plugin-baked version is the known-good default for advertised models.
+            // Local/npm may only raise the version (never replace with an older install).
+            newestVersion(
+                FALLBACK_CODEX_CLIENT_VERSION,
+                resolveLocalCodexVersion(),
+                resolveRemoteCodexVersion(),
+            ) ?: FALLBACK_CODEX_CLIENT_VERSION
         }
+    }
+    internal fun newestVersion(vararg versions: String?): String? {
+        return versions
+            .mapNotNull { normalizeVersion(it) }
+            .maxWithOrNull(SEMVER_COMPARATOR)
     }
     fun resolveLocalCodexVersion(): String? {
         for (command in localCodexVersionCommands(isWindows())) {

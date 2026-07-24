@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- OpenAI/Codex proxy now prefers the plugin’s verified Codex client version over an older local Codex install; a newer local/npm version can still raise it.
+
 ## [1.6.8] - 2026-07-23
 - Codex/team accounts no longer fail with “Request failed (200)” when OpenAI returns the newer spend-limit object shape; weekly usage and individual spend caps are shown again.
 
