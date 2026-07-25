@@ -53,8 +53,6 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 
 Open IntelliJ IDEA `Settings` > `Plugins` > `Marketplace`, search for **LLM Subscription Usage**, and click Install.
 
-Or download a release ZIP from the [GitHub releases page](https://github.com/moritzfl/openai-usage-quota-intellij/releases) and install from `Settings` > `Plugins` > gear icon > `Install Plugin from Disk...`.
-
 ## Quick start
 
 1. Open `Settings` > `Tools` > `LLM Subscription Usage`.
@@ -71,11 +69,11 @@ Everything else is optional and lives in the same settings page: MCP tools, MCP 
 
 **Detail popup** — all active subscriptions side-by-side with their usage windows, next reset times, and last refresh timestamps. Drag and drop to reorder providers.
 
-Quotas refresh automatically every 5 minutes (configurable), plus on login and when opening the popup. Credentials — OAuth tokens, API keys, and session cookies — are stored in IntelliJ Password Safe.
+Quotas refresh automatically every 5 minutes, plus on login and when opening the popup. Credentials — OAuth tokens, API keys, and session cookies — are stored in IntelliJ Password Safe.
 
 ## MCP tools for IDE chat
 
-The plugin exposes subscription-backed tools to IntelliJ's built-in AI chat through the Model Context Protocol:
+The plugin registers subscription-backed tools with IntelliJ's built-in MCP server. They are available to the IDE's AI chat — and to any external agent or AI harness that connects to IntelliJ's MCP server (Claude Code, Codex CLI, OpenCode, and others):
 
 | Tool | What it does |
 |---|---|
@@ -101,7 +99,7 @@ The plugin can keep those configs pointed at the active endpoint: enable `Sync I
 
 ## OpenAI-compatible proxy
 
-The plugin can run a local proxy that exposes your subscriptions through standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/responses` where supported, `/v1/models`, plus LiteLLM-style `/v1/model/info`). Any tool that speaks the OpenAI API or expects a LiteLLM server can then use your subscriptions.
+The plugin can run a local proxy that exposes your subscriptions through standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/responses` where supported, `/v1/models`, plus LiteLLM-style `/v1/model/info`). Any tool that speaks the OpenAI API or expects a LiteLLM server can then use your subscriptions. Compatibility is tested with the Junie CLI and with JetBrains' own API Connections for AI features (such as the integrated AI chat).
 
 **Setup:** open the **Proxy** tab in `Settings` > `Tools` > `LLM Subscription Usage`, tick `Enable local subscription proxy`, choose the providers to expose, and apply. Then use `Copy Base URL` and `Copy API Key` to configure your client.
 
