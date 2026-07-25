@@ -31,8 +31,9 @@ class QuotaUsageServiceTest {
             service.refreshNowBlocking()
 
             // No prior success: still no quota, but error + raw body are retained.
+            // The provider prefers the exception's own detail over "Request failed (status)".
             assertNull(service.getLastQuota(QuotaProviderType.OPEN_AI))
-            assertEquals("Request failed (200)", service.getLastError(QuotaProviderType.OPEN_AI))
+            assertEquals("Usage response could not be parsed", service.getLastError(QuotaProviderType.OPEN_AI))
             assertEquals(rawJson, service.getLastResponseJson(QuotaProviderType.OPEN_AI))
         } finally {
             service.dispose()
@@ -65,7 +66,7 @@ class QuotaUsageServiceTest {
 
             assertNotNull(service.getLastQuota(QuotaProviderType.OPEN_AI))
             assertEquals(0.42, service.getLastQuota(QuotaProviderType.OPEN_AI)!!.usageFraction()!!, 0.0001)
-            assertEquals("Request failed (500)", service.getLastError(QuotaProviderType.OPEN_AI))
+            assertEquals("blip", service.getLastError(QuotaProviderType.OPEN_AI))
             assertEquals("""{"err":1}""", service.getLastResponseJson(QuotaProviderType.OPEN_AI))
         } finally {
             service.dispose()
