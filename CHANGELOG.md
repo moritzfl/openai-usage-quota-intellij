@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- Reworked the README and Marketplace description around a supported-provider table and shorter feature sections.
 
 ## [1.6.10] - 2026-07-25
 - Claude usage no longer fails with “Claude usage response changed.” when the extra-usage credits are reported as decimal numbers (for example `4403.0`); credit amounts now accept integers, decimals, and numeric strings.

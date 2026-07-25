@@ -1,10 +1,11 @@
 # LLM Subscription Usage
 
-Track and use your LLM subscriptions directly in IntelliJ IDEA — in the status bar, a detailed popup, through IDE chat tools, local AI client MCP configs, and a local OpenAI-compatible proxy.
+Track and use your LLM subscriptions directly in IntelliJ IDEA.
 
-This plugin started as a simple OpenAI quota checker. It has grown into a multi-provider subscription companion and now includes capabilities beyond quota display, such as hosted web search, image and video generation MCP tools, and a local OpenAI-compatible proxy backed by your subscriptions. The goal is to help you get the most value from the subscriptions you already pay for.
-
-**Supports:** OpenAI (ChatGPT), Claude (Anthropic), SuperGrok/xAI, Cursor, GitHub Copilot, OpenCode Go, Ollama Cloud, Z.ai, MiniMax, and Kimi.
+- **See your quota** for ChatGPT, Claude, Grok, Copilot & more in the status bar and a detail popup.
+- **Use your subscriptions from IDE chat** via MCP tools: quota lookup, web search, image and video generation.
+- **Reuse your subscriptions in other tools** through a local OpenAI-compatible proxy (for example as a custom LLM provider for JetBrains Junie).
+- **Keep AI client configs in sync** with IntelliJ's MCP server URL, which changes port between restarts.
 
 <table align="center">
   <tr>
@@ -14,8 +15,6 @@ This plugin started as a simple OpenAI quota checker. It has grown into a multi-
       </a>
       <br />
       <strong><a href="https://plugins.jetbrains.com/plugin/30690-openai-usage-quota">LLM Subscription Usage on JetBrains Marketplace</a></strong>
-      <br />
-      Install the plugin for IntelliJ IDEA.
       <br />
       <br />
       <a href="https://plugins.jetbrains.com/plugin/30690-openai-usage-quota">
@@ -31,45 +30,24 @@ This plugin started as a simple OpenAI quota checker. It has grown into a multi-
   </tr>
 </table>
 
----
+![Quota popup](docs/quota-popup.png)
 
-## Features
+## Supported providers
 
-**Status Bar Widget** — A compact indicator in your status bar shows at-a-glance quota status. Tooltip reveals quick details; click to open the full popup.
+| Provider | Sign-in | Quota | Web search | Images | Video | Proxy |
+|---|---|:-:|:-:|:-:|:-:|:-:|
+| OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ |
+| Claude (Anthropic) | Browser login | ✓ | — | — | — | — |
+| SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GitHub Copilot | Device code | ✓ | — | — | — | ✓ |
+| Cursor | Session cookie | ✓ | — | — | — | — |
+| OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | ✓ |
+| Ollama Cloud | Session cookie + API key | ✓ | ✓ | — | — | ✓ |
+| Z.ai | API key | ✓ | ✓ | — | — | ✓ |
+| MiniMax | API key | ✓ | ✓ | — | — | ✓ |
+| Kimi | Device code | ✓ | ✓ | — | — | ✓ |
 
-**Quota Popup** — Click the status widget to see:
-- All your active subscriptions side-by-side
-- Primary and secondary usage windows
-- Next reset times
-- Last refresh timestamps
-
-**MCP Integration** — Exposes quota data and supported hosted capabilities to IntelliJ's built-in chat via the Model Context Protocol. It can also sync the currently running IntelliJ MCP server URL into JSON/TOML/YAML config files for local AI clients.
-
-Individual MCP tools can be enabled or disabled in the IDE settings under `Tools` > `MCP Server` > `Exposed Tools`.
-
-**MCP Web Search** — Search the web through subscription-backed provider APIs without leaving the IDE. Supported search providers:
-- OpenAI/Codex via the existing OpenAI login
-- Kimi via the existing Kimi login
-- Z.ai via API key
-- MiniMax via API key
-- Ollama via API key
-- SuperGrok/xAI via the existing SuperGrok login
-
-OpenAI/Codex search supports context-size, live-access, domain-filter, and optional source metadata controls. SuperGrok/xAI search supports model selection and domain filters.
-
-**MCP Image Generation** — Generate images through hosted Codex tooling or SuperGrok/xAI Imagine and optionally save the result directly to a file.
-
-**MCP Video Generation** — Generate videos through SuperGrok/xAI Imagine using the existing SuperGrok login; waits for the finished video by default.
-
-**OpenAI-Compatible Proxy** — Serves a local OpenAI-compatible API backed by your subscriptions (OpenAI/Codex, SuperGrok, GitHub Copilot, Kimi, MiniMax, Ollama, OpenCode Zen, Z.ai), so tools like JetBrains Junie can use it as a custom LLM provider.
-
-**Customizable Display** — Drag-and-drop to reorder providers in the popup. Choose whether the indicator lives in the status bar or main toolbar.
-
-**Automatic Refresh** — Quotas refresh every 5 minutes in the background, plus on login and when opening the popup.
-
-**Secure Credential Storage** — OAuth tokens, API keys, session cookies, and device-flow credentials are stored in IntelliJ Password Safe.
-
----
+*Web search, images, and video are MCP chat tools backed by your subscription. Proxy = available through the local OpenAI-compatible proxy.*
 
 ## Installation
 
@@ -77,87 +55,79 @@ Open IntelliJ IDEA `Settings` > `Plugins` > `Marketplace`, search for **LLM Subs
 
 Or download a release ZIP from the [GitHub releases page](https://github.com/moritzfl/openai-usage-quota-intellij/releases) and install from `Settings` > `Plugins` > gear icon > `Install Plugin from Disk...`.
 
-## Getting Started
+## Quick start
 
-1. Open `Settings` > `Tools` > `LLM Subscription Usage`
-2. Login or add your credentials for your LLM Providers
-3. Return to IDE — the status bar widget shows your quota
-4. Click the widget for a detailed popup
-5. Optional: enable `Sync IntelliJ MCP server URL to JSON/TOML/YAML files` to keep local AI client MCP configs pointed at IntelliJ's current MCP endpoint
+1. Open `Settings` > `Tools` > `LLM Subscription Usage`.
+2. Sign in or add credentials for the providers you use.
+3. Done — the status bar widget now shows your quota. Click it for the detail popup.
 
----
+Everything else is optional and lives in the same settings page: MCP tools, MCP server URL sync, and the local proxy.
 
-## MCP Server URL Sync
+## Quota tracking
 
-The plugin can keep JSON, TOML, and YAML config files up to date with IntelliJ's current MCP server URL. Enable `Sync IntelliJ MCP server URL to JSON/TOML/YAML files` in settings, choose one or more config files, and select an existing string property to update.
+**Status bar widget** — a compact indicator shows your quota at a glance. Hover for a quick summary, click for the full popup. You can also place the indicator in the main toolbar instead.
 
-This is useful because IntelliJ's MCP server port can change. Tools like OpenCode, Codex, or other local AI clients often store the IntelliJ MCP server URL in their own config files. Server URL sync keeps those configs pointed at the active IntelliJ MCP endpoint automatically, so they continue to connect after the port changes.
+![Status bar icon](docs/quota-statusbar-icon.png) ![Status bar with percentage](docs/quota-statusbar-percentage.png) ![Status bar with cake diagram](docs/quota-statusbar-cake.png)
 
-The settings page shows whether IntelliJ's MCP server is currently running, installed but stopped, disabled, or unavailable.
+**Detail popup** — all active subscriptions side-by-side with their usage windows, next reset times, and last refresh timestamps. Drag and drop to reorder providers.
 
----
+Quotas refresh automatically every 5 minutes (configurable), plus on login and when opening the popup. Credentials — OAuth tokens, API keys, and session cookies — are stored in IntelliJ Password Safe.
 
-## OpenAI-Compatible Proxy
+## MCP tools for IDE chat
 
-When configured, the plugin can run a local proxy that exposes selected subscription-backed providers through standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/responses` where supported, `/v1/models`, plus LiteLLM-style `/v1/model/info`). Any tool that speaks the OpenAI API or expects a LiteLLM server can then use your subscriptions.
+The plugin exposes subscription-backed tools to IntelliJ's built-in AI chat through the Model Context Protocol:
 
-To enable it, open the **Proxy** tab in `Settings` > `Tools` > `LLM Subscription Usage`, tick `Enable local subscription proxy`, choose the providers to expose, and apply. The status line shows whether the proxy is off, starting, running, or failed. Use `Copy Base URL` and `Copy API Key` to configure clients; requests authenticate against the locally generated API key, which is stored in the IDE Password Safe.
+| Tool | What it does |
+|---|---|
+| `subscription_quota` | Current usage for any configured provider |
+| `subscription_tools_status` | Which providers and tools are ready to use |
+| `codex_web_search` | Web search answered by OpenAI/Codex (context size, live access, domain filters) |
+| `supergrok_web_search` | Web search answered by Grok (model selection, domain filters) |
+| `subscription_web_search` | Result-list web search via Kimi, Z.ai, MiniMax, or Ollama |
+| `subscription_image_generation` | Image generation via OpenAI/Codex or SuperGrok/xAI Imagine, optionally saved to a file |
+| `supergrok_video_generation` | Video generation via SuperGrok/xAI Imagine |
 
-Notes:
-
-- Configure clients with the base URL **without** a `/v1` suffix (e.g. `http://127.0.0.1:14621`); clients append `/v1/...` themselves, and all routes also answer unprefixed.
-- For JetBrains Junie, add the proxy as a LiteLLM provider with that base URL and the copied API key — the available models are then discovered automatically.
-- Provider credentials stay in the plugin's regular secure storage. OAuth-backed providers refresh through the existing login flow; API-key-backed providers use the API keys configured in their provider settings.
-- `Log requests and responses to disk` writes full request/response bodies to a temp folder for debugging. It is off by default, and logs are pruned automatically (7 days / 2000 files).
-
-The proxy implementation was derived from the initial proxy design of [AIProxyOauth](https://github.com/skanga/AIProxyOauth), adapted to Kotlin and extended for this plugin's multi-provider subscription proxy, broader client compatibility, model discovery, request/response translation, and additional OpenAI-compatible routes.
-
----
-
-## Screenshots
-
-### Quota Popup
-
-![Quota popup](docs/quota-popup.png)
-
-### Status Bar
-
-![Status bar icon](docs/quota-statusbar-icon.png)
-
-![Status bar with percentage](docs/quota-statusbar-percentage.png)
-
-![Status bar with cake diagram](docs/quota-statusbar-cake.png)
-
-### Chat (MCP)
+Individual tools can be enabled or disabled under `Settings` > `Tools` > `MCP Server` > `Exposed Tools`.
 
 ![MCP integration](docs/quota-mcp-integration.png)
 
-### MCP Server URL Sync
+## MCP server URL sync
+
+IntelliJ's built-in MCP server may change its port between restarts, which breaks AI clients (OpenCode, Codex CLI, and others) that store the server URL in their own config files.
+
+The plugin can keep those configs pointed at the active endpoint: enable `Sync IntelliJ MCP server URL to JSON/TOML/YAML files` in settings, pick one or more config files, and select the property to update. The settings page also shows whether IntelliJ's MCP server is running, stopped, disabled, or unavailable.
 
 ![MCP server sync settings](docs/mcp-sync-settings.png)
 
-### OpenAI-Compatible Proxy
+## OpenAI-compatible proxy
+
+The plugin can run a local proxy that exposes your subscriptions through standard OpenAI-compatible endpoints (`/v1/chat/completions`, `/v1/responses` where supported, `/v1/models`, plus LiteLLM-style `/v1/model/info`). Any tool that speaks the OpenAI API or expects a LiteLLM server can then use your subscriptions.
+
+**Setup:** open the **Proxy** tab in `Settings` > `Tools` > `LLM Subscription Usage`, tick `Enable local subscription proxy`, choose the providers to expose, and apply. Then use `Copy Base URL` and `Copy API Key` to configure your client.
+
+**Good to know:**
+
+- Configure clients with the base URL **without** a `/v1` suffix (for example `http://127.0.0.1:14621`) — clients append `/v1/...` themselves, and all routes also answer unprefixed.
+- For JetBrains Junie, add the proxy as a LiteLLM provider with that base URL and the copied API key; available models are discovered automatically.
+- The API key is generated locally and stored in IntelliJ Password Safe. Provider credentials never leave the plugin's regular secure storage.
+- `Log requests and responses to disk` writes full request/response bodies to a temp folder for debugging. Off by default; logs are pruned automatically (7 days / 2000 files).
 
 ![Proxy settings](docs/proxy-settings.png)
 
-### Settings
+The proxy implementation was derived from the initial proxy design of [AIProxyOauth](https://github.com/skanga/AIProxyOauth), adapted to Kotlin and extended for this plugin's multi-provider subscription proxy, broader client compatibility, model discovery, request/response translation, and additional OpenAI-compatible routes.
+
+## How it works
+
+The plugin calls each provider's usage API with your credentials and displays the result in a normalized format. Nothing is sent anywhere except to the providers you configured.
+
+Each provider's settings page shows the raw `Last quota response` exactly as it arrived from the API — useful for transparency, debugging, and bug reports.
 
 ![Settings](docs/quota-settings.png)
 
----
-
-## How It Works
-
-The plugin calls each provider's usage API (with your OAuth token, API Key or other credentials) to fetch quota data, then displays it in a normalized format. Refresh happens automatically in the background every 5 minutes, plus on login and when opening the popup.
-
-Quota data is stored locally in IntelliJ's secure credential storage. Raw responses as they arrived from the API endpoint are available in settings for transparency and debugging.
-
----
-
 ## Troubleshooting
 
-**"Port 1455 is already in use"** — Another process is using the OAuth callback port. Stop it and retry login.
+**"Port 1455 is already in use"** — another process is using the OpenAI login callback port. Stop it and retry the login.
 
-**"Not logged in"** — Open plugin settings and start the login flow again.
+**"Not logged in"** — open the plugin settings and start the sign-in flow for that provider again.
 
-**Quota fetch errors** — If backend behavior changed, inspect `Last quota response (JSON)` in settings to see what changed.
+**Quota fetch errors or wrong numbers** — providers occasionally change their API responses. Check `Last quota response` in the provider's settings page to see what the API actually returned, and please [open an issue](https://github.com/moritzfl/openai-usage-quota-intellij/issues/new/choose) with that response attached (redact anything you consider sensitive first). This is usually all that is needed to fix a parsing problem.

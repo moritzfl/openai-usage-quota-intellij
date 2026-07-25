@@ -3,13 +3,16 @@
     <name>LLM Subscription Usage</name>
     <vendor>Moritzf</vendor>
 
-    <description>
-        Track and use your LLM subscriptions directly in the IDE. The plugin shows normalized subscription usage quotas in the status bar, main toolbar, and detailed popup for OpenAI, Claude, SuperGrok, GitHub Copilot, Cursor, OpenCode Go, Ollama Cloud, Z.ai, MiniMax, and Kimi.
-
-        It also exposes subscription-backed capabilities through IntelliJ MCP tools: quota data, hosted web search for OpenAI/Codex, SuperGrok/xAI, Kimi, Z.ai, MiniMax, and Ollama, image generation for OpenAI/Codex and SuperGrok/xAI Imagine with optional file output, SuperGrok/xAI Imagine video generation, and per-provider tool readiness status. The built-in MCP server URL sync keeps JSON, TOML, and YAML client config files pointed at IntelliJ's active MCP endpoint.
-
-        For tools that speak the OpenAI API, the plugin can run a local OpenAI-compatible proxy that exposes selected subscriptions (OpenAI/Codex, SuperGrok, GitHub Copilot, Kimi, MiniMax, Ollama, OpenCode Zen, Z.ai). Credentials are stored in IntelliJ Password Safe.
-    </description>
+    <description><![CDATA[
+        <p>Track and use your LLM subscriptions directly in the IDE.</p>
+        <ul>
+            <li><b>Quota at a glance</b> — usage for OpenAI (ChatGPT/Codex), Claude, SuperGrok/xAI, GitHub Copilot, Cursor, OpenCode Go, Ollama Cloud, Z.ai, MiniMax, and Kimi in the status bar or main toolbar, with a detailed popup showing usage windows and reset times.</li>
+            <li><b>MCP tools for IDE chat</b> — quota lookup, subscription-backed web search (OpenAI/Codex, SuperGrok/xAI, Kimi, Z.ai, MiniMax, Ollama), image generation (OpenAI/Codex, SuperGrok/xAI Imagine) with optional file output, and SuperGrok/xAI Imagine video generation.</li>
+            <li><b>Local OpenAI-compatible proxy</b> — expose selected subscriptions (OpenAI/Codex, SuperGrok, GitHub Copilot, Kimi, MiniMax, Ollama, OpenCode Zen, Z.ai) through standard OpenAI/LiteLLM endpoints, so tools like JetBrains Junie can use them as a custom LLM provider.</li>
+            <li><b>MCP server URL sync</b> — keeps JSON, TOML, and YAML client config files pointed at IntelliJ's active MCP endpoint when its port changes.</li>
+        </ul>
+        <p>All credentials are stored in IntelliJ Password Safe.</p>
+    ]]></description>
 
     <depends>com.intellij.modules.platform</depends>
     <depends optional="true" config-file="openai-usage-quota-with-mcp.xml">com.intellij.mcpServer</depends>
