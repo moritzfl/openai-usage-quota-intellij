@@ -1,0 +1,60 @@
+name: Provider problem / bug report
+description: Something is broken or shows wrong data (quota, login, MCP tools, proxy).
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Affected provider or feature
+      options:
+        - OpenAI (ChatGPT / Codex)
+        - Claude (Anthropic)
+        - SuperGrok / xAI
+        - GitHub Copilot
+        - Cursor
+        - OpenCode (Go / Zen)
+        - Ollama Cloud
+        - Z.ai
+        - MiniMax
+        - Kimi
+        - Local OpenAI-compatible proxy
+        - MCP tools / MCP server URL sync
+        - Other / general
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead? Include the exact error message if there is one.
+      placeholder: 'Example: the status bar shows "error" and the settings page says "Claude usage response changed."'
+    validations:
+      required: true
+  - type: textarea
+    id: raw-response
+    attributes:
+      label: Last quota response (JSON)
+      description: >
+        If the problem concerns a provider, please paste the provider's raw response:
+        open `Settings > Tools > LLM Subscription Usage`, select the provider tab, and copy the
+        `Last quota response` shown there. Feel free to anonymize/redact fields you consider
+        sensitive (emails, account IDs, tokens) — but please keep the overall structure and
+        field names intact. In most cases this response is all that is needed to fix a
+        parsing problem.
+      render: json
+    validations:
+      required: false
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: e.g. 1.6.10
+    validations:
+      required: true
+  - type: input
+    id: ide-version
+    attributes:
+      label: IDE version and OS
+      placeholder: e.g. IntelliJ IDEA 2026.1.3, macOS 15
+    validations:
+      required: false
