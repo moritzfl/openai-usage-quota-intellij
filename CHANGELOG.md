@@ -3,6 +3,7 @@
 ## [Unreleased]
 - Claude usage no longer fails with “Claude usage response changed.” when the extra-usage credits are reported as decimal numbers (for example `4403.0`); credit amounts now accept integers, decimals, and numeric strings.
 - OpenAI tooltip no longer shows a bogus “Assigned credits: Depleted” line for Plus/Free accounts whose payload contains an empty spend-control block.
+- Quota parsing is now resilient to partial payload changes: an unparsable credit or limit block (Claude windows/limits/extra usage, OpenAI credits/spend control/additional rate limits, Cursor plan/profile documents, Z.ai subscription info) only hides that block instead of breaking the whole quota display.
 
 ## [1.6.9] - 2026-07-24
 - OpenAI/Codex proxy now prefers the plugin’s verified Codex client version over an older local Codex install; a newer local/npm version can still raise it.

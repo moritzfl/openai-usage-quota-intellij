@@ -94,7 +94,10 @@ open class ZaiQuotaClient(
         }
 
         fun parseQuota(subscriptionJson: String, quotaJson: String): ZaiQuota {
-            val subscriptions = JsonSupport.json.decodeFromString<ZaiSubscriptionResponseDto>(subscriptionJson)
+            // The subscription document only enriches the quota (plan name, renew date); if it is
+            // unparsable, keep the usage windows from the quota document.
+            val subscriptions = runCatching { JsonSupport.json.decodeFromString<ZaiSubscriptionResponseDto>(subscriptionJson) }
+                .getOrElse { ZaiSubscriptionResponseDto() }
             val quotaResponse = JsonSupport.json.decodeFromString<ZaiQuotaResponseDto>(quotaJson)
             if (isNoCodingPlanResponse(subscriptions, quotaResponse)) {
                 throw ZaiQuotaException("No active Z.ai coding plan found.", quotaResponse.code ?: 200, quotaJson)

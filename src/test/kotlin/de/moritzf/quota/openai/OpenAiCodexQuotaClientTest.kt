@@ -116,6 +116,40 @@ class OpenAiCodexQuotaClientTest {
     }
 
     @Test
+    fun fetchQuotaKeepsParsableSectionsWhenOtherBlocksAreMalformed() {
+        @Language("JSON")
+        val json = """
+            {
+              "plan_type": "plus",
+              "rate_limit": {
+                "allowed": true,
+                "limit_reached": false,
+                "primary_window": { "used_percent": 12.5, "limit_window_seconds": 18000, "reset_at": 1780353357 }
+              },
+              "credits": "reshaped-to-a-string",
+              "spend_control": { "reached": "broken" },
+              "additional_rate_limits": [
+                { "limit_name": "codex_spark", "rate_limit": { "primary_window": { "used_percent": 7.0, "limit_window_seconds": 18000 } } },
+                "garbage-entry",
+                { "limit_name": "broken_entry", "rate_limit": { "primary_window": { "used_percent": "not-a-number" } } }
+              ]
+            }
+        """.trimIndent()
+
+        val client = newClientReturning(200, json)
+        val quota = client.fetchQuota("token", "account-1")
+
+        // The parsable windows and list entries survive; malformed blocks are dropped.
+        assertEquals(12.5, quota.primary?.usedPercent)
+        assertEquals(true, quota.allowed)
+        assertNull(quota.credits)
+        assertNull(quota.spendControl)
+        assertEquals(1, quota.extraRateLimits.size)
+        assertEquals("Codex Spark 5-hour", quota.extraRateLimits.single().title)
+        assertEquals(7.0, quota.extraRateLimits.single().window.usedPercent)
+    }
+
+    @Test
     fun fetchQuotaThrowsWhenNoUsageStateIsPresent() {
         @Language("JSON")
         val json = """

@@ -88,6 +88,33 @@ class CursorQuotaClientTest {
     }
 
     @Test
+    fun parseQuotaKeepsUsageWhenSupplementaryDocumentsAreMalformed() {
+        val periodUsageJson = """
+            {
+              "planUsage": {
+                "totalSpend": 4500,
+                "limit": 2000,
+                "autoPercentUsed": 50,
+                "apiPercentUsed": 75,
+                "totalPercentUsed": 65
+              },
+              "spendLimitUsage": {}
+            }
+        """.trimIndent()
+
+        val quota = CursorQuotaClient.parseQuota(
+            periodUsageJson,
+            """{"planInfo": "reshaped-to-a-string"}""",
+            "not json at all",
+            CursorAuth(accessToken = "token", email = "dev@example.com"),
+        )
+
+        assertEquals(65.0, quota.planUsage?.totalPercentUsed)
+        assertEquals("", quota.planName)
+        assertEquals("dev@example.com", quota.email)
+    }
+
+    @Test
     fun parseQuotaWithoutUsageThrows() {
         val periodUsageJson = """
             {
@@ -182,6 +209,32 @@ class CursorQuotaClientTest {
         assertEquals(80.0, teamOnDemand.usedUsd)
         assertEquals(100.0, teamOnDemand.limitUsd)
         assertEquals(80.0, teamOnDemand.usagePercent())
+    }
+
+    @Test
+    fun parseUsageSummaryKeepsUsageWhenSupplementaryDocumentsAreMalformed() {
+        val usageSummaryJson = """
+            {
+              "membershipType": "team",
+              "individualUsage": {
+                "plan": {
+                  "enabled": true,
+                  "used": 1250,
+                  "limit": 10000,
+                  "totalPercentUsed": 12.5
+                }
+              }
+            }
+        """.trimIndent()
+
+        val quota = CursorQuotaClient.parseUsageSummary(
+            usageSummaryJson,
+            """{"email": {"unexpected": "object"}}""",
+            "not json at all",
+        )
+
+        assertEquals(12.5, quota.planUsage?.totalPercentUsed)
+        assertEquals("team", quota.membershipType)
     }
 
     @Test

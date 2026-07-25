@@ -149,8 +149,9 @@ open class CursorQuotaClient(
             auth: CursorAuth? = null,
         ): CursorQuota {
             val periodUsage = JsonSupport.json.decodeFromString<CurrentPeriodUsageResponse>(periodUsageJson)
-            val planInfo = planInfoJson?.let { JsonSupport.json.decodeFromString<PlanInfoResponse>(it) }
-            val profile = profileJson?.let { JsonSupport.json.decodeFromString<StripeProfileResponse>(it) }
+            // Supplementary documents only enrich the quota; if one is unparsable, keep the usage data.
+            val planInfo = planInfoJson?.let { runCatching { JsonSupport.json.decodeFromString<PlanInfoResponse>(it) }.getOrNull() }
+            val profile = profileJson?.let { runCatching { JsonSupport.json.decodeFromString<StripeProfileResponse>(it) }.getOrNull() }
 
             val planUsage = CursorPlanUsage(
                 totalPercentUsed = periodUsage.planUsage.totalPercentUsed,
@@ -198,8 +199,9 @@ open class CursorQuotaClient(
             auth: CursorAuth? = null,
         ): CursorQuota {
             val summary = JsonSupport.json.decodeFromString<UsageSummaryResponse>(usageSummaryJson)
-            val userInfo = userInfoJson?.let { JsonSupport.json.decodeFromString<UserInfoResponse>(it) }
-            val requestUsageResponse = requestUsageJson?.let { JsonSupport.json.decodeFromString<RequestUsageResponse>(it) }
+            // Supplementary documents only enrich the quota; if one is unparsable, keep the usage data.
+            val userInfo = userInfoJson?.let { runCatching { JsonSupport.json.decodeFromString<UserInfoResponse>(it) }.getOrNull() }
+            val requestUsageResponse = requestUsageJson?.let { runCatching { JsonSupport.json.decodeFromString<RequestUsageResponse>(it) }.getOrNull() }
 
             val individualUsage = summary.individualUsage
             val teamUsage = summary.teamUsage

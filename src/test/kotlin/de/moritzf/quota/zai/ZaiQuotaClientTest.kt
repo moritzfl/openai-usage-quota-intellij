@@ -136,6 +136,32 @@ class ZaiQuotaClientTest {
     }
 
     @Test
+    fun parseQuotaKeepsUsageWhenSubscriptionDocumentIsMalformed() {
+        val subscriptionJson = """{"data": "reshaped-to-a-string"}"""
+        val quotaJson = """
+            {
+              "success": true,
+              "data": {
+                "limits": [
+                  {
+                    "type": "TOKENS_LIMIT",
+                    "unit": 3,
+                    "number": 5,
+                    "usage": 200,
+                    "currentValue": 50
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val quota = ZaiQuotaClient.parseQuota(subscriptionJson, quotaJson)
+
+        assertEquals(25.0, assertNotNull(quota.sessionUsage).usagePercent)
+        assertEquals("", quota.plan)
+    }
+
+    @Test
     fun parseQuotaReportsMissingCodingPlan() {
         val subscriptionJson = """
             {

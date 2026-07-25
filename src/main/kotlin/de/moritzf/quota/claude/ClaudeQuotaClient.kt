@@ -12,6 +12,7 @@ import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -107,8 +108,30 @@ open class ClaudeQuotaClient(
             usageJson: String,
             fetchedAt: Instant = Clock.System.now(),
         ): ClaudeQuota {
-            val payload = runCatching { JsonSupport.json.decodeFromString<ClaudeUsageResponseDto>(usageJson) }
-                .getOrElse { throw ClaudeQuotaException("Claude usage response changed.", 200, usageJson, it) }
+            // Sections are decoded individually so one unparsable block (for example a reshaped
+            // extra_usage or a broken limits entry) only drops that block, not the whole quota.
+            val root = runCatching { JsonSupport.json.parseToJsonElement(usageJson) }.getOrNull() as? JsonObject
+                ?: throw ClaudeQuotaException("Claude usage response changed.", 200, usageJson)
+
+            fun window(key: String): ClaudeUsageWindowDto? =
+                JsonSupport.decodeSectionOrNull(root[key], ClaudeUsageWindowDto.serializer())
+
+            val payload = ClaudeUsageResponseDto(
+                fiveHour = window("five_hour"),
+                sevenDay = window("seven_day"),
+                sevenDaySonnet = window("seven_day_sonnet"),
+                sevenDayOpus = window("seven_day_opus"),
+                sevenDayOauthApps = window("seven_day_oauth_apps"),
+                sevenDayRoutines = window("seven_day_routines"),
+                sevenDayClaudeRoutines = window("seven_day_claude_routines"),
+                claudeRoutines = window("claude_routines"),
+                routines = window("routines"),
+                routine = window("routine"),
+                sevenDayCowork = window("seven_day_cowork"),
+                cowork = window("cowork"),
+                extraUsage = JsonSupport.decodeSectionOrNull(root["extra_usage"], ClaudeExtraUsageDto.serializer()),
+                limits = JsonSupport.decodeListItemsLeniently(root["limits"], ClaudeLimitDto.serializer()),
+            )
 
             val fiveHour = payload.fiveHour.toWindow("5-hour", FIVE_HOUR_MS)
             val sevenDay = payload.sevenDay.toWindow("7-day", SEVEN_DAY_MS)

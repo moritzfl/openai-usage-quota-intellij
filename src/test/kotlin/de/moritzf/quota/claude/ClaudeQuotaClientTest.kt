@@ -17,6 +17,7 @@ import javax.net.ssl.SSLSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ClaudeQuotaClientTest {
@@ -98,6 +99,32 @@ class ClaudeQuotaClientTest {
         // Scoped weekly limit for one model still parses; unscoped entries are skipped.
         assertEquals(1, quota.scopedLimits.size)
         assertEquals("Weekly (Fable)", quota.scopedLimits.single().label)
+    }
+
+    @Test
+    fun parseQuotaKeepsParsableSectionsWhenOtherBlocksAreMalformed() {
+        val json = """
+            {
+              "five_hour": {"utilization": 12.0, "resets_at": null},
+              "seven_day": {"utilization": "broken"},
+              "extra_usage": ["totally", "reshaped"],
+              "limits": [
+                {"kind": "weekly_scoped", "group": "weekly", "percent": 34, "scope": {"model": {"display_name": "Fable"}}},
+                "garbage-entry",
+                {"kind": "weekly_scoped", "group": "weekly", "percent": {"nested": true}, "scope": {"model": {"display_name": "Broken"}}}
+              ]
+            }
+        """.trimIndent()
+
+        val quota = ClaudeQuotaClient.parseQuota(json)
+
+        // The parsable window and limit entry survive; malformed blocks are dropped.
+        assertEquals(12.0, quota.fiveHourUsage?.usagePercent)
+        assertNull(quota.sevenDayUsage)
+        assertNull(quota.extraUsage)
+        assertEquals(1, quota.scopedLimits.size)
+        assertEquals("Weekly (Fable)", quota.scopedLimits.single().label)
+        assertEquals(34.0, quota.scopedLimits.single().usagePercent)
     }
 
     @Test
