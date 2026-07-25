@@ -82,6 +82,25 @@ class ClaudeQuotaClientTest {
     }
 
     @Test
+    fun parseQuotaAcceptsDecimalCreditsAndSpendBlock() {
+        val quota = ClaudeQuotaClient.parseQuota(DECIMAL_CREDITS_RESPONSE)
+
+        assertEquals(0.0, quota.fiveHourUsage?.usagePercent)
+        assertEquals(0.0, quota.sevenDayUsage?.usagePercent)
+        assertEquals(Instant.parse("2026-07-31T06:59:59.574963Z"), quota.sevenDayUsage?.resetsAt)
+
+        assertEquals(true, quota.extraUsage?.isEnabled)
+        assertEquals(10000L, quota.extraUsage?.monthlyLimitCredits)
+        assertEquals(4403L, quota.extraUsage?.usedCredits)
+        assertEquals(44.03, quota.extraUsage?.usagePercent)
+        assertEquals("EUR", quota.extraUsage?.currency)
+
+        // Scoped weekly limit for one model still parses; unscoped entries are skipped.
+        assertEquals(1, quota.scopedLimits.size)
+        assertEquals("Weekly (Fable)", quota.scopedLimits.single().label)
+    }
+
+    @Test
     fun parseQuotaReportsChangedPayload() {
         val exception = assertFailsWith<ClaudeQuotaException> {
             ClaudeQuotaClient.parseQuota("""{"ok":true}""")
@@ -216,6 +235,101 @@ class ClaudeQuotaClientTest {
                 {"kind": "weekly_all", "group": "weekly", "percent": 17, "severity": "normal", "resets_at": "2026-07-26T05:00:00.030579+00:00", "scope": null, "is_active": false},
                 {"kind": "weekly_scoped", "group": "weekly", "percent": 34, "severity": "normal", "resets_at": "2026-07-26T05:00:00.030850+00:00", "scope": {"model": {"id": null, "display_name": "Fable"}, "surface": null}, "is_active": true}
               ],
+              "member_dashboard_available": false
+            }
+        """.trimIndent()
+
+        /** Real-world payload with decimal `used_credits`, a `spend` block, and null feature windows. */
+        private val DECIMAL_CREDITS_RESPONSE = """
+            {
+              "five_hour": {
+                "utilization": 0.0,
+                "resets_at": null,
+                "limit_dollars": null,
+                "used_dollars": null,
+                "remaining_dollars": null
+              },
+              "seven_day": {
+                "utilization": 0.0,
+                "resets_at": "2026-07-31T06:59:59.574963+00:00",
+                "limit_dollars": null,
+                "used_dollars": null,
+                "remaining_dollars": null
+              },
+              "seven_day_oauth_apps": null,
+              "seven_day_opus": null,
+              "seven_day_sonnet": null,
+              "seven_day_cowork": null,
+              "seven_day_omelette": null,
+              "tangelo": null,
+              "iguana_necktie": null,
+              "omelette_promotional": null,
+              "nimbus_quill": null,
+              "cinder_cove": null,
+              "amber_ladder": null,
+              "extra_usage": {
+                "is_enabled": true,
+                "monthly_limit": 10000,
+                "used_credits": 4403.0,
+                "utilization": 44.03,
+                "currency": "EUR",
+                "decimal_places": 2,
+                "disabled_reason": null,
+                "user_disabled": false,
+                "spend_limit_reached": false,
+                "credits_ever_enabled": true,
+                "daily": null,
+                "weekly": null
+              },
+              "limits": [
+                {
+                  "kind": "session",
+                  "group": "session",
+                  "percent": 0,
+                  "severity": "normal",
+                  "resets_at": null,
+                  "scope": null,
+                  "is_active": true
+                },
+                {
+                  "kind": "weekly_all",
+                  "group": "weekly",
+                  "percent": 0,
+                  "severity": "normal",
+                  "resets_at": "2026-07-31T06:59:59.574963+00:00",
+                  "scope": null,
+                  "is_active": false
+                },
+                {
+                  "kind": "weekly_scoped",
+                  "group": "weekly",
+                  "percent": 0,
+                  "severity": "normal",
+                  "resets_at": null,
+                  "scope": {
+                    "model": {
+                      "id": null,
+                      "display_name": "Fable"
+                    },
+                    "surface": null
+                  },
+                  "is_active": false
+                }
+              ],
+              "spend": {
+                "used": {"amount_minor": 4403, "currency": "EUR", "exponent": 2},
+                "limit": {"amount_minor": 10000, "currency": "EUR", "exponent": 2},
+                "percent": 44,
+                "severity": "normal",
+                "enabled": true,
+                "disabled_reason": null,
+                "cap": {"money": {"amount_minor": 10000, "currency": "EUR", "exponent": 2}, "credits": null},
+                "balance": null,
+                "auto_reload": null,
+                "disclaimer": "Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)",
+                "can_purchase_credits": false,
+                "can_toggle": false
+              },
               "member_dashboard_available": false
             }
         """.trimIndent()

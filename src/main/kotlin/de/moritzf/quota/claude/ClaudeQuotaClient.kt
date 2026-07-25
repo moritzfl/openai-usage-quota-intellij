@@ -1,10 +1,21 @@
 package de.moritzf.quota.claude
 
 import de.moritzf.quota.shared.JsonSupport
+import kotlin.math.roundToLong
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.descriptors.buildClassSerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -262,8 +273,33 @@ private data class ClaudeLimitModelDto(
 @Serializable
 private data class ClaudeExtraUsageDto(
     @SerialName("is_enabled") val isEnabled: Boolean? = null,
-    @SerialName("monthly_limit") val monthlyLimit: Long? = null,
-    @SerialName("used_credits") val usedCredits: Long? = null,
+    @SerialName("monthly_limit")
+    @Serializable(with = LenientCreditsSerializer::class)
+    val monthlyLimit: Long? = null,
+    @SerialName("used_credits")
+    @Serializable(with = LenientCreditsSerializer::class)
+    val usedCredits: Long? = null,
     val utilization: Double? = null,
     val currency: String? = null,
 )
+
+/**
+ * Credit amounts arrive as integers, decimals (`4403.0`), or numeric strings depending on the
+ * backend variant. Anything non-numeric is treated as absent instead of failing the whole payload.
+ */
+private object LenientCreditsSerializer : KSerializer<Long?> {
+    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("ClaudeLenientCredits")
+
+    override fun deserialize(decoder: Decoder): Long? {
+        val jsonDecoder = decoder as? JsonDecoder ?: error("LenientCreditsSerializer requires JsonDecoder")
+        val primitive = jsonDecoder.decodeJsonElement() as? JsonPrimitive ?: return null
+        return primitive.longOrNull
+            ?: primitive.doubleOrNull?.roundToLong()
+            ?: primitive.contentOrNull?.toLongOrNull()
+            ?: primitive.contentOrNull?.toDoubleOrNull()?.roundToLong()
+    }
+
+    override fun serialize(encoder: Encoder, value: Long?) {
+        error("Serialization of Claude credit amounts is not supported")
+    }
+}
