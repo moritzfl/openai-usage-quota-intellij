@@ -42,6 +42,7 @@
 - `models.dev` may be used as a model catalog only when it explicitly separates subscription providers from API-key providers and the subscription provider has no usable first-party endpoint for discovering current subscription model IDs.
 - When no provider-declared default exists, choose a default from advertised models by taking the alphabetically latest model id rather than hardcoding a recommendation.
 - New proxy providers usually need settings support, `OpenAiProxyService` wiring, provider enablement defaults, status reporting, and tests.
+- When adding a provider (quota, MCP, or proxy), also update the plugin description in `plugin.xml` and `README.md` (supported-provider table and affected feature sections).
 
 ## Settings And Releases
 
