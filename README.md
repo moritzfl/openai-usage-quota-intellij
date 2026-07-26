@@ -1,12 +1,5 @@
 # LLM Subscription Usage
 
-Track and use your LLM subscriptions directly in IntelliJ IDEA.
-
-- **See your quota** for ChatGPT, Claude, Grok, Copilot & more in the status bar and a detail popup.
-- **Use your subscriptions from IDE chat** via MCP tools: quota lookup, web search, image and video generation.
-- **Reuse your subscriptions in other tools** through a local OpenAI-compatible proxy (for example as a custom LLM provider for JetBrains Junie).
-- **Keep AI client configs in sync** with IntelliJ's MCP server URL, which changes port between restarts.
-
 <table align="center">
   <tr>
     <td align="center">
@@ -29,6 +22,13 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
     </td>
   </tr>
 </table>
+
+Track and use your LLM subscriptions directly in IntelliJ IDEA.
+
+- **See your quota** for ChatGPT, Claude, Grok, Copilot & more in the status bar and a detail popup.
+- **Use your subscriptions from IDE chat** via MCP tools: quota lookup, web search, image and video generation.
+- **Reuse your subscriptions in other tools** through a local OpenAI-compatible proxy (for example as a custom LLM provider for JetBrains Junie).
+- **Keep AI client configs in sync** with IntelliJ's MCP server URL, which changes port between restarts.
 
 ![Quota popup](docs/quota-popup.png)
 
