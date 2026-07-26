@@ -180,7 +180,9 @@ class OpenAiProxyServerTest {
                 assertEquals("/backend-api/codex/responses", request.path)
                 assertEquals("Bearer codex-token", request.firstHeader("Authorization"))
                 assertEquals("account-1", request.firstHeader("chatgpt-account-id"))
-                assertEquals(TEST_CODEX_VERSION, request.firstHeader("version"))
+                assertNull(request.firstHeader("version"))
+                assertEquals("openai-usage-quota-plugin", request.firstHeader("originator"))
+                assertTrue(request.firstHeader("User-Agent")!!.startsWith("openai-usage-quota-plugin/"))
                 assertNull(request.firstHeader("OpenAI-Beta"))
 
                 val upstreamBody = parseObject(request.body)
@@ -563,7 +565,7 @@ class OpenAiProxyServerTest {
                 assertEquals("/backend-api/codex/responses", request.path)
                 assertEquals("Bearer codex-token", request.firstHeader("Authorization"))
                 assertEquals("account-1", request.firstHeader("chatgpt-account-id"))
-                assertEquals(TEST_CODEX_VERSION, request.firstHeader("version"))
+                assertNull(request.firstHeader("version"))
                 assertNull(request.firstHeader("OpenAI-Beta"))
 
                 val upstreamBody = parseObject(request.body)
@@ -616,7 +618,7 @@ class OpenAiProxyServerTest {
                 assertEquals("/backend-api/codex/responses", request.path)
                 assertEquals("Bearer codex-token", request.firstHeader("Authorization"))
                 assertEquals("account-1", request.firstHeader("chatgpt-account-id"))
-                assertEquals(TEST_CODEX_VERSION, request.firstHeader("version"))
+                assertNull(request.firstHeader("version"))
                 assertNull(request.firstHeader("OpenAI-Beta"))
 
                 val upstreamBody = parseObject(request.body)
@@ -2252,7 +2254,6 @@ class OpenAiProxyServerTest {
                 accessTokenProvider = { accessToken },
                 accountIdProvider = { "account-1" },
                 upstreamBaseUri = upstreamBaseUri,
-                codexVersionProvider = { TEST_CODEX_VERSION },
                 allowedCorsOrigins = allowedCorsOrigins,
             ),
         )
@@ -2325,7 +2326,6 @@ class OpenAiProxyServerTest {
 
     private companion object {
         val httpClient: HttpClient = HttpClient.newHttpClient()
-        const val TEST_CODEX_VERSION = "0.999.0"
         const val TEST_IMAGE_DATA_URL =
             "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
         const val COMPLETED_RESPONSE_STREAM_WITH_TEXT = "event: response.completed\n" +

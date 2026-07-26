@@ -44,7 +44,9 @@ class CodexMcpClientTest {
             assertEquals("/backend-api/codex/responses", request.path)
             assertEquals("Bearer codex-token", request.firstHeader("Authorization"))
             assertEquals("account-1", request.firstHeader("chatgpt-account-id"))
-            assertEquals(TEST_CODEX_VERSION, request.firstHeader("version"))
+            assertNull(request.firstHeader("version"))
+            assertEquals("openai-usage-quota-plugin", request.firstHeader("originator"))
+            assertTrue(request.firstHeader("User-Agent")!!.startsWith("openai-usage-quota-plugin/"))
             assertNull(request.firstHeader("OpenAI-Beta"))
             assertEquals("text/event-stream", request.firstHeader("Accept"))
 
@@ -158,7 +160,7 @@ class CodexMcpClientTest {
             assertEquals("/backend-api/codex/responses", request.path)
             assertEquals("Bearer codex-token", request.firstHeader("Authorization"))
             assertEquals("account-1", request.firstHeader("chatgpt-account-id"))
-            assertEquals(TEST_CODEX_VERSION, request.firstHeader("version"))
+            assertNull(request.firstHeader("version"))
             assertNull(request.firstHeader("OpenAI-Beta"))
 
             val body = parseObject(request.body)
@@ -278,7 +280,6 @@ class CodexMcpClientTest {
                     if (tokens.size > 1) tokens.removeFirst()
                     tokens.first()
                 },
-                codexVersionProvider = { TEST_CODEX_VERSION },
                 httpClient = httpClient,
                 upstreamBaseUri = upstream.baseUri,
             )
@@ -300,7 +301,6 @@ class CodexMcpClientTest {
             val client = CodexMcpClient(
                 accessTokenProvider = { null },
                 accountIdProvider = { "account-1" },
-                codexVersionProvider = { TEST_CODEX_VERSION },
                 httpClient = httpClient,
                 upstreamBaseUri = upstream.baseUri,
             )
@@ -320,7 +320,6 @@ class CodexMcpClientTest {
         return CodexMcpClient(
             accessTokenProvider = { "codex-token" },
             accountIdProvider = { "account-1" },
-            codexVersionProvider = { TEST_CODEX_VERSION },
             httpClient = httpClient,
             upstreamBaseUri = upstreamBaseUri,
         )
@@ -376,7 +375,6 @@ class CodexMcpClientTest {
     private fun parseObject(value: String) = JsonSupport.json.parseToJsonElement(value).jsonObject
 
     private companion object {
-        const val TEST_CODEX_VERSION = "0.999.0"
         const val TEST_PNG_BASE64 =
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
         val httpClient: HttpClient = HttpClient.newHttpClient()

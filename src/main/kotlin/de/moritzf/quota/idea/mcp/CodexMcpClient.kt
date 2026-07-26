@@ -2,7 +2,6 @@ package de.moritzf.quota.idea.mcp
 
 import de.moritzf.proxy.auth.AuthRequiredException
 import de.moritzf.proxy.config.ServerConfig
-import de.moritzf.proxy.model.CodexClientVersionResolver
 import de.moritzf.proxy.server.UpstreamErrorMapper
 import de.moritzf.proxy.transport.CodexHttpClient
 import de.moritzf.quota.idea.auth.QuotaAuthService
@@ -35,7 +34,6 @@ class CodexMcpClient(
     accessTokenProvider: () -> String?,
     accountIdProvider: () -> String?,
     tokenRefresher: (staleAccessToken: String?) -> String? = { null },
-    codexVersionProvider: () -> String = { CodexClientVersionResolver.resolve(null) },
     httpClient: HttpClient = defaultHttpClient(),
     upstreamBaseUri: URI = OpenAiProxyServer.DEFAULT_UPSTREAM_BASE_URI,
 ) {
@@ -43,7 +41,7 @@ class CodexMcpClient(
     private val client = CodexHttpClient(
         serverConfig(upstreamBaseUri),
         httpClient,
-        QuotaCodexCredentialsProvider(accessTokenProvider, accountIdProvider, tokenRefresher, codexVersionProvider),
+        QuotaCodexCredentialsProvider(accessTokenProvider, accountIdProvider, tokenRefresher),
     )
 
     fun webSearch(

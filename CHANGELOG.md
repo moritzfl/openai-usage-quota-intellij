@@ -1,7 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
-- Updated the baked Codex client version to 0.145.0 so GPT-5.6 Sol requests remain accepted when local and npm version discovery is unavailable.
+- OpenAI/Codex inference no longer fails when Codex version lookup is slow or unavailable; inference requests now identify the plugin directly instead of reporting a Codex CLI version.
 - Reworked the README and Marketplace description around a supported-provider table and shorter feature sections.
 
 ## [1.6.10] - 2026-07-25

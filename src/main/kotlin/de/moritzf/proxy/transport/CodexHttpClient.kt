@@ -2,9 +2,9 @@ package de.moritzf.proxy.transport
 import de.moritzf.proxy.auth.CredentialsProvider
 import de.moritzf.proxy.config.ServerConfig
 import de.moritzf.proxy.logging.RequestLogger
+import de.moritzf.proxy.util.ProxyVersion
 import java.io.ByteArrayOutputStream
 import java.io.FilterInputStream
-import java.io.IOException
 import java.io.InputStream
 import java.net.URI
 import java.net.http.HttpClient
@@ -158,6 +158,10 @@ open class CodexHttpClient {
             builder.header(name, value)
             loggedHeaders[name] = value
         }
+        builder.setHeader("originator", CLIENT_ORIGINATOR)
+        builder.setHeader("User-Agent", CLIENT_USER_AGENT)
+        loggedHeaders["originator"] = CLIENT_ORIGINATOR
+        loggedHeaders["User-Agent"] = CLIENT_USER_AGENT
         if (!promptCacheKey.isNullOrBlank()) {
             builder.header(CONVERSATION_ID_HEADER, promptCacheKey)
             builder.header(SESSION_ID_HEADER, promptCacheKey)
@@ -248,6 +252,8 @@ open class CodexHttpClient {
         override fun version(): HttpClient.Version = delegate.version()
     }
     companion object {
+        private const val CLIENT_ORIGINATOR = "openai-usage-quota-plugin"
+        private val CLIENT_USER_AGENT = "$CLIENT_ORIGINATOR/${ProxyVersion.get()}"
         private val REQUEST_TIMEOUT: Duration = Duration.ofMinutes(15)
         private val CONVERSATION_ID_HEADER = codexIdHeader("conversation")
         private val SESSION_ID_HEADER = codexIdHeader("session")

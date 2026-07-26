@@ -3,7 +3,6 @@ package de.moritzf.quota.openai.proxy
 import de.moritzf.proxy.auth.CredentialsProvider
 import de.moritzf.proxy.config.ServerConfig
 import de.moritzf.proxy.logging.RequestLogger
-import de.moritzf.proxy.model.CodexClientVersionResolver
 import de.moritzf.proxy.model.CodexInstructionsProvider
 import de.moritzf.proxy.server.ChatCompletionsHandler
 import de.moritzf.proxy.server.JsonHelper
@@ -38,7 +37,6 @@ class OpenAiCodexSubscriptionProxyProvider(
     private val upstreamBaseUri: URI = OpenAiProxyServer.DEFAULT_UPSTREAM_BASE_URI,
     private val fullRequestLogging: Boolean = false,
     private val requestLogDir: String = DEFAULT_REQUEST_LOG_DIR,
-    private val codexVersionProvider: () -> String = { CodexClientVersionResolver.resolve(null) },
 ) : SubscriptionProxyProvider {
     override val id: String = "openai"
     override val displayName: String = "OpenAI/Codex"
@@ -71,7 +69,6 @@ class OpenAiCodexSubscriptionProxyProvider(
         accessTokenProvider,
         accountIdProvider,
         tokenRefresher,
-        codexVersionProvider,
     )
     private val client = UnifiedCodexHttpClient(config, httpClient, credentialsProvider)
     private val instructionsProvider = CodexInstructionsProvider(DEFAULT_CODEX_INSTRUCTIONS)

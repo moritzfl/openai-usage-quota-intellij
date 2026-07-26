@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -63,7 +64,9 @@ class OpenAiCodexSubscriptionProxyProviderTest {
                 assertEquals("/backend-api/codex/responses", request.path)
                 assertEquals("Bearer codex-token", request.firstHeader("Authorization"))
                 assertEquals("account-1", request.firstHeader("chatgpt-account-id"))
-                assertEquals(TEST_CODEX_VERSION, request.firstHeader("version"))
+                assertNull(request.firstHeader("version"))
+                assertEquals("openai-usage-quota-plugin", request.firstHeader("originator"))
+                assertTrue(request.firstHeader("User-Agent")!!.startsWith("openai-usage-quota-plugin/"))
                 val upstreamBody = JsonHelper.JSON.parseToJsonElement(request.body).jsonObject
                 assertEquals("gpt-5.5", upstreamBody["model"]!!.jsonPrimitive.content)
                 assertEquals("true", upstreamBody["stream"]!!.jsonPrimitive.content)
@@ -110,7 +113,6 @@ class OpenAiCodexSubscriptionProxyProviderTest {
             accountIdProvider = { "account-1" },
             upstreamBaseUri = upstreamBaseUri,
             requestLogDir = Files.createTempDirectory("codex-subscription-proxy-test-logs").toString(),
-            codexVersionProvider = { TEST_CODEX_VERSION },
         )
         return TestProxy(
             port = port,
@@ -202,7 +204,6 @@ class OpenAiCodexSubscriptionProxyProviderTest {
 
     companion object {
         private val httpClient: HttpClient = HttpClient.newHttpClient()
-        private const val TEST_CODEX_VERSION = "0.59.0-test"
         private const val COMPLETED_RESPONSE_STREAM_WITH_TEXT =
             "data: {\"type\":\"response.completed\",\"response\":{\"id\":\"resp_1\",\"status\":\"completed\",\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"output_text\",\"text\":\"pong\"}]}],\"usage\":{\"input_tokens\":1,\"output_tokens\":1}}}\n\n"
     }

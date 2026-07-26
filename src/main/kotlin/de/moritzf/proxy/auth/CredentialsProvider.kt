@@ -12,7 +12,7 @@ package de.moritzf.proxy.auth
 interface CredentialsProvider {
     /**
      * Returns the headers to attach to an upstream request, typically `Authorization`
-     * plus account/version headers. Implementations should return freshly valid
+     * plus account headers. Implementations should return freshly valid
      * credentials, refreshing transparently if needed.
      */
     fun getAuthHeaders(): Map<String, String>

@@ -1,7 +1,6 @@
 package de.moritzf.proxy.auth
 import de.moritzf.proxy.server.hasKey
 import de.moritzf.proxy.config.ServerConfig
-import de.moritzf.proxy.model.CodexClientVersionResolver
 import de.moritzf.proxy.util.JwtParser
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -67,7 +66,6 @@ class AuthManager(
         return mapOf(
             "Authorization" to "Bearer ${auth.accessToken}",
             "chatgpt-account-id" to auth.accountId,
-            "version" to CodexClientVersionResolver.resolve(config.codexVersion),
         )
     }
     @Suppress("unused")

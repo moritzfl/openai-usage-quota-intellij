@@ -2,7 +2,6 @@ package de.moritzf.quota.openai.proxy
 
 import de.moritzf.proxy.auth.CredentialsProvider
 import de.moritzf.proxy.config.ServerConfig
-import de.moritzf.proxy.model.CodexClientVersionResolver
 import de.moritzf.proxy.model.ModelResolver
 import de.moritzf.proxy.server.ApiKeyStore
 import de.moritzf.proxy.server.ProxyServer
@@ -40,7 +39,6 @@ class OpenAiProxyServer(
     private val debugLogger: ((String) -> Unit)? = null,
     private val fullRequestLogging: Boolean = false,
     private val requestLogDir: String = REQUEST_LOG_DIR,
-    private val codexVersionProvider: () -> String = { CodexClientVersionResolver.resolve(null) },
     private val allowAnyCors: Boolean = false,
     private val allowedCorsOrigins: List<String> = emptyList(),
     // Per-request access lines on stdout; useful for the standalone console proxy,
@@ -69,7 +67,6 @@ class OpenAiProxyServer(
                 accessTokenProvider,
                 accountIdProvider,
                 tokenRefresher,
-                codexVersionProvider,
             )
             val client = SanitizingCodexHttpClient(config, httpClient, credentialsProvider)
             val proxyServer = ProxyServer(
