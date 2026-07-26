@@ -103,6 +103,7 @@ http-client.private.env.json
 /.idea/claudeCodeTabState.xml
 /.opencode/
 /.ai/
+/.playwright-cli/
 /.idea/.name
 /.idea/php.xml
 .env
