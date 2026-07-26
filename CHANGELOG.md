@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.6.11] - 2026-07-26
 - OpenAI/Codex inference no longer fails when Codex version lookup is slow or unavailable; inference requests now identify the plugin directly instead of reporting a Codex CLI version.
 - Reworked the README and Marketplace description around a supported-provider table and shorter feature sections.
 
