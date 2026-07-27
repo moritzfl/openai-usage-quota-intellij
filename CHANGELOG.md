@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.6.13] - 2026-07-27
 - The local proxy no longer reports an IDE error when a client cancels a request mid-answer (for example when you stop a running completion); an aborted connection is now treated as normal and logged quietly.
 
 ## [1.6.12] - 2026-07-27
