@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.6.12] - 2026-07-27
 - OpenAI tooltip now shows the individual spend cap as a single short line in credits (for example “Individual limit: 10 credits (reached)”) instead of repeating the same information twice and labelling credits as dollars.
 
 ## [1.6.11] - 2026-07-26
