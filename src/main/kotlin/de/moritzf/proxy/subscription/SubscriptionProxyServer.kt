@@ -9,6 +9,7 @@ import de.moritzf.proxy.server.ProxyCall
 import de.moritzf.proxy.server.ProxyServer
 import de.moritzf.proxy.server.RequestValidator
 import de.moritzf.proxy.server.UsageHandler
+import de.moritzf.proxy.server.isClientDisconnect
 import de.moritzf.proxy.server.stringPath
 import de.moritzf.proxy.usage.UsageTracker
 import de.moritzf.proxy.util.ApiKeyUtils
@@ -27,6 +28,7 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.cancellation.CancellationException
 import org.slf4j.LoggerFactory
 
 class SubscriptionProxyServer(
@@ -122,9 +124,29 @@ class SubscriptionProxyServer(
             apiKeyStore?.let { authenticateRequest(ctx, it) }
             if (ctx.handled) return
             handler(ctx)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (exception: Exception) {
+            if (exception.isClientDisconnect()) {
+                LOG.debug("Client disconnected during {} {}", ctx.method(), ctx.path(), exception)
+                return
+            }
             LOG.error("Unhandled subscription proxy request failure for {} {}", ctx.method(), ctx.path(), exception)
-            if (!ctx.handled) JsonHelper.toErrorResponse(ctx, "Unexpected server error.", 500, "server_error")
+            if (!ctx.handled) respondServerError(ctx)
+        }
+    }
+
+    /**
+     * Best effort: the response may already be committed (streaming), in which case there is no
+     * way left to tell the client about the failure.
+     */
+    private suspend fun respondServerError(ctx: ProxyCall) {
+        try {
+            JsonHelper.toErrorResponse(ctx, "Unexpected server error.", 500, "server_error")
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            LOG.debug("Could not deliver error response for {} {}", ctx.method(), ctx.path(), failure)
         }
     }
 

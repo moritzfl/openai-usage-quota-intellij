@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- The local proxy no longer reports an IDE error when a client cancels a request mid-answer (for example when you stop a running completion); an aborted connection is now treated as normal and logged quietly.
 
 ## [1.6.12] - 2026-07-27
 - OpenAI tooltip now shows the individual spend cap as a single short line in credits (for example “Individual limit: 10 credits (reached)”) instead of repeating the same information twice and labelling credits as dollars.

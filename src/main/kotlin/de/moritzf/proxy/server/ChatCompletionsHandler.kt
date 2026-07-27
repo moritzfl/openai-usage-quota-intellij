@@ -621,7 +621,12 @@ class ChatCompletionsHandler {
                     } catch (_: Exception) {
                     }
                 }
-                os.flush()
+                // Never let a failing final flush replace the exception that ended the stream.
+                try {
+                    os.flush()
+                } catch (flushFailure: Exception) {
+                    LOG.debug("Ignoring flush failure while finishing SSE stream", flushFailure)
+                }
             }
         }
         ctx.handled = true

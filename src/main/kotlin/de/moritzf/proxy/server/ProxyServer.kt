@@ -26,6 +26,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import org.slf4j.LoggerFactory
 
 class ProxyServer(
@@ -140,13 +141,33 @@ class ProxyServer(
         } catch (exception: AuthRequiredException) {
             LOG.warn("Rejected {} {}: {}", ctx.method(), ctx.path(), exception.message)
             if (!ctx.handled) JsonHelper.toErrorResponse(ctx, exception.message, 401, "authentication_error")
+        } catch (cancellation: CancellationException) {
+            throw cancellation
         } catch (exception: Exception) {
+            if (exception.isClientDisconnect()) {
+                LOG.debug("Client disconnected during {} {}", ctx.method(), ctx.path(), exception)
+                return
+            }
             LOG.error("Unhandled request failure for {} {}", ctx.method(), ctx.path(), exception)
-            if (!ctx.handled) JsonHelper.toErrorResponse(ctx, "Unexpected server error.", 500, "server_error")
+            if (!ctx.handled) respondServerError(ctx)
         } finally {
             if (config.consoleAccessLog) {
                 logAccessLine(ctx)
             }
+        }
+    }
+
+    /**
+     * Best effort: the response may already be committed (streaming), in which case there is no
+     * way left to tell the client about the failure.
+     */
+    private suspend fun respondServerError(ctx: ProxyCall) {
+        try {
+            JsonHelper.toErrorResponse(ctx, "Unexpected server error.", 500, "server_error")
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (failure: Exception) {
+            LOG.debug("Could not deliver error response for {} {}", ctx.method(), ctx.path(), failure)
         }
     }
 
