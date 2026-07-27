@@ -22,6 +22,7 @@ import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.ollama.OllamaUsageWindow
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.businessMemberAssignedCreditsDepleted
+import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.businessMemberIndividualSpendLimitReached
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.businessMemberWithAssignedCredits
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.plusWithRateLimitsAndZeroPurchasedCredits
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.proliteWithAdditionalRateLimits
@@ -123,6 +124,17 @@ class QuotaIndicatorComponentTest {
         assertEquals(100, indicatorDisplayPercent(quota, error = null, loggedIn = true))
         assertTrue(tooltip.contains("Assigned credits:"))
         assertTrue(tooltip.lowercase().contains("depleted"))
+    }
+
+    @Test
+    fun tooltipShowsSingleCreditUnitLineWhenIndividualSpendLimitReached() {
+        val quota = businessMemberIndividualSpendLimitReached()
+
+        val tooltip = buildQuotaTooltipText(quota, error = null, loggedIn = true)
+
+        assertTrue(tooltip.contains("Individual limit: 50 credits (reached)"))
+        assertFalse(tooltip.contains("Individual spend limit reached"))
+        assertFalse(tooltip.contains("$50"))
     }
 
     @Test

@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- OpenAI tooltip now shows the individual spend cap as a single short line in credits (for example “Individual limit: 10 credits (reached)”) instead of repeating the same information twice and labelling credits as dollars.
 
 ## [1.6.11] - 2026-07-26
 - OpenAI/Codex inference no longer fails when Codex version lookup is slow or unavailable; inference requests now identify the plugin directly instead of reporting a Codex CLI version.

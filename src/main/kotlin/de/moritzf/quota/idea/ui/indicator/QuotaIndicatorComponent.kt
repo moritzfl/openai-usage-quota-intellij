@@ -665,8 +665,14 @@ private fun describeAssignedCreditsForTooltip(
         credits.hasCredits == true -> "Available"
         else -> "Unknown"
     }
+    // Team/business spend_control uses Codex credit units, not USD.
     val spendLimit = spendControl?.individualLimit?.takeIf { it > 0.0 }?.let { limit ->
-        "Individual limit: $$limit${if (spendControl.reached == true) " (reached)" else ""}"
+        val reached = if (spendControl.reached == true) " (reached)" else ""
+        "Individual limit: ${formatOpenAiCreditAmount(limit)} credits$reached"
+    }
+    // The individual-limit line already says the cap was reached; drop the duplicate status line.
+    if (spendLimit != null && status == "Individual spend limit reached") {
+        return spendLimit
     }
     return buildString {
         append("Assigned credits: $status")
