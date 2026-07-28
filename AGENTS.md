@@ -39,7 +39,7 @@
 - `QuotaProviderRegistry`, `ProviderSettingsRegistry`, `ProviderUiRegistry`, and `UsageQuotaMcpRegistry` are facades over the catalog — do not add parallel per-provider maps.
 - Keep `QuotaProviderType` as the stable id (settings storage, MCP `subscription_quota` param). Add a type entry when adding a provider.
 - Capability flags drive proxy-supported lists and MCP status. Keep MCP param enums (`ListSearchProvider`, `ImageGenerationProvider`) in sync with capabilities (`ProviderCatalogTest` enforces this).
-- New provider checklist: `QuotaProviderType` (+ `QuotaIndicatorSource` if shown in the status bar), one `ProviderCatalog` entry, icon/`QuotaIcons`, MCP enum + tool dispatch arm if needed, `OpenAiProxyService` / standalone proxy wiring if proxy, tests, `plugin.xml` + `README` table, changelog.
+- New provider checklist: `QuotaProviderType` (+ `QuotaIndicatorSource` if shown in the status bar), one `ProviderCatalog` entry (including `ideProxyFactory` when `subscriptionProxy`), icon/`QuotaIcons`, MCP enum + tool dispatch arm if needed, standalone env wiring if proxy CLI, tests, `plugin.xml` + `README` table, changelog.
 
 ## Proxy Providers
 
@@ -49,7 +49,7 @@
 - For providers with usable official model endpoints, such as SuperGrok/xAI and GitHub Copilot, prefer live discovery over hardcoded model fallbacks.
 - `models.dev` may be used as a model catalog only when it explicitly separates subscription providers from API-key providers and the subscription provider has no usable first-party endpoint for discovering current subscription model IDs.
 - When no provider-declared default exists, choose a default from advertised models by taking the alphabetically latest model id rather than hardcoding a recommendation.
-- Proxy enablement defaults come from `ProviderCapabilities.subscriptionProxy` via the catalog; IDE construction still lives in `OpenAiProxyService.createProviders`.
+- Proxy enablement defaults come from `ProviderCapabilities.subscriptionProxy` via the catalog; IDE construction uses `ideProxyFactory` / `ProviderCatalog.createIdeProxyProviders` (`IdeProxyFactories`). Standalone CLI proxy wiring stays env-based in `StandaloneSubscriptionProxy` (no IntelliJ services).
 
 ## Settings And Releases
 

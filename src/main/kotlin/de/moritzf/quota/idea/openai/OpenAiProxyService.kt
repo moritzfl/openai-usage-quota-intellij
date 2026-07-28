@@ -10,10 +10,9 @@ import de.moritzf.proxy.subscription.SubscriptionProxyModel
 import de.moritzf.proxy.subscription.SubscriptionProxyProvider
 import de.moritzf.proxy.subscription.SubscriptionProxyServer
 import de.moritzf.proxy.util.ApiKeyUtils
-import de.moritzf.quota.github.GitHubQuotaClient
-import de.moritzf.quota.github.proxy.GitHubCopilotSubscriptionProxyProvider
 import de.moritzf.quota.idea.auth.QuotaAuthService
-import de.moritzf.quota.idea.common.QuotaProviderType
+import de.moritzf.quota.idea.common.IdeProxyBuildContext
+import de.moritzf.quota.idea.common.ProviderCatalog
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
@@ -22,16 +21,6 @@ import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.settings.QuotaSettingsListener
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
-import de.moritzf.quota.kimi.proxy.KimiSubscriptionProxyProvider
-import de.moritzf.quota.minimax.MiniMaxRegion
-import de.moritzf.quota.minimax.MiniMaxRegionPreference
-import de.moritzf.quota.minimax.proxy.MiniMaxSubscriptionProxyProvider
-import de.moritzf.quota.ollama.proxy.OllamaSubscriptionProxyProvider
-import de.moritzf.quota.openai.proxy.OpenAiCodexSubscriptionProxyProvider
-import de.moritzf.quota.opencode.proxy.OpenCodeZenSubscriptionProxyProvider
-import de.moritzf.quota.supergrok.proxy.SuperGrokSubscriptionProxyProvider
-import de.moritzf.quota.zai.proxy.ZaiSubscriptionProxyProvider
-import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.Executor
 
@@ -151,113 +140,22 @@ class OpenAiProxyService(
         logRequests: Boolean,
         requestLogDir: String,
     ): List<SubscriptionProxyProvider> {
-        val enabledProviders = settings.enabledSubscriptionProxyProviders()
-        return buildList {
-            if (QuotaProviderType.OPEN_AI in enabledProviders) {
-                add(
-                    OpenAiCodexSubscriptionProxyProvider(
-                        accessTokenProvider = { authServiceProvider().getAccessTokenBlocking(QuotaProviderType.OPEN_AI) },
-                        accountIdProvider = { authServiceProvider().getAccountId(QuotaProviderType.OPEN_AI) },
-                        // Upstream 401s route back to the IDE auth service, which owns refresh
-                        // and persistence; the stale token lets it dedupe concurrent refreshes.
-                        tokenRefresher = { staleToken ->
-                            authServiceProvider().forceRefreshBlocking(QuotaProviderType.OPEN_AI, staleToken)
-                        },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.SUPERGROK in enabledProviders) {
-                add(
-                    SuperGrokSubscriptionProxyProvider(
-                        accessTokenProvider = { authServiceProvider().getAccessTokenBlocking(QuotaProviderType.SUPERGROK) },
-                        tokenRefresher = { staleToken ->
-                            authServiceProvider().forceRefreshBlocking(QuotaProviderType.SUPERGROK, staleToken)
-                        },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.GITHUB in enabledProviders) {
-                add(
-                    GitHubCopilotSubscriptionProxyProvider(
-                        accessTokenProvider = { githubCredentialsStoreProvider().loadBlocking()?.accessToken },
-                        upstreamBaseUri = githubCopilotBaseUri(settings.githubEnterpriseHost),
-                        persistentModelCacheProvider = {
-                            settings.subscriptionProxyModelCatalogJson(GitHubCopilotSubscriptionProxyProvider.ID)
-                        },
-                        persistentModelCacheSaver = { json ->
-                            settings.setSubscriptionProxyModelCatalogJson(GitHubCopilotSubscriptionProxyProvider.ID, json)
-                        },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.KIMI in enabledProviders) {
-                add(
-                    KimiSubscriptionProxyProvider(
-                        credentialsProvider = { kimiCredentialsStoreProvider().loadBlocking() },
-                        credentialsSaver = { credentials -> kimiCredentialsStoreProvider().save(credentials) },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.MINIMAX in enabledProviders) {
-                add(
-                    MiniMaxSubscriptionProxyProvider(
-                        apiKeyProvider = { miniMaxApiKeyStoreProvider().loadBlocking() },
-                        regionProvider = { miniMaxProxyRegion(settings.miniMaxRegionPreference()) },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.OLLAMA in enabledProviders) {
-                add(
-                    OllamaSubscriptionProxyProvider(
-                        apiKeyProvider = { ollamaApiKeyStoreProvider().loadBlocking() },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.OPEN_CODE in enabledProviders) {
-                add(
-                    OpenCodeZenSubscriptionProxyProvider(
-                        apiKeyProvider = { openCodeApiKeyStoreProvider().loadBlocking() },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-            if (QuotaProviderType.ZAI in enabledProviders) {
-                add(
-                    ZaiSubscriptionProxyProvider(
-                        apiKeyProvider = { zaiApiKeyStoreProvider().loadBlocking() },
-                        fullRequestLogging = logRequests,
-                        requestLogDir = requestLogDir,
-                    ),
-                )
-            }
-        }
-    }
-
-    private fun githubCopilotBaseUri(enterpriseHost: String): URI {
-        val host = GitHubQuotaClient.normalizedEnterpriseHost(enterpriseHost)
-        if (host == "github.com") return GitHubCopilotSubscriptionProxyProvider.DEFAULT_UPSTREAM_BASE_URI
-        return URI.create("https://copilot-api.$host")
-    }
-
-    private fun miniMaxProxyRegion(preference: MiniMaxRegionPreference): MiniMaxRegion {
-        return when (preference) {
-            MiniMaxRegionPreference.CN -> MiniMaxRegion.CN
-            MiniMaxRegionPreference.GLOBAL,
-            MiniMaxRegionPreference.AUTO -> MiniMaxRegion.GLOBAL
-        }
+        val context = IdeProxyBuildContext(
+            settings = settings,
+            logRequests = logRequests,
+            requestLogDir = requestLogDir,
+            authService = authServiceProvider,
+            githubCredentials = githubCredentialsStoreProvider,
+            kimiCredentials = kimiCredentialsStoreProvider,
+            miniMaxApiKey = miniMaxApiKeyStoreProvider,
+            ollamaApiKey = ollamaApiKeyStoreProvider,
+            openCodeApiKey = openCodeApiKeyStoreProvider,
+            zaiApiKey = zaiApiKeyStoreProvider,
+        )
+        return ProviderCatalog.createIdeProxyProviders(
+            context = context,
+            enabled = settings.enabledSubscriptionProxyProviders().toSet(),
+        )
     }
 
     private fun stopLocked() {

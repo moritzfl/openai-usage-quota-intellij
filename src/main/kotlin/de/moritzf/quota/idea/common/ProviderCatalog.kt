@@ -1,7 +1,9 @@
 package de.moritzf.quota.idea.common
 
+import de.moritzf.proxy.subscription.SubscriptionProxyProvider
 import de.moritzf.quota.claude.ClaudeQuota
 import de.moritzf.quota.cursor.CursorQuota
+import de.moritzf.quota.cursor.CursorQuotaClient
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.cursor.CursorCredentialsStore
@@ -45,7 +47,6 @@ import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.ProviderQuota
 import de.moritzf.quota.supergrok.SuperGrokQuota
 import de.moritzf.quota.zai.ZaiQuota
-import de.moritzf.quota.cursor.CursorQuotaClient
 
 internal enum class WebSearchCapability {
     NONE,
@@ -82,6 +83,8 @@ internal data class ProviderDescriptor(
      */
     val isProxyConfigured: (onCredentialsLoaded: (() -> Unit)?) -> Boolean = { _ -> false },
     val webSearchMissingReason: String? = null,
+    /** IDE subscription-proxy construction; null when [ProviderCapabilities.subscriptionProxy] is false. */
+    val ideProxyFactory: ((IdeProxyBuildContext) -> SubscriptionProxyProvider)? = null,
 ) {
     val webSearchType: String?
         get() = when (capabilities.webSearch) {
@@ -134,6 +137,7 @@ internal object ProviderCatalog {
             isProxyConfigured = { onLoaded ->
                 GitHubCredentialsStore.getInstance().load(onLoaded = onLoaded)?.isUsable() == true
             },
+            ideProxyFactory = IdeProxyFactories::github,
         ),
         descriptor(
             type = QuotaProviderType.KIMI,
@@ -156,6 +160,7 @@ internal object ProviderCatalog {
                 KimiCredentialsStore.getInstance().load(onLoaded = onLoaded)?.isUsable() == true
             },
             webSearchMissingReason = "Kimi login required. Log in from settings.",
+            ideProxyFactory = IdeProxyFactories::kimi,
         ),
         descriptor(
             type = QuotaProviderType.MINIMAX,
@@ -174,6 +179,7 @@ internal object ProviderCatalog {
                 !MiniMaxApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
             },
             webSearchMissingReason = "MiniMax API key missing. Add a MiniMax API key in settings.",
+            ideProxyFactory = IdeProxyFactories::miniMax,
         ),
         descriptor(
             type = QuotaProviderType.OLLAMA,
@@ -201,6 +207,7 @@ internal object ProviderCatalog {
                 !OllamaApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
             },
             webSearchMissingReason = "Ollama API key missing. Add an Ollama API key in settings.",
+            ideProxyFactory = IdeProxyFactories::ollama,
         ),
         descriptor(
             type = QuotaProviderType.OPEN_AI,
@@ -219,6 +226,7 @@ internal object ProviderCatalog {
             isWebSearchConfigured = { oauthAccessTokenPresent(QuotaProviderType.OPEN_AI) },
             isProxyConfigured = { _ -> QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.OPEN_AI) },
             webSearchMissingReason = "OpenAI login required. Log in from settings.",
+            ideProxyFactory = IdeProxyFactories::openAi,
         ),
         descriptor(
             type = QuotaProviderType.OPEN_CODE,
@@ -241,6 +249,7 @@ internal object ProviderCatalog {
             isProxyConfigured = { onLoaded ->
                 !OpenCodeApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
             },
+            ideProxyFactory = IdeProxyFactories::openCode,
         ),
         descriptor(
             type = QuotaProviderType.SUPERGROK,
@@ -260,6 +269,7 @@ internal object ProviderCatalog {
             isWebSearchConfigured = { oauthAccessTokenPresent(QuotaProviderType.SUPERGROK) },
             isProxyConfigured = { _ -> QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.SUPERGROK) },
             webSearchMissingReason = "Grok login required. Log in from SuperGrok settings.",
+            ideProxyFactory = IdeProxyFactories::superGrok,
         ),
         descriptor(
             type = QuotaProviderType.ZAI,
@@ -278,6 +288,7 @@ internal object ProviderCatalog {
                 !ZaiApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
             },
             webSearchMissingReason = "Z.ai API key missing. Add a Z.ai API key in settings.",
+            ideProxyFactory = IdeProxyFactories::zai,
         ),
     )
 
@@ -286,6 +297,14 @@ internal object ProviderCatalog {
     init {
         val missing = QuotaProviderType.entries.filter { it !in byType }
         check(missing.isEmpty()) { "ProviderCatalog missing types: $missing" }
+        val proxyWithoutFactory = all.filter { it.capabilities.subscriptionProxy && it.ideProxyFactory == null }
+        check(proxyWithoutFactory.isEmpty()) {
+            "subscriptionProxy providers missing ideProxyFactory: ${proxyWithoutFactory.map { it.type }}"
+        }
+        val factoryWithoutFlag = all.filter { !it.capabilities.subscriptionProxy && it.ideProxyFactory != null }
+        check(factoryWithoutFlag.isEmpty()) {
+            "ideProxyFactory set without subscriptionProxy: ${factoryWithoutFlag.map { it.type }}"
+        }
     }
 
     fun get(type: QuotaProviderType): ProviderDescriptor = byType.getValue(type)
@@ -303,6 +322,20 @@ internal object ProviderCatalog {
 
     fun oauthProviders(): List<QuotaProviderType> =
         all.filter { it.capabilities.oauth }.map { it.type }
+
+    /**
+     * Builds IDE subscription-proxy providers for [enabled] types (catalog order among proxy-capable entries).
+     */
+    fun createIdeProxyProviders(
+        context: IdeProxyBuildContext,
+        enabled: Set<QuotaProviderType>,
+    ): List<SubscriptionProxyProvider> {
+        return all.mapNotNull { descriptor ->
+            if (descriptor.type !in enabled) return@mapNotNull null
+            val factory = descriptor.ideProxyFactory ?: return@mapNotNull null
+            factory(context)
+        }
+    }
 
     fun mergeProviderOrder(storedOrder: List<QuotaProviderType>): List<QuotaProviderType> {
         val allProviders = defaultProviderOrder()
@@ -350,6 +383,7 @@ internal object ProviderCatalog {
         isWebSearchConfigured: () -> Boolean = { false },
         isProxyConfigured: (onCredentialsLoaded: (() -> Unit)?) -> Boolean = { _ -> false },
         webSearchMissingReason: String? = null,
+        ideProxyFactory: ((IdeProxyBuildContext) -> SubscriptionProxyProvider)? = null,
     ): ProviderDescriptor {
         return ProviderDescriptor(
             type = type,
@@ -363,6 +397,7 @@ internal object ProviderCatalog {
             isWebSearchConfigured = isWebSearchConfigured,
             isProxyConfigured = isProxyConfigured,
             webSearchMissingReason = webSearchMissingReason,
+            ideProxyFactory = ideProxyFactory,
         )
     }
 }

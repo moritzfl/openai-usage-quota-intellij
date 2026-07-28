@@ -62,4 +62,14 @@ class ProviderCatalogTest {
             ProviderCatalog.oauthProviders().toSet(),
         )
     }
+
+    @Test
+    fun subscriptionProxyProvidersHaveIdeFactories() {
+        val proxyTypes = ProviderCatalog.proxySupportedProviders().toSet()
+        assertEquals(
+            proxyTypes,
+            ProviderCatalog.all.filter { it.ideProxyFactory != null }.map { it.type }.toSet(),
+        )
+        assertTrue(proxyTypes.isNotEmpty())
+    }
 }
