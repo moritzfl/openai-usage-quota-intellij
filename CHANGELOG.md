@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - SuperGrok now shows 0% used (with reset timing) when a new/unused billing period has no usage numbers yet, instead of an empty quota section.
+- MCP `subscription_tools_status` now treats OpenCode and Ollama Cloud quota as configured when their session cookie is set (not only when an API key is present).
 
 ## [1.6.13] - 2026-07-27
 - The local proxy no longer reports an IDE error when a client cancels a request mid-answer (for example when you stop a running completion); an aborted connection is now treated as normal and logged quietly.

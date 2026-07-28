@@ -12,7 +12,8 @@ import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
-import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
+import de.moritzf.quota.idea.ollama.OllamaSessionCookieStore
+import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.KimiQuotaException
@@ -346,14 +347,15 @@ class SubscriptionUsageMcpToolset(
                 !GitHubCredentialsStore.getInstance().loadBlocking()?.accessToken.isNullOrBlank()
             QuotaProviderType.KIMI ->
                 KimiCredentialsStore.getInstance().loadBlocking()?.isUsable() == true
+            // Quota uses the session cookie; API key is only for proxy/search.
             QuotaProviderType.OPEN_CODE ->
-                !OpenCodeApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
+                !OpenCodeSessionCookieStore.getInstance().loadBlocking().isNullOrBlank()
             QuotaProviderType.ZAI ->
                 !ZaiApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
             QuotaProviderType.MINIMAX ->
                 !MiniMaxApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
             QuotaProviderType.OLLAMA ->
-                !OllamaApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
+                !OllamaSessionCookieStore.getInstance().loadBlocking().first.isNullOrBlank()
             QuotaProviderType.CURSOR ->
                 !CursorCredentialsStore.getInstance().loadBlocking()?.accessToken.isNullOrBlank()
         }
