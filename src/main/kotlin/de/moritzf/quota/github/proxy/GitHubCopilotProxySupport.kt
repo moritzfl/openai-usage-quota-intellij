@@ -1,0 +1,117 @@
+package de.moritzf.quota.github.proxy
+
+import de.moritzf.proxy.subscription.SubscriptionProxyRoute
+import java.net.URI
+import java.time.Duration
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.time.Duration.Companion.minutes
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+
+internal object GitHubCopilotProxyIds {
+    const val ID = "github"
+    const val PREFIX = "gh-"
+    const val OPENCODE_PROVIDER_PREFIX = "github-copilot/"
+    const val DISPLAY_NAME = "GitHub Copilot"
+    const val DEFAULT_RESPONSES_INSTRUCTIONS = "You are a coding assistant."
+    const val LITELLM_PROVIDER = "github_copilot"
+    const val USER_AGENT = "GitHubCopilotChat/0.26.7"
+    const val COPILOT_INTEGRATION_ID = "vscode-chat"
+    const val EDITOR_VERSION = "vscode/1.104.1"
+    const val EDITOR_PLUGIN_VERSION = "copilot-chat/0.26.7"
+    const val API_VERSION = "2026-06-01"
+    const val DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+    const val MAX_REMOTE_IMAGE_BYTES = 5 * 1024 * 1024
+    val REMOTE_IMAGE_TIMEOUT: Duration = Duration.ofSeconds(15)
+    val OPENAI_CHAT_ENVELOPE_FIELDS = setOf("id", "object", "created", "model", "choices")
+    val UNSUPPORTED_MESSAGES_BODY_FIELDS = setOf("context_management", "output_config", "thinking")
+    val DEFAULT_UPSTREAM_BASE_URI: URI = URI.create("https://api.githubcopilot.com")
+    val DEFAULT_CACHE_TTL = 5.minutes
+    val DEFAULT_MISSING_MODEL_RETRY_DELAYS: List<Duration> = List(10) { index ->
+        Duration.ofMillis(1_000L shl index)
+    }
+    val DEFAULT_REQUEST_LOG_DIR: String = System.getProperty("java.io.tmpdir") +
+        "/openai-usage-quota-intellij/subscription-proxy-github-requests"
+    val MODEL_RETRY_SEQUENCE = AtomicLong()
+}
+
+private val GPT_MAJOR_REGEX = Regex("^gpt-(\\d+)")
+
+internal fun String?.trimmedOrNull(): String? = this?.trim()?.takeIf { it.isNotBlank() }
+
+internal fun intField(item: JsonObject?, name: String): Int? {
+    return (item?.get(name) as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+}
+
+internal fun boolField(item: JsonObject?, name: String): Boolean? {
+    return (item?.get(name) as? JsonPrimitive)?.booleanOrNull
+}
+
+internal fun stringField(item: JsonObject?, name: String): String? {
+    return (item?.get(name) as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+}
+
+internal fun JsonObject.jsonObject(name: String): JsonObject? = this[name] as? JsonObject
+
+internal fun modelType(item: JsonObject): String? {
+    val capabilities = item["capabilities"] as? JsonObject ?: return null
+    return (capabilities["type"] as? JsonPrimitive)?.contentOrNull
+}
+
+internal fun remoteModelId(rawId: String): String? {
+    return rawId.trim()
+        .removePrefix(GitHubCopilotProxyIds.OPENCODE_PROVIDER_PREFIX)
+        .takeIf { it.isNotBlank() }
+}
+
+internal fun fallbackUpstreamId(localId: String): String? {
+    val trimmed = localId.trim()
+    val upstreamId = when {
+        trimmed.startsWith(GitHubCopilotProxyIds.PREFIX) -> trimmed.removePrefix(GitHubCopilotProxyIds.PREFIX)
+        trimmed.startsWith(GitHubCopilotProxyIds.OPENCODE_PROVIDER_PREFIX) ->
+            trimmed.removePrefix(GitHubCopilotProxyIds.OPENCODE_PROVIDER_PREFIX)
+        else -> return null
+    }
+    return upstreamId.takeIf { it.isNotBlank() }
+}
+
+internal fun supportsVision(capabilities: JsonObject?, supports: JsonObject?): Boolean {
+    if (boolField(supports, "vision") == true) return true
+    val vision = capabilities?.jsonObject("limits")?.jsonObject("vision") ?: return false
+    val mediaTypes = vision["supported_media_types"] as? JsonArray ?: return false
+    return mediaTypes.any { (it as? JsonPrimitive)?.contentOrNull?.startsWith("image/") == true }
+}
+
+internal fun routeForStorageValue(value: String?): SubscriptionProxyRoute? {
+    return SubscriptionProxyRoute.entries.firstOrNull { route ->
+        value == route.normalizedPath || value == route.upstreamPath || value == "/v1${route.normalizedPath}"
+    }
+}
+
+internal fun shouldUseResponsesApi(modelId: String): Boolean {
+    if (modelId.startsWith("mai-code-")) {
+        return true
+    }
+    val major = GPT_MAJOR_REGEX.find(modelId)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: return false
+    return major >= 5 && !modelId.startsWith("gpt-5-mini")
+}
+
+internal fun shouldBridgeResponsesModel(modelId: String): Boolean = shouldUseResponsesApi(modelId)
+
+internal fun isClaudeModel(modelId: String): Boolean = modelId.startsWith("claude-")
+
+internal fun containsImageInput(element: JsonElement?): Boolean {
+    return when (element) {
+        is JsonObject -> {
+            val type = (element["type"] as? JsonPrimitive)?.contentOrNull
+            type == "image_url" || type == "input_image" || element.values.any(::containsImageInput)
+        }
+
+        is JsonArray -> element.any(::containsImageInput)
+        else -> false
+    }
+}
