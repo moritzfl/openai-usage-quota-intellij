@@ -133,11 +133,16 @@ open class SuperGrokQuotaClient(
             val isUnified = config.booleanValue("isUnifiedBillingUser") == true
             val periodType = period?.stringValue("type")
             val onDemandCap = config.unitValue("onDemandCap") ?: 0L
+            // Unused/new periods often omit creditUsagePercent entirely. With a known
+            // period window, treat that as 0% used so the UI can show reset timing.
+            val reported = usagePercent != null
+            val effectivePercent = usagePercent
+                ?: if (resetsAt != null || periodDurationMs != null) 0.0 else null
 
             return SuperGrokQuota(
                 plan = plan.orEmpty(),
                 authSource = AUTH_SOURCE,
-                creditUsage = usagePercent?.let {
+                creditUsage = effectivePercent?.let {
                     SuperGrokUsageWindow(
                         label = if (isUnified) "Weekly credits" else "Credits used",
                         used = used,
@@ -145,6 +150,7 @@ open class SuperGrokQuotaClient(
                         usagePercent = it.coerceIn(0.0, 100.0),
                         resetsAt = resetsAt,
                         periodDurationMs = periodDurationMs,
+                        reported = reported,
                     )
                 },
                 onDemandCap = onDemandCap,

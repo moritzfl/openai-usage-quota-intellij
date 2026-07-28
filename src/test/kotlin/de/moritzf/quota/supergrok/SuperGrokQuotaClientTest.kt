@@ -17,7 +17,6 @@ import javax.net.ssl.SSLSession
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class SuperGrokQuotaClientTest {
@@ -52,10 +51,14 @@ class SuperGrokQuotaClientTest {
     }
 
     @Test
-    fun parseQuotaKeepsBillingDetailsWhenUsageIsUnavailable() {
+    fun parseQuotaInfersZeroPercentWhenUsageMissingButPeriodKnown() {
         val quota = SuperGrokQuotaClient.parseQuota(weeklyBillingJson = BILLING_CONFIG_ONLY_RESPONSE)
 
-        assertNull(quota.creditUsage)
+        val usage = quota.creditUsage ?: error("credit usage missing")
+        assertEquals(0.0, usage.usagePercent)
+        assertEquals(false, usage.reported)
+        assertEquals("Weekly credits", usage.label)
+        assertEquals(Instant.parse("2026-07-21T16:34:03.633192+00:00"), usage.resetsAt)
         assertTrue(quota.isUnifiedBilling)
         assertEquals("USAGE_PERIOD_TYPE_WEEKLY", quota.periodType)
     }
@@ -64,9 +67,18 @@ class SuperGrokQuotaClientTest {
     fun parseQuotaIgnoresMalformedOptionalFieldsInWrappedBillingPayload() {
         val quota = SuperGrokQuotaClient.parseQuota(weeklyBillingJson = WRAPPED_BILLING_RESPONSE)
 
-        assertNull(quota.creditUsage)
+        val usage = quota.creditUsage ?: error("credit usage missing")
+        assertEquals(0.0, usage.usagePercent)
+        assertEquals(false, usage.reported)
         assertTrue(quota.isUnifiedBilling)
         assertEquals("USAGE_PERIOD_TYPE_WEEKLY", quota.periodType)
+    }
+
+    @Test
+    fun parseQuotaMarksReportedUsageWhenPercentPresent() {
+        val quota = SuperGrokQuotaClient.parseQuota(weeklyBillingJson = BILLING_WEEKLY_RESPONSE)
+        assertEquals(true, quota.creditUsage?.reported)
+        assertEquals(100.0, quota.creditUsage?.usagePercent)
     }
 
     @Test

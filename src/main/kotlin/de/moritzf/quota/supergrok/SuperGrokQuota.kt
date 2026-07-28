@@ -30,6 +30,8 @@ data class SuperGrokUsageWindow(
     val usagePercent: Double = 0.0,
     val resetsAt: Instant? = null,
     val periodDurationMs: Long? = null,
+    /** False when percent was inferred as 0% from a period-only billing payload. */
+    val reported: Boolean = true,
 ) {
     @Transient
     val periodDuration: Duration? = periodDurationMs?.let(Duration::ofMillis)

@@ -39,14 +39,25 @@ class SuperGrokQuotaProviderTest {
 
     @Test
     fun refreshKeepsLastQuotaWhenUsageFieldsMissingButParseSucceeds() {
+        val reset = kotlin.time.Instant.parse("2026-07-21T16:34:03.633192+00:00")
         val firstQuota = SuperGrokQuota(
             plan = "SuperGrok",
-            creditUsage = SuperGrokUsageWindow(label = "Weekly credits", usagePercent = 7.0),
+            creditUsage = SuperGrokUsageWindow(
+                label = "Weekly credits",
+                usagePercent = 7.0,
+                resetsAt = reset,
+                reported = true,
+            ),
             rawJson = "{\"first\":true}",
         )
         val incompleteQuota = SuperGrokQuota(
             plan = "SuperGrok",
-            creditUsage = null,
+            creditUsage = SuperGrokUsageWindow(
+                label = "Weekly credits",
+                usagePercent = 0.0,
+                resetsAt = reset,
+                reported = false,
+            ),
             isUnifiedBilling = true,
             periodType = "USAGE_PERIOD_TYPE_WEEKLY",
             rawJson = "{\"incomplete\":true}",
@@ -66,6 +77,74 @@ class SuperGrokQuotaProviderTest {
 
         assertSame(firstQuota, provider.getLastQuota())
         assertEquals("{\"incomplete\":true}", provider.getLastRawJson())
+        assertNull(provider.getLastError())
+    }
+
+    @Test
+    fun refreshStoresInferredZeroPercentWhenNoPriorQuota() {
+        val reset = kotlin.time.Instant.parse("2026-08-04T16:34:03.633192+00:00")
+        val unusedQuota = SuperGrokQuota(
+            plan = "SuperGrok Heavy",
+            creditUsage = SuperGrokUsageWindow(
+                label = "Weekly credits",
+                usagePercent = 0.0,
+                resetsAt = reset,
+                reported = false,
+            ),
+            isUnifiedBilling = true,
+            periodType = "USAGE_PERIOD_TYPE_WEEKLY",
+            rawJson = "{\"unused\":true}",
+        )
+        val provider = SuperGrokQuotaProvider(
+            client = FakeSuperGrokClient { unusedQuota },
+            tokenProvider = { "token" },
+            tokenRefresher = { null },
+        )
+
+        provider.refresh()
+
+        assertSame(unusedQuota, provider.getLastQuota())
+        assertEquals(0.0, provider.getLastQuota()?.creditUsage?.usagePercent)
+        assertNull(provider.getLastError())
+    }
+
+    @Test
+    fun refreshAcceptsInferredZeroPercentWhenPeriodResets() {
+        val firstQuota = SuperGrokQuota(
+            plan = "SuperGrok Heavy",
+            creditUsage = SuperGrokUsageWindow(
+                label = "Weekly credits",
+                usagePercent = 100.0,
+                resetsAt = kotlin.time.Instant.parse("2026-07-28T16:34:03.633192+00:00"),
+                reported = true,
+            ),
+            rawJson = "{\"first\":true}",
+        )
+        val newPeriodQuota = SuperGrokQuota(
+            plan = "SuperGrok Heavy",
+            creditUsage = SuperGrokUsageWindow(
+                label = "Weekly credits",
+                usagePercent = 0.0,
+                resetsAt = kotlin.time.Instant.parse("2026-08-04T16:34:03.633192+00:00"),
+                reported = false,
+            ),
+            rawJson = "{\"newPeriod\":true}",
+        )
+        var fetchCount = 0
+        val provider = SuperGrokQuotaProvider(
+            client = FakeSuperGrokClient {
+                fetchCount++
+                if (fetchCount == 1) firstQuota else newPeriodQuota
+            },
+            tokenProvider = { "token" },
+            tokenRefresher = { null },
+        )
+
+        provider.refresh()
+        provider.refresh()
+
+        assertSame(newPeriodQuota, provider.getLastQuota())
+        assertEquals(0.0, provider.getLastQuota()?.creditUsage?.usagePercent)
         assertNull(provider.getLastError())
     }
 

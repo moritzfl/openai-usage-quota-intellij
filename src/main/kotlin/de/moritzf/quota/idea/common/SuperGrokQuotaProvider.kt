@@ -26,9 +26,9 @@ class SuperGrokQuotaProvider(
 
         try {
             val quota = fetchQuotaWithAuthRetry(accessToken)
-            // Grok often returns config-only billing (period/plan, no creditUsagePercent).
-            // That parses cleanly with creditUsage=null — do not overwrite a prior good reading.
-            if (!quota.hasUsageState() && lastQuotaRef.get() != null) {
+            // Config-only mid-period payloads used to wipe real %; keep last good reading
+            // when the new value is only an inferred 0% for the same period window.
+            if (shouldKeepLastQuota(quota)) {
                 lastRawJsonRef.set(quota.rawJson)
                 return
             }
@@ -44,6 +44,22 @@ class SuperGrokQuotaProvider(
             if (lastQuotaRef.get() != null) return
             storeError(exception.message ?: "Request failed")
         }
+    }
+
+    private fun shouldKeepLastQuota(quota: SuperGrokQuota): Boolean {
+        val last = lastQuotaRef.get() ?: return false
+        if (!quota.hasUsageState()) return true
+        val newUsage = quota.creditUsage ?: return true
+        if (newUsage.reported) return false
+        val lastUsage = last.creditUsage ?: return false
+        if (!lastUsage.reported) return false
+        // New period (different reset) → accept inferred 0% instead of stale prior %.
+        val lastReset = lastUsage.resetsAt
+        val newReset = newUsage.resetsAt
+        if (lastReset != null && newReset != null && lastReset != newReset) {
+            return false
+        }
+        return true
     }
 
     private fun fetchQuotaWithAuthRetry(accessToken: String): SuperGrokQuota {
