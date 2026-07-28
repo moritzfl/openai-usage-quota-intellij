@@ -5,15 +5,12 @@ import com.intellij.mcpserver.annotations.McpDescription
 import com.intellij.mcpserver.annotations.McpTool
 import com.intellij.openapi.project.ProjectManager
 import de.moritzf.quota.idea.auth.QuotaAuthService
+import de.moritzf.quota.idea.common.ProviderCatalog
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
-import de.moritzf.quota.idea.cursor.CursorCredentialsStore
-import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
-import de.moritzf.quota.idea.ollama.OllamaSessionCookieStore
-import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.KimiQuotaException
@@ -58,33 +55,26 @@ class SubscriptionUsageMcpToolset(
     @McpTool(name = "subscription_tools_status")
     @McpDescription(description = "Returns per-provider status showing whether subscription quota access is configured and whether web search, image generation, and video generation are available. Does not call provider APIs.")
     fun subscription_tools_status(): String {
-        val listProviders = ListSearchProvider.entries.associateBy { it.providerType }
-        val imageProviders = ImageGenerationProvider.entries.associateBy { it.providerType }
-
-        val statuses = QuotaProviderType.entries.map { provider ->
-            val quotaConfigured = isQuotaConfigured(provider)
-            val searchType = when (provider) {
-                QuotaProviderType.OPEN_AI, QuotaProviderType.SUPERGROK -> "answer"
-                in listProviders -> "list"
-                else -> null
-            }
-            val webSearchAvailable = searchType != null && isWebSearchConfigured(provider)
-            val imageGenerationAvailable = provider in imageProviders && isImageGenerationConfigured(provider)
-            val videoGenerationAvailable = provider == QuotaProviderType.SUPERGROK && isImageGenerationConfigured(provider)
+        val statuses = ProviderCatalog.all.map { descriptor ->
+            val caps = descriptor.capabilities
+            val searchType = descriptor.webSearchType
+            val webSearchAvailable = searchType != null && descriptor.isWebSearchConfigured()
+            // Image/video share the same login probe as quota for the OAuth providers that offer them.
+            val mediaConfigured = descriptor.isQuotaConfigured()
             val reason = if (searchType == null) {
                 "Web search is not offered for this provider."
             } else if (!webSearchAvailable) {
-                webSearchMissingReason(provider)
+                descriptor.webSearchMissingReason
             } else {
                 null
             }
             McpProviderToolStatus(
-                provider = provider.displayName,
-                quotaConfigured = quotaConfigured,
+                provider = descriptor.type.displayName,
+                quotaConfigured = descriptor.isQuotaConfigured(),
                 webSearchAvailable = webSearchAvailable,
                 webSearchType = searchType,
-                imageGenerationAvailable = imageGenerationAvailable,
-                videoGenerationAvailable = videoGenerationAvailable,
+                imageGenerationAvailable = caps.imageGeneration && mediaConfigured,
+                videoGenerationAvailable = caps.videoGeneration && mediaConfigured,
                 reason = reason,
             )
         }
@@ -339,69 +329,20 @@ class SubscriptionUsageMcpToolset(
         }
     }
 
-    private fun isQuotaConfigured(provider: QuotaProviderType): Boolean {
-        return when (provider) {
-            QuotaProviderType.OPEN_AI, QuotaProviderType.SUPERGROK, QuotaProviderType.CLAUDE ->
-                !QuotaAuthService.getInstance().getAccessTokenBlocking(provider).isNullOrBlank()
-            QuotaProviderType.GITHUB ->
-                !GitHubCredentialsStore.getInstance().loadBlocking()?.accessToken.isNullOrBlank()
-            QuotaProviderType.KIMI ->
-                KimiCredentialsStore.getInstance().loadBlocking()?.isUsable() == true
-            // Quota uses the session cookie; API key is only for proxy/search.
-            QuotaProviderType.OPEN_CODE ->
-                !OpenCodeSessionCookieStore.getInstance().loadBlocking().isNullOrBlank()
-            QuotaProviderType.ZAI ->
-                !ZaiApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
-            QuotaProviderType.MINIMAX ->
-                !MiniMaxApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
-            QuotaProviderType.OLLAMA ->
-                !OllamaSessionCookieStore.getInstance().loadBlocking().first.isNullOrBlank()
-            QuotaProviderType.CURSOR ->
-                !CursorCredentialsStore.getInstance().loadBlocking()?.accessToken.isNullOrBlank()
-        }
-    }
-
     private fun isWebSearchConfigured(provider: QuotaProviderType): Boolean {
-        return when (provider) {
-            QuotaProviderType.OPEN_AI, QuotaProviderType.SUPERGROK ->
-                !QuotaAuthService.getInstance().getAccessTokenBlocking(provider).isNullOrBlank()
-            QuotaProviderType.KIMI ->
-                KimiCredentialsStore.getInstance().loadBlocking()?.isUsable() == true
-            QuotaProviderType.ZAI ->
-                !ZaiApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
-            QuotaProviderType.MINIMAX ->
-                !MiniMaxApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
-            QuotaProviderType.OLLAMA ->
-                !OllamaApiKeyStore.getInstance().loadBlocking().isNullOrBlank()
-            else -> false
-        }
+        return ProviderCatalog.get(provider).isWebSearchConfigured()
     }
 
     private fun isImageGenerationConfigured(provider: QuotaProviderType): Boolean {
-        return when (provider) {
-            QuotaProviderType.OPEN_AI, QuotaProviderType.SUPERGROK ->
-                !QuotaAuthService.getInstance().getAccessTokenBlocking(provider).isNullOrBlank()
-            else -> false
-        }
-    }
-
-    private fun webSearchMissingReason(provider: QuotaProviderType): String {
-        return when (provider) {
-            QuotaProviderType.OPEN_AI -> "OpenAI login required. Log in from settings."
-            QuotaProviderType.SUPERGROK -> "Grok login required. Log in from SuperGrok settings."
-            QuotaProviderType.KIMI -> "Kimi login required. Log in from settings."
-            QuotaProviderType.ZAI -> "Z.ai API key missing. Add a Z.ai API key in settings."
-            QuotaProviderType.MINIMAX -> "MiniMax API key missing. Add a MiniMax API key in settings."
-            QuotaProviderType.OLLAMA -> "Ollama API key missing. Add an Ollama API key in settings."
-            else -> "Web search is not offered for this provider."
-        }
+        val descriptor = ProviderCatalog.get(provider)
+        return descriptor.capabilities.imageGeneration && descriptor.isQuotaConfigured()
     }
 
     private fun searchError(message: String): String {
         val available = mutableListOf<String>()
-        for (provider in QuotaProviderType.entries) {
-            if (isWebSearchConfigured(provider)) {
-                available.add(provider.displayName)
+        for (descriptor in ProviderCatalog.all) {
+            if (descriptor.isWebSearchConfigured()) {
+                available.add(descriptor.type.displayName)
             }
         }
         val hint = if (available.isEmpty()) {

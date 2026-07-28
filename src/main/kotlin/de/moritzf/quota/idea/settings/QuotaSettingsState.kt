@@ -1,6 +1,7 @@
 package de.moritzf.quota.idea.settings
 
 import com.intellij.openapi.application.ApplicationManager
+import de.moritzf.quota.idea.common.ProviderCatalog
 import de.moritzf.quota.idea.common.QuotaProviderRegistry
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaSnapshotCache
@@ -273,19 +274,11 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
     }
 
     companion object {
-        val SUBSCRIPTION_PROXY_SUPPORTED_PROVIDERS: List<QuotaProviderType> = listOf(
-            QuotaProviderType.OPEN_AI,
-            QuotaProviderType.SUPERGROK,
-            QuotaProviderType.GITHUB,
-            QuotaProviderType.KIMI,
-            QuotaProviderType.MINIMAX,
-            QuotaProviderType.OLLAMA,
-            QuotaProviderType.OPEN_CODE,
-            QuotaProviderType.ZAI,
-        )
+        val SUBSCRIPTION_PROXY_SUPPORTED_PROVIDERS: List<QuotaProviderType>
+            get() = ProviderCatalog.proxySupportedProviders()
 
-        val DEFAULT_SUBSCRIPTION_PROXY_PROVIDERS: List<String> =
-            SUBSCRIPTION_PROXY_SUPPORTED_PROVIDERS.map { it.id }
+        val DEFAULT_SUBSCRIPTION_PROXY_PROVIDERS: List<String>
+            get() = SUBSCRIPTION_PROXY_SUPPORTED_PROVIDERS.map { it.id }
 
         val DEFAULT_PROVIDER_ORDER: String
             get() = QuotaProviderRegistry.defaultProviderOrderStorageValue()

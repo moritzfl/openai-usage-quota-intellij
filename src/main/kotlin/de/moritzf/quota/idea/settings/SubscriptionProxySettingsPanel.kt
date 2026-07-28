@@ -15,17 +15,10 @@ import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.components.BorderLayoutPanel
-import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
-import de.moritzf.quota.idea.github.GitHubCredentialsStore
-import de.moritzf.quota.idea.kimi.KimiCredentialsStore
-import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
-import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
-import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.openai.OpenAiProxyApiKeyStore
 import de.moritzf.quota.idea.openai.OpenAiProxyService
 import de.moritzf.quota.idea.ui.QuotaUiUtil
-import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.proxy.subscription.SubscriptionProxyModel
 import java.awt.Desktop
 import java.awt.Dimension
@@ -323,29 +316,8 @@ internal class SubscriptionProxySettingsPanel(
     }
 
     private fun isProviderConfigured(provider: QuotaProviderType): Boolean {
-        return when (provider) {
-            QuotaProviderType.OPEN_AI,
-            QuotaProviderType.SUPERGROK -> QuotaAuthService.getInstance().isLoggedIn(provider)
-            QuotaProviderType.GITHUB -> GitHubCredentialsStore.getInstance()
-                .load(onLoaded = ::refreshAfterCredentialsLoad)
-                ?.isUsable() == true
-            QuotaProviderType.KIMI -> KimiCredentialsStore.getInstance()
-                .load(onLoaded = ::refreshAfterCredentialsLoad)
-                ?.isUsable() == true
-            QuotaProviderType.MINIMAX -> !MiniMaxApiKeyStore.getInstance()
-                .load(onLoaded = ::refreshAfterCredentialsLoad)
-                .isNullOrBlank()
-            QuotaProviderType.OLLAMA -> !OllamaApiKeyStore.getInstance()
-                .load(onLoaded = ::refreshAfterCredentialsLoad)
-                .isNullOrBlank()
-            QuotaProviderType.OPEN_CODE -> !OpenCodeApiKeyStore.getInstance()
-                .load(onLoaded = ::refreshAfterCredentialsLoad)
-                .isNullOrBlank()
-            QuotaProviderType.ZAI -> !ZaiApiKeyStore.getInstance()
-                .load(onLoaded = ::refreshAfterCredentialsLoad)
-                .isNullOrBlank()
-            else -> false
-        }
+        return de.moritzf.quota.idea.common.ProviderCatalog.get(provider)
+            .isProxyConfigured(::refreshAfterCredentialsLoad)
     }
 
     private fun refreshAfterCredentialsLoad() {

@@ -4,7 +4,6 @@ import de.moritzf.quota.claude.ClaudeQuota
 import de.moritzf.quota.cursor.CursorQuota
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.idea.auth.QuotaAuthService
-import de.moritzf.quota.idea.common.QuotaProviderRegistry
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.cursor.CursorCredentialsStore
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
@@ -43,7 +42,7 @@ internal enum class ProviderAuthState {
 
 /**
  * Per-provider UI behavior: indicator texts, percentages, popup section, and auth state.
- * New providers add one implementation and register it in [ProviderUiRegistry].
+ * New providers add one implementation and register it on [de.moritzf.quota.idea.common.ProviderCatalog].
  */
 internal interface ProviderUi {
     val type: QuotaProviderType
@@ -66,25 +65,15 @@ internal interface ProviderUi {
     fun createPopupSection(): ProviderPopupSection
 }
 
+/** Facade over [de.moritzf.quota.idea.common.ProviderCatalog] for indicator/popup UI. */
 internal object ProviderUiRegistry {
-    private val byType: Map<QuotaProviderType, ProviderUi> = listOf(
-        ClaudeUi,
-        CursorUi,
-        GitHubUi,
-        KimiUi,
-        MiniMaxUi,
-        OllamaUi,
-        OpenAiUi,
-        OpenCodeUi,
-        SuperGrokUi,
-        ZaiUi,
-    ).associateBy { it.type }
+    val all: Map<QuotaProviderType, ProviderUi>
+        get() = de.moritzf.quota.idea.common.ProviderCatalog.defaultProviderOrder().associateWith { type ->
+            de.moritzf.quota.idea.common.ProviderCatalog.get(type).ui
+        }
 
-    val all: Map<QuotaProviderType, ProviderUi> = QuotaProviderRegistry.defaultProviderOrder().associateWith { type ->
-        byType.getValue(type)
-    }
-
-    fun forType(type: QuotaProviderType): ProviderUi = all.getValue(type)
+    fun forType(type: QuotaProviderType): ProviderUi =
+        de.moritzf.quota.idea.common.ProviderCatalog.get(type).ui
 }
 
 internal object OpenAiUi : ProviderUi {

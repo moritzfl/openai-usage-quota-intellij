@@ -33,6 +33,14 @@
 - Use Kotlin serialization for plugin-owned MCP JSON, including tool status, plugin errors, raw-response wrappers, and request payload DTOs.
 - Keep upstream response parsing minimal. Parse only for required error detection, authentication retry decisions, documented non-JSON formats, or unusable responses.
 
+## Providers
+
+- Register each provider once in `ProviderCatalog` (`ProviderDescriptor`: quota factory, snapshot codec, settings/UI factories, MCP quota export, capability flags, credential probes).
+- `QuotaProviderRegistry`, `ProviderSettingsRegistry`, `ProviderUiRegistry`, and `UsageQuotaMcpRegistry` are facades over the catalog — do not add parallel per-provider maps.
+- Keep `QuotaProviderType` as the stable id (settings storage, MCP `subscription_quota` param). Add a type entry when adding a provider.
+- Capability flags drive proxy-supported lists and MCP status. Keep MCP param enums (`ListSearchProvider`, `ImageGenerationProvider`) in sync with capabilities (`ProviderCatalogTest` enforces this).
+- New provider checklist: `QuotaProviderType` (+ `QuotaIndicatorSource` if shown in the status bar), one `ProviderCatalog` entry, icon/`QuotaIcons`, MCP enum + tool dispatch arm if needed, `OpenAiProxyService` / standalone proxy wiring if proxy, tests, `plugin.xml` + `README` table, changelog.
+
 ## Proxy Providers
 
 - Keep proxy behavior separate from MCP behavior. The proxy may normalize, transform, or adapt payloads for OpenAI, Anthropic, or LiteLLM compatibility.
@@ -41,8 +49,7 @@
 - For providers with usable official model endpoints, such as SuperGrok/xAI and GitHub Copilot, prefer live discovery over hardcoded model fallbacks.
 - `models.dev` may be used as a model catalog only when it explicitly separates subscription providers from API-key providers and the subscription provider has no usable first-party endpoint for discovering current subscription model IDs.
 - When no provider-declared default exists, choose a default from advertised models by taking the alphabetically latest model id rather than hardcoding a recommendation.
-- New proxy providers usually need settings support, `OpenAiProxyService` wiring, provider enablement defaults, status reporting, and tests.
-- When adding a provider (quota, MCP, or proxy), also update the plugin description in `plugin.xml` and `README.md` (supported-provider table and affected feature sections).
+- Proxy enablement defaults come from `ProviderCapabilities.subscriptionProxy` via the catalog; IDE construction still lives in `OpenAiProxyService.createProviders`.
 
 ## Settings And Releases
 
