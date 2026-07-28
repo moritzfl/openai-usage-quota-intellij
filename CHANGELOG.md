@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+## [1.6.14] - 2026-07-28
 - SuperGrok now shows 0% used (with reset timing) when a new/unused billing period has no usage numbers yet, instead of an empty quota section.
 - MCP `subscription_tools_status` now treats OpenCode and Ollama Cloud quota as configured when their session cookie is set (not only when an API key is present).
 
