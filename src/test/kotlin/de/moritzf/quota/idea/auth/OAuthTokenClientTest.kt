@@ -19,6 +19,7 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class OAuthTokenClientTest {
@@ -74,6 +75,52 @@ class OAuthTokenClientTest {
         assertTrue(credentials.expiresAt in (before + 120_000)..(after + 120_000))
     }
 
+    @Test
+    fun refreshRetriesServerErrors() = runBlocking {
+        val http = FakeHttpClient(
+            responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
+            failuresBeforeSuccess = 2,
+        )
+
+        val credentials = OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+
+        assertEquals(3, http.attempts)
+        assertEquals("new-access", credentials.accessToken)
+    }
+
+    @Test
+    fun refreshRetriesDroppedConnections() = runBlocking {
+        val http = FakeHttpClient(
+            responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
+            failuresBeforeSuccess = 1,
+            failWith = { java.io.IOException("connection reset") },
+        )
+
+        val credentials = OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+
+        assertEquals(2, http.attempts)
+        assertEquals("new-access", credentials.accessToken)
+    }
+
+    @Test
+    fun refreshDoesNotRetryRejectedTokens() = runBlocking {
+        val http = FakeHttpClient(
+            responseBody = """{"error":"invalid_grant"}""",
+            failuresBeforeSuccess = 1,
+            failureStatus = 400,
+        )
+
+        val failure = assertFailsWith<OAuthTokenRequestException> {
+            OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+        }
+
+        assertEquals(1, http.attempts, "a rejected refresh token is final")
+        assertEquals(400, failure.statusCode)
+    }
+
+    private fun expiredCredentials(): OAuthCredentials =
+        OAuthCredentials(accessToken = "old-access", refreshToken = "old-refresh", expiresAt = 1L)
+
     private fun config(): OAuthClientConfig {
         return OAuthClientConfig(
             clientId = "client-id",
@@ -116,8 +163,21 @@ class OAuthTokenClientTest {
             .encode(value.toByteArray(Charsets.UTF_8))
     }
 
-    private class FakeHttpClient(private val responseBody: String) : HttpClient() {
+    private class FakeHttpClient(
+        private val responseBody: String,
+        private val failuresBeforeSuccess: Int = 0,
+        private val failureStatus: Int = 503,
+        private val failWith: (() -> Exception)? = null,
+    ) : HttpClient() {
+        var attempts: Int = 0
+
         override fun <T : Any?> send(request: HttpRequest, responseBodyHandler: HttpResponse.BodyHandler<T>): HttpResponse<T> {
+            attempts++
+            if (attempts <= failuresBeforeSuccess) {
+                failWith?.let { throw it() }
+                @Suppress("UNCHECKED_CAST")
+                return FakeResponse("upstream error", request, failureStatus) as HttpResponse<T>
+            }
             @Suppress("UNCHECKED_CAST")
             return FakeResponse(responseBody, request) as HttpResponse<T>
         }
@@ -147,8 +207,9 @@ class OAuthTokenClientTest {
     private class FakeResponse(
         private val responseBody: String,
         private val request: HttpRequest,
+        private val status: Int = 200,
     ) : HttpResponse<String> {
-        override fun statusCode(): Int = 200
+        override fun statusCode(): Int = status
         override fun request(): HttpRequest = request
         override fun previousResponse(): Optional<HttpResponse<String>> = Optional.empty()
         override fun headers(): HttpHeaders = HttpHeaders.of(emptyMap()) { _, _ -> true }

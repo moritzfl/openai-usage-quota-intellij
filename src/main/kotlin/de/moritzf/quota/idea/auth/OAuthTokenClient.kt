@@ -10,6 +10,7 @@ import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.time.Duration
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -62,7 +63,7 @@ class OAuthTokenClient(
             "refresh_token" to existing.refreshToken.orEmpty(),
         )
         config.clientSecret?.let { params["client_secret"] = it }
-        val response = postToken(params)
+        val response = postTokenWithRetry(params)
         if (response.statusCode() !in 200..299) {
             LOG.warn("Token refresh failed: ${response.statusCode()}")
             throw createRequestException("Token refresh failed", response)
@@ -78,6 +79,33 @@ class OAuthTokenClient(
                 credentials.hd = existing.hd
             }
         }
+    }
+
+    /**
+     * Retries a refresh that failed on a server error or a dropped connection. Without this a
+     * single blip ends the refresh, and the provider reports the account as not logged in until
+     * the next scheduled update. Only transient failures are retried; a rejected token is final.
+     */
+    private suspend fun postTokenWithRetry(parameters: Map<String, String>): HttpResponse<String> {
+        for (attempt in 0 until MAX_REFRESH_ATTEMPTS) {
+            val lastAttempt = attempt == MAX_REFRESH_ATTEMPTS - 1
+            if (attempt > 0) {
+                delay(RETRY_BASE_DELAY_MS shl (attempt - 1))
+            }
+            try {
+                val response = postToken(parameters)
+                if (response.statusCode() < 500 || lastAttempt) {
+                    return response
+                }
+                LOG.warn("Token refresh returned HTTP ${response.statusCode()}, retrying")
+            } catch (exception: IOException) {
+                if (lastAttempt) {
+                    throw exception
+                }
+                LOG.warn("Token refresh request failed, retrying", exception)
+            }
+        }
+        throw IOException("Token refresh failed")
     }
 
     private fun postToken(parameters: Map<String, String>): HttpResponse<String> {
@@ -150,5 +178,7 @@ class OAuthTokenClient(
     companion object {
         private val LOG = Logger.getInstance(OAuthTokenClient::class.java)
         private const val DEFAULT_EXPIRES_IN_MS = 60 * 60 * 1000L
+        private const val MAX_REFRESH_ATTEMPTS = 3
+        private const val RETRY_BASE_DELAY_MS = 500L
     }
 }

@@ -5,6 +5,7 @@ import de.moritzf.quota.claude.ClaudeQuotaClient
 import de.moritzf.quota.claude.ClaudeQuotaException
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 
@@ -30,12 +31,37 @@ class ClaudeQuotaProviderTest {
             client = FakeClaudeClient { throw ClaudeQuotaException("unused") },
             tokenProvider = { null },
             tokenRefresher = { null },
+            loggedInProvider = { false },
         )
 
         provider.refresh()
 
         assertNull(provider.getLastQuota())
         assertEquals(provider.notConfiguredMessage, provider.getLastError())
+    }
+
+    @Test
+    fun refreshKeepsLoginAndLastQuotaWhenTokenIsTemporarilyUnavailable() {
+        val quota = ClaudeQuota(rawJson = "{\"ok\":true}")
+        var token: String? = "token"
+        val provider = ClaudeQuotaProvider(
+            client = FakeClaudeClient { quota },
+            tokenProvider = { token },
+            tokenRefresher = { null },
+            loggedInProvider = { true },
+        )
+
+        provider.refresh()
+        token = null
+        provider.refresh()
+
+        // A failed refresh must not look like a logout, and must not drop the last reading.
+        assertSame(quota, provider.getLastQuota())
+        assertNotEquals(provider.notConfiguredMessage, provider.getLastError())
+        assertEquals(
+            "Claude token could not be refreshed. Trying again with the next update.",
+            provider.getLastError(),
+        )
     }
 
     @Test

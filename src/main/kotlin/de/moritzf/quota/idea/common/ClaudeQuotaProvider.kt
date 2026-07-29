@@ -13,6 +13,9 @@ class ClaudeQuotaProvider(
     private val tokenRefresher: (staleAccessToken: String?) -> String? = { staleToken ->
         QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.CLAUDE, staleToken)
     },
+    private val loggedInProvider: () -> Boolean = {
+        QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.CLAUDE)
+    },
 ) : CachedQuotaProvider<ClaudeQuota>() {
     override val type = QuotaProviderType.CLAUDE
     override val notConfiguredMessage = "Claude login required. Log in from Claude settings."
@@ -20,7 +23,14 @@ class ClaudeQuotaProvider(
     override fun refresh() {
         val accessToken = tokenProvider()
         if (accessToken.isNullOrBlank()) {
-            clearData(notConfiguredMessage)
+            if (loggedInProvider()) {
+                // The login is still stored, only this refresh produced no token. Reporting it as
+                // "log in again" sends users through a needless browser login for what a later
+                // update fixes on its own.
+                storeError(TOKEN_UNAVAILABLE_MESSAGE)
+            } else {
+                clearData(notConfiguredMessage)
+            }
             return
         }
 
@@ -44,5 +54,10 @@ class ClaudeQuotaProvider(
                 ?: throw exception
             client.fetchQuota(refreshed)
         }
+    }
+
+    private companion object {
+        private const val TOKEN_UNAVAILABLE_MESSAGE =
+            "Claude token could not be refreshed. Trying again with the next update."
     }
 }
