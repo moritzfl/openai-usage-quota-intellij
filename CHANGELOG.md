@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 - Claude no longer asks you to log in again after a network or server hiccup: refreshing your login is retried, and a refresh that still fails keeps both your login and the last usage numbers instead of showing “login required”.
-- Ollama Cloud quota now uses the official usage API with your API key (`GET https://ollama.com/api/usage`). Session cookies and HTML scraping were removed; one API key covers quota, web search, and the local proxy.
+- Ollama Cloud quota now uses the official usage API with your API key (`GET https://ollama.com/api/usage`). Session cookies and HTML scraping were removed; one API key covers quota, web search, and the local proxy, and the stored Ollama cookies are deleted from Password Safe.
 - Ollama usage parsing is now lenient: unknown fields and a reshaped or unreadable block (for example per-model details or one of the two limits) only hide that part instead of the whole quota.
 
 ## [1.6.14] - 2026-07-28

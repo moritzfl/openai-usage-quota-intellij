@@ -45,6 +45,9 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
     var subscriptionProxyModelCatalogJsons: MutableMap<String, String> = mutableMapOf()
     var githubEnterpriseHost: String = ""
 
+    /** Shape of the persisted data; raised by [QuotaSettingsMigrations] as migrations run. */
+    var settingsVersion: Int = 0
+
     // Legacy per-provider fields kept only so settings written by older
     // versions still deserialize; loadState migrates them into the maps.
     @Deprecated("Migrated into lastProviderUpdates")
@@ -99,6 +102,7 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
     override fun getState(): QuotaSettingsState = this
 
     override fun loadState(state: QuotaSettingsState) {
+        settingsVersion = state.settingsVersion
         refreshMinutes = state.refreshMinutes
         statusBarDisplayMode = QuotaDisplayMode.fromStorageValue(state.statusBarDisplayMode).name
         indicatorLocation = QuotaIndicatorLocation.fromStorageValue(state.indicatorLocation).name
@@ -122,6 +126,12 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
         subscriptionProxyEnabledProviders = sanitizeSubscriptionProxyProviders(state.subscriptionProxyEnabledProviders).toMutableList()
         subscriptionProxyModelCatalogJsons = state.subscriptionProxyModelCatalogJsons.toMutableMap()
         githubEnterpriseHost = state.githubEnterpriseHost.trim()
+        QuotaSettingsMigrations.run(this)
+    }
+
+    /** Fresh install: nothing was ever persisted, so only record the current settings version. */
+    override fun noStateLoaded() {
+        settingsVersion = QuotaSettingsMigrations.CURRENT_VERSION
     }
 
     @Suppress("DEPRECATION")

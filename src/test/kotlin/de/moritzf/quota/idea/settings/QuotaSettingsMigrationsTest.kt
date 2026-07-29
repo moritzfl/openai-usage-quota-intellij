@@ -1,0 +1,144 @@
+package de.moritzf.quota.idea.settings
+
+import com.intellij.openapi.util.JDOMUtil
+import com.intellij.util.xmlb.XmlSerializer
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+class QuotaSettingsMigrationsTest {
+    private fun deserialize(xml: String): QuotaSettingsState =
+        XmlSerializer.deserialize(JDOMUtil.load(xml), QuotaSettingsState::class.java)
+
+    @Test
+    fun runsMigrationForStateBelowItsVersion() {
+        val state = QuotaSettingsState()
+        val migration = RecordingMigration(version = 1)
+
+        QuotaSettingsMigrations.run(state, migrations = listOf(migration))
+
+        assertEquals(1, migration.applyCount)
+        assertEquals(QuotaSettingsMigrations.CURRENT_VERSION, state.settingsVersion)
+    }
+
+    @Test
+    fun skipsMigrationAlreadyCoveredByTheRecordedVersion() {
+        val state = QuotaSettingsState().apply { settingsVersion = 2 }
+        val applied = RecordingMigration(version = 2)
+        val older = RecordingMigration(version = 1)
+
+        QuotaSettingsMigrations.run(state, migrations = listOf(applied, older))
+
+        assertEquals(0, applied.applyCount)
+        assertEquals(0, older.applyCount)
+    }
+
+    @Test
+    fun runsOnlyMigrationsNewerThanTheRecordedVersion() {
+        val state = QuotaSettingsState().apply { settingsVersion = 2 }
+        val old = RecordingMigration(version = 1)
+        val pending = RecordingMigration(version = 3)
+
+        QuotaSettingsMigrations.run(state, migrations = listOf(pending, old))
+
+        assertEquals(0, old.applyCount)
+        assertEquals(1, pending.applyCount)
+    }
+
+    @Test
+    fun appliesMigrationsInVersionOrder() {
+        val state = QuotaSettingsState()
+        val order = mutableListOf<Int>()
+        val third = RecordingMigration(version = 3, onApply = { order += 3 })
+        val first = RecordingMigration(version = 1, onApply = { order += 1 })
+        val second = RecordingMigration(version = 2, onApply = { order += 2 })
+
+        QuotaSettingsMigrations.run(state, migrations = listOf(third, first, second))
+
+        assertEquals(listOf(1, 2, 3), order)
+    }
+
+    @Test
+    fun keepsAHigherVersionWrittenByANewerPlugin() {
+        val state = QuotaSettingsState().apply { settingsVersion = 99 }
+
+        QuotaSettingsMigrations.run(state, migrations = emptyList())
+
+        assertEquals(99, state.settingsVersion, "a newer plugin's version must not be lowered")
+    }
+
+    @Test
+    fun failingMigrationDoesNotStopTheOthers() {
+        val state = QuotaSettingsState()
+        val failing = RecordingMigration(version = 1, onApply = { error("migration failed") })
+        val following = RecordingMigration(version = 1)
+
+        QuotaSettingsMigrations.run(state, migrations = listOf(failing, following))
+
+        assertEquals(1, failing.applyCount)
+        assertEquals(1, following.applyCount)
+        assertEquals(QuotaSettingsMigrations.CURRENT_VERSION, state.settingsVersion)
+    }
+
+    @Test
+    fun settingsWrittenBeforeMigrationsExistedStartAtVersionZero() {
+        // Settings file from a plugin version that did not know settingsVersion yet.
+        val legacy = deserialize(
+            """
+            <component name="OpenAiUsageQuotaSettings">
+              <option name="refreshMinutes" value="7" />
+              <option name="githubEnterpriseHost" value="ghe.example.com" />
+            </component>
+            """.trimIndent(),
+        )
+
+        assertEquals(0, legacy.settingsVersion)
+
+        val state = QuotaSettingsState()
+        state.loadState(legacy)
+
+        assertEquals(7, state.refreshMinutes, "legacy values still load")
+        assertEquals(QuotaSettingsMigrations.CURRENT_VERSION, state.settingsVersion)
+    }
+
+    @Test
+    fun recordedVersionSurvivesASettingsRoundTrip() {
+        val state = QuotaSettingsState().apply { settingsVersion = QuotaSettingsMigrations.CURRENT_VERSION }
+
+        val reloaded = deserialize(JDOMUtil.write(XmlSerializer.serialize(state.state)))
+
+        assertEquals(QuotaSettingsMigrations.CURRENT_VERSION, reloaded.settingsVersion)
+    }
+
+    @Test
+    fun freshInstallRecordsTheCurrentVersionWithoutMigrating() {
+        val state = QuotaSettingsState()
+
+        state.noStateLoaded()
+
+        assertEquals(QuotaSettingsMigrations.CURRENT_VERSION, state.settingsVersion)
+    }
+
+    @Test
+    fun registeredMigrationsAreUniqueAndCoveredByTheCurrentVersion() {
+        val ids = QuotaSettingsMigrations.ALL.map { it.id }
+        assertEquals(ids.size, ids.distinct().size)
+        assertTrue(
+            QuotaSettingsMigrations.ALL.all { it.version in 1..QuotaSettingsMigrations.CURRENT_VERSION },
+            "every migration needs a version that CURRENT_VERSION covers",
+        )
+    }
+
+    private class RecordingMigration(
+        override val version: Int,
+        private val onApply: () -> Unit = {},
+        override val id: String = "test-migration-$version",
+    ) : QuotaSettingsMigration {
+        var applyCount: Int = 0
+
+        override fun apply(state: QuotaSettingsState) {
+            applyCount++
+            onApply()
+        }
+    }
+}
