@@ -12,7 +12,6 @@ import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.mcp.UsageQuotaMcpRegistration
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
-import de.moritzf.quota.idea.ollama.OllamaSessionCookieStore
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.settings.ClaudeSettingsPanel
@@ -198,10 +197,8 @@ internal object ProviderCatalog {
             ),
             settings = { ctx -> OllamaSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = OllamaUi,
-            // Quota uses session cookie; proxy/search use API key.
-            isQuotaConfigured = {
-                !OllamaSessionCookieStore.getInstance().loadBlocking().first.isNullOrBlank()
-            },
+            // Quota, proxy, and web search all use the Ollama API key.
+            isQuotaConfigured = { !OllamaApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isWebSearchConfigured = { !OllamaApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isProxyConfigured = { onLoaded ->
                 !OllamaApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()

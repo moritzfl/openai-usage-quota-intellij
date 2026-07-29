@@ -9,7 +9,7 @@ import de.moritzf.quota.idea.cursor.CursorCredentialsStore
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
-import de.moritzf.quota.idea.ollama.OllamaSessionCookieStore
+import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.ui.popup.ClaudePopupSection
 import de.moritzf.quota.idea.ui.popup.CursorPopupSection
@@ -152,10 +152,10 @@ internal object OllamaUi : ProviderUi {
         ollamaPeriodElapsedFraction(quota as? OllamaQuota, error)
 
     override fun authState(): ProviderAuthState {
-        val store = OllamaSessionCookieStore.getInstance()
+        val store = OllamaApiKeyStore.getInstance()
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
-            store.loadSessionCookie() != null -> ProviderAuthState.AUTHENTICATED
+            store.load() != null -> ProviderAuthState.AUTHENTICATED
             else -> ProviderAuthState.UNAUTHENTICATED
         }
     }

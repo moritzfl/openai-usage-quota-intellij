@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.Transient
 
 /**
- * Represents Ollama Cloud subscription usage quota data scraped from ollama.com/settings.
+ * Ollama Cloud subscription usage from `GET https://ollama.com/api/usage`.
  */
 @Serializable
 data class OllamaQuota(
@@ -32,7 +32,7 @@ data class OllamaQuota(
 }
 
 /**
- * Represents a single usage window from the Ollama Cloud subscription.
+ * Single Ollama Cloud usage window. [usagePercent] is 0..100.
  */
 @Serializable
 data class OllamaUsageWindow(

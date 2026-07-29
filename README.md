@@ -42,7 +42,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 | GitHub Copilot | Device code | ✓ | — | — | — | ✓ |
 | Cursor | Session cookie | ✓ | — | — | — | — |
 | OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | ✓ |
-| Ollama Cloud | Session cookie + API key | ✓ | ✓ | — | — | ✓ |
+| Ollama Cloud | API key | ✓ | ✓ | — | — | ✓ |
 | Z.ai | API key | ✓ | ✓ | — | — | ✓ |
 | MiniMax | API key | ✓ | ✓ | — | — | ✓ |
 | Kimi | Device code | ✓ | ✓ | — | — | ✓ |

@@ -60,7 +60,6 @@ repositories {
 dependencies {
     implementation(libs.snakeyaml.engine)
     implementation(libs.tomlj)
-    implementation(libs.jsoup)
     implementation(libs.picocli)
     implementation(libs.kotlinx.serialization.json) {
         excludeKotlinStdlib()

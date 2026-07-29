@@ -7,7 +7,6 @@ kotlin = "2.4.10"
 changelog = "2.5.0"
 kover = "0.9.9"
 junit-platform-launcher = "6.1.2"
-jsoup = "1.22.2"
 picocli = "4.7.7"
 
 [libraries]
@@ -17,7 +16,6 @@ kotlin-test-junit5 = { group = "org.jetbrains.kotlin", name = "kotlin-test-junit
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json-jvm", version.ref = "kotlinx-serialization-json" }
 tomlj = { group = "org.tomlj", name = "tomlj", version.ref = "tomlj" }
 snakeyaml-engine = { group = "org.snakeyaml", name = "snakeyaml-engine", version.ref = "snakeyaml-engine" }
-jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 picocli = { group = "info.picocli", name = "picocli", version.ref = "picocli" }
 
 [plugins]
