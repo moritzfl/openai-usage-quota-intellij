@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-07-29
+- MCP sync targets table in settings now shows its add and remove buttons at the top.
+
 ## [1.7.0] - 2026-07-29
 - Claude no longer asks you to log in again after a network or server hiccup: refreshing your login is retried, and a refresh that still fails keeps both your login and the last usage numbers instead of showing “login required”.
 - Ollama Cloud quota now uses the official usage API with your API key (`GET https://ollama.com/api/usage`). Session cookies and HTML scraping were removed; one API key covers quota, web search, and the local proxy, and the stored Ollama cookies are deleted from Password Safe.
