@@ -248,11 +248,13 @@ class QuotaSettingsConfigurable : Configurable {
             addTab("Proxy", proxySettingsPanel!!)
         }
         return panel {
+            // resizableRow is what lets the tabs use the dialog height; without it every tab stays
+            // at the preferred height of the largest one and the rest of the dialog stays empty.
             row {
                 cell(tabs)
                     .resizableColumn()
                     .align(Align.FILL)
-            }
+            }.resizableRow()
 
             onApply {
                 val selectedLocation = locationComboBox?.selectedItem as? QuotaIndicatorLocation ?: return@onApply
@@ -419,7 +421,7 @@ class QuotaSettingsConfigurable : Configurable {
                 cell(mcpSyncTargetsPanel!!)
                     .resizableColumn()
                     .align(Align.FILL)
-            }
+            }.resizableRow()
         }
     }
 
