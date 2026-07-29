@@ -118,7 +118,7 @@ internal class McpServerSyncTargetsPanel(
             .setAddAction { addTarget() }
             .setRemoveAction { removeSelectedTargets() }
             .disableUpDownActions()
-            .setToolbarPosition(ActionToolbarPosition.BOTTOM)
+            .setToolbarPosition(ActionToolbarPosition.TOP)
             .createPanel()
     }
 
