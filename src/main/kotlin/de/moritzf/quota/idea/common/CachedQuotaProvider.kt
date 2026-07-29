@@ -54,6 +54,32 @@ abstract class CachedQuotaProvider<Q : ProviderQuota> : QuotaProvider {
         lastRawJsonRef.set(rawJson)
     }
 
+    /**
+     * Handles a refresh that produced no usable access token. A stored login whose token could not
+     * be refreshed right now is a transient failure, not a logout, so the login and the last
+     * reading are kept instead of reporting the provider as not configured.
+     */
+    protected fun storeMissingAccessToken(loggedIn: Boolean, refreshFailedMessage: String) {
+        if (loggedIn) {
+            storeError(refreshFailedMessage)
+        } else {
+            clearData(notConfiguredMessage)
+        }
+    }
+
+    /**
+     * Records a failed fetch. While a reading exists, a temporary failure (offline, timeout, rate
+     * limit, server error) keeps that reading on screen instead of replacing it with an error: the
+     * popup's "Updated" row already shows how old it is, and the next successful refresh replaces
+     * it. Failures the user has to act on are reported immediately.
+     */
+    protected fun storeFetchFailure(statusCode: Int, error: String?, rawJson: String? = null) {
+        if (isTransientFetchFailure(statusCode) && lastQuotaRef.get() != null) {
+            return
+        }
+        storeError(error, rawJson)
+    }
+
     protected fun storeError(error: String?, rawJson: String? = null) {
         // Keep the last good quota so transient network blips do not blank the UI/MCP.
         // clearData() is the only path that drops success state (logout / not configured).
