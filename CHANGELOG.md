@@ -6,6 +6,7 @@
 - Ollama Cloud quota now uses the official usage API with your API key (`GET https://ollama.com/api/usage`). Session cookies and HTML scraping were removed; one API key covers quota, web search, and the local proxy, and the stored Ollama cookies are deleted from Password Safe.
 - A temporary problem no longer blanks the quota: while you are offline, timed out, rate limited, or the provider has a server hiccup, the last known usage stays on screen with its “Updated” time instead of being replaced by an error. Problems you need to act on (expired login, wrong API key) are still shown right away, and the settings page keeps showing the exact failure.
 - Ollama usage parsing is now lenient: unknown fields and a reshaped or unreadable block (for example per-model details or one of the two limits) only hide that part instead of the whole quota.
+- The settings page now uses the whole window: every tab grows with the dialog instead of being fixed to the height of the largest one, and the “Last quota response” and “Advertised models” boxes expand into that space rather than scrolling inside a small box with empty space below.
 
 ## [1.6.14] - 2026-07-28
 - SuperGrok now shows 0% used (with reset timing) when a new/unused billing period has no usage numbers yet, instead of an empty quota section.

@@ -9,21 +9,16 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.idea.ui.QuotaUiUtil
-import java.awt.Dimension
-import java.awt.Font
 import java.awt.Toolkit
 import java.awt.datatransfer.StringSelection
 import javax.swing.JButton
 import javax.swing.JComponent
-import javax.swing.JScrollPane
-import javax.swing.ScrollPaneConstants
 
 /**
  * OpenAI Codex settings tab.
@@ -193,25 +188,7 @@ internal class OpenAiSettingsPanel(
         codexResponseViewer.setCaretPosition(0)
     }
 
-    private fun createResponseViewer(): com.intellij.ui.components.JBTextArea {
-        return com.intellij.ui.components.JBTextArea().apply {
-            isEditable = false
-            lineWrap = false
-            wrapStyleWord = false
-            font = Font(Font.MONOSPACED, Font.PLAIN, font.size)
-            margin = JBUI.insets(6)
-        }
-    }
 
-    private fun createResponseViewerPanel(viewer: com.intellij.ui.components.JBTextArea): JComponent {
-        return JScrollPane(viewer).apply {
-            preferredSize = Dimension(1, JBUI.scale(220))
-            minimumSize = Dimension(1, JBUI.scale(120))
-            border = JBUI.Borders.emptyTop(4)
-            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
-            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
-        }
-    }
 
     private fun createActionLink(text: String): ActionLink {
         return ActionLink(text).apply {
