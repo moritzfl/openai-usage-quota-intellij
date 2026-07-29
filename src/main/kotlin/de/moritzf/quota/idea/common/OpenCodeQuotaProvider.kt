@@ -47,12 +47,20 @@ class OpenCodeQuotaProvider(
                     val quota = fetchOpenCodeQuota(cookie)
                     storeQuota(quota, quota.rawJson)
                 } catch (retryException: OpenCodeQuotaException) {
-                    storeError(retryException.message ?: "Request failed (${retryException.statusCode})", retryException.rawBody)
+                    storeFetchFailure(
+                        retryException.statusCode,
+                        retryException.message ?: "Request failed (${retryException.statusCode})",
+                        retryException.rawBody,
+                    )
                 } catch (retryException: Exception) {
                     storeError(retryException.message ?: "Request failed")
                 }
             } else {
-                storeError(exception.message ?: "Request failed (${exception.statusCode})", exception.rawBody)
+                storeFetchFailure(
+                    exception.statusCode,
+                    exception.message ?: "Request failed (${exception.statusCode})",
+                    exception.rawBody,
+                )
             }
         } catch (exception: Exception) {
             storeError(exception.message ?: "Request failed")

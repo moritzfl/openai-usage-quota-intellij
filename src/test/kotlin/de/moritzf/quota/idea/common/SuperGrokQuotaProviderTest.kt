@@ -11,6 +11,47 @@ import kotlin.test.assertSame
 
 class SuperGrokQuotaProviderTest {
     @Test
+    fun refreshKeepsLoginAndLastQuotaWhenTokenIsTemporarilyUnavailable() {
+        val quota = SuperGrokQuota(
+            plan = "SuperGrok",
+            creditUsage = SuperGrokUsageWindow(label = "Weekly credits", usagePercent = 7.0),
+            rawJson = "{\"ok\":true}",
+        )
+        var token: String? = "token"
+        val provider = SuperGrokQuotaProvider(
+            client = FakeSuperGrokClient { quota },
+            tokenProvider = { token },
+            tokenRefresher = { null },
+            loggedInProvider = { true },
+        )
+
+        provider.refresh()
+        token = null
+        provider.refresh()
+
+        assertSame(quota, provider.getLastQuota(), "a failed refresh must not drop the last reading")
+        assertEquals(
+            "Grok token could not be refreshed. Trying again with the next update.",
+            provider.getLastError(),
+        )
+    }
+
+    @Test
+    fun refreshClearsDataWhenNotLoggedIn() {
+        val provider = SuperGrokQuotaProvider(
+            client = FakeSuperGrokClient { throw SuperGrokQuotaException("unused", 200) },
+            tokenProvider = { null },
+            tokenRefresher = { null },
+            loggedInProvider = { false },
+        )
+
+        provider.refresh()
+
+        assertNull(provider.getLastQuota())
+        assertEquals(provider.notConfiguredMessage, provider.getLastError())
+    }
+
+    @Test
     fun refreshKeepsLastQuotaWhenBillingPayloadIsIncomplete() {
         val firstQuota = SuperGrokQuota(
             plan = "SuperGrok",

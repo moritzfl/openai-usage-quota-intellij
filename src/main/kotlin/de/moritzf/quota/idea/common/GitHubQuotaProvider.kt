@@ -26,7 +26,7 @@ class GitHubQuotaProvider(
             )
             storeQuota(quota, quota.rawJson)
         } catch (exception: GitHubQuotaException) {
-            storeError(exception.message ?: "Request failed", exception.rawBody)
+            storeFetchFailure(exception.statusCode, exception.message ?: "Request failed", exception.rawBody)
         } catch (exception: Exception) {
             storeError(exception.message ?: "Request failed")
         }

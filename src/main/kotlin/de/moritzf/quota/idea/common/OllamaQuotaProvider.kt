@@ -26,8 +26,11 @@ class OllamaQuotaProvider(
             val quota = ollamaClient.fetchQuota(apiKey)
             storeQuota(quota, quota.rawJson)
         } catch (exception: OllamaQuotaException) {
-            if (exception.statusCode == 429 && lastQuotaRef.get() != null) return
-            storeError(exception.message ?: "Request failed (${exception.statusCode})", exception.rawBody)
+            storeFetchFailure(
+                exception.statusCode,
+                exception.message ?: "Request failed (${exception.statusCode})",
+                exception.rawBody,
+            )
         } catch (exception: Exception) {
             storeError(exception.message ?: "Request failed")
         }

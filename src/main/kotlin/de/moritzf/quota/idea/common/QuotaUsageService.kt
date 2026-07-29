@@ -61,10 +61,24 @@ class QuotaUsageService(
 
     fun getLastResponseJson(type: QuotaProviderType): String? = provider(type)?.getLastRawJson()
 
+    /**
+     * The error the status bar and popup should show. A temporary failure is hidden while a
+     * reading is available: the quota stays visible with its "Updated" time instead of being
+     * replaced by a message that the next refresh resolves. The settings page keeps using
+     * [getLastError], so the failure is still visible for diagnosis.
+     */
+    private fun displayError(provider: QuotaProvider): String? {
+        val error = provider.getLastError() ?: return null
+        if (provider.isLastErrorTransient() && provider.getLastQuota() != null) {
+            return null
+        }
+        return error
+    }
+
     fun currentSnapshot(): QuotaUsageSnapshot {
         return QuotaUsageSnapshot(
             states.mapValues { (_, state) ->
-                ProviderSnapshot(state.provider.getLastQuota(), state.provider.getLastError())
+                ProviderSnapshot(state.provider.getLastQuota(), displayError(state.provider))
             },
         )
     }
@@ -76,7 +90,7 @@ class QuotaUsageService(
             else -> configured
         }
         val type = source.providerType ?: QuotaProviderType.OPEN_AI
-        return QuotaIndicatorData(type, getLastQuota(type), getLastError(type))
+        return QuotaIndicatorData(type, getLastQuota(type), provider(type)?.let(::displayError))
     }
 
     fun refreshNowAsync() {

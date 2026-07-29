@@ -68,6 +68,9 @@ class QuotaUsageServiceTest {
             assertEquals(0.42, service.getLastQuota(QuotaProviderType.OPEN_AI)!!.usageFraction()!!, 0.0001)
             assertEquals("blip", service.getLastError(QuotaProviderType.OPEN_AI))
             assertEquals("""{"err":1}""", service.getLastResponseJson(QuotaProviderType.OPEN_AI))
+            // Status bar and popup keep showing the reading; the settings page still sees "blip".
+            assertNull(service.currentSnapshot()[QuotaProviderType.OPEN_AI].error)
+            assertNotNull(service.currentSnapshot()[QuotaProviderType.OPEN_AI].quota)
         } finally {
             service.dispose()
         }

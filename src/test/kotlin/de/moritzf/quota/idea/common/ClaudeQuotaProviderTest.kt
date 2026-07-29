@@ -8,6 +8,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class ClaudeQuotaProviderTest {
     @Test
@@ -84,7 +85,10 @@ class ClaudeQuotaProviderTest {
 
         provider.refresh()
         assertSame(firstQuota, provider.getLastQuota())
-        assertNull(provider.getLastError(), "rate limit should not surface as error while last quota exists")
+        assertTrue(
+            provider.isLastErrorTransient(),
+            "a rate limit must not replace the last quota on screen",
+        )
     }
 
     @Test

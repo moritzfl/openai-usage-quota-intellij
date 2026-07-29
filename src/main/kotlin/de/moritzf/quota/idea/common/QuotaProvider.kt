@@ -16,6 +16,9 @@ interface QuotaProvider {
     fun clearData(error: String? = null)
     fun getLastQuota(): ProviderQuota? = null
     fun getLastError(): String? = null
+
+    /** Whether the last error was a temporary failure that the next refresh is likely to resolve. */
+    fun isLastErrorTransient(): Boolean = false
     fun getLastRawJson(): String? = null
     fun currentUsageFraction(): Double? = null
     fun cachedUsageFraction(settings: QuotaSettingsState): Double? = null

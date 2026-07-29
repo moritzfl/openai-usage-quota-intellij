@@ -22,13 +22,20 @@ class OpenAiQuotaProvider(
     private val tokenRefresher: (staleAccessToken: String?) -> String? = { staleToken ->
         QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.OPEN_AI, staleToken)
     },
+    private val loggedInProvider: () -> Boolean = {
+        QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.OPEN_AI)
+    },
 ) : CachedQuotaProvider<OpenAiCodexQuota>() {
     override val type = QuotaProviderType.OPEN_AI
+    override val notConfiguredMessage = "Not logged in"
 
     override fun refresh() {
         val accessToken = accessTokenProvider()
         if (accessToken.isNullOrBlank()) {
-            clearData("Not logged in")
+            storeMissingAccessToken(
+                loggedInProvider(),
+                "OpenAI token could not be refreshed. Trying again with the next update.",
+            )
             return
         }
 
@@ -38,7 +45,11 @@ class OpenAiQuotaProvider(
             storeQuota(quota, quota.rawJson)
         } catch (exception: OpenAiCodexQuotaException) {
             val detail = exception.message?.takeIf { it.isNotBlank() && !it.startsWith("Request failed") }
-            storeError(detail ?: "Request failed (${exception.statusCode})", exception.rawBody)
+            storeFetchFailure(
+                exception.statusCode,
+                detail ?: "Request failed (${exception.statusCode})",
+                exception.rawBody,
+            )
         } catch (exception: Exception) {
             storeError(exception.message ?: "Request failed")
         }

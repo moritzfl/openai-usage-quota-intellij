@@ -26,7 +26,11 @@ class ZaiQuotaProvider(
             val quota = zaiClient.fetchQuota(apiKey)
             storeQuota(quota, quota.rawJson)
         } catch (exception: ZaiQuotaException) {
-            storeError(exception.message ?: "Usage request failed (HTTP ${exception.statusCode}). Try again later.", exception.responseBody)
+            storeFetchFailure(
+                exception.statusCode,
+                exception.message ?: "Usage request failed (HTTP ${exception.statusCode}). Try again later.",
+                exception.responseBody,
+            )
         } catch (exception: Exception) {
             storeError(exception.message ?: "Usage request failed. Check your connection.")
         }

@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
 
 class CachedQuotaProviderTest {
     @Test
-    fun transientFailureKeepsTheLastReading() {
+    fun transientFailureKeepsTheReadingAndIsMarkedTransient() {
         val provider = TestProvider()
         val quota = quota()
         provider.store(quota)
@@ -19,30 +19,33 @@ class CachedQuotaProviderTest {
         provider.fail(statusCode = 0, error = "Request failed. Check your connection.")
 
         assertSame(quota, provider.getLastQuota(), "an offline refresh must not drop the reading")
-        assertNull(provider.getLastError())
-    }
-
-    @Test
-    fun transientFailureIsReportedWhenThereIsNothingToShow() {
-        val provider = TestProvider()
-
-        provider.fail(statusCode = 0, error = "Request failed. Check your connection.")
-
-        assertNull(provider.getLastQuota())
+        // The error stays available for the settings page, but is marked as self-resolving.
         assertEquals("Request failed. Check your connection.", provider.getLastError())
+        assertTrue(provider.isLastErrorTransient())
     }
 
     @Test
-    fun failureThatNeedsUserActionIsReportedEvenWithAReading() {
+    fun failureThatNeedsUserActionIsNotTransient() {
         val provider = TestProvider()
-        val quota = quota()
-        provider.store(quota)
+        provider.store(quota())
 
         provider.fail(statusCode = 401, error = "API key invalid.")
 
         assertEquals("API key invalid.", provider.getLastError())
-        // storeError keeps the reading around, the UI decides what to show.
-        assertSame(quota, provider.getLastQuota())
+        assertFalse(provider.isLastErrorTransient())
+    }
+
+    @Test
+    fun aSuccessfulRefreshClearsTheTransientMark() {
+        val provider = TestProvider()
+        provider.store(quota())
+        provider.fail(statusCode = 503, error = "server error")
+        assertTrue(provider.isLastErrorTransient())
+
+        provider.store(quota())
+
+        assertNull(provider.getLastError())
+        assertFalse(provider.isLastErrorTransient())
     }
 
     @Test

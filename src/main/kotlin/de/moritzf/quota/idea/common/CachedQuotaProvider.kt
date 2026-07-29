@@ -2,6 +2,7 @@ package de.moritzf.quota.idea.common
 
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.shared.ProviderQuota
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -11,10 +12,13 @@ abstract class CachedQuotaProvider<Q : ProviderQuota> : QuotaProvider {
     protected val lastQuotaRef = AtomicReference<Q?>()
     protected val lastErrorRef = AtomicReference<String?>()
     protected val lastRawJsonRef = AtomicReference<String?>()
+    private val lastErrorTransientRef = AtomicBoolean(false)
 
     override fun getLastQuota(): Q? = lastQuotaRef.get()
 
     override fun getLastError(): String? = lastErrorRef.get()
+
+    override fun isLastErrorTransient(): Boolean = lastErrorTransientRef.get()
 
     override fun getLastRawJson(): String? {
         lastRawJsonRef.get()?.let { return it }
@@ -45,12 +49,14 @@ abstract class CachedQuotaProvider<Q : ProviderQuota> : QuotaProvider {
     override fun clearData(error: String?) {
         lastQuotaRef.set(null)
         lastErrorRef.set(error)
+        lastErrorTransientRef.set(false)
         lastRawJsonRef.set(null)
     }
 
     protected fun storeQuota(quota: Q, rawJson: String?) {
         lastQuotaRef.set(quota)
         lastErrorRef.set(null)
+        lastErrorTransientRef.set(false)
         lastRawJsonRef.set(rawJson)
     }
 
@@ -68,22 +74,20 @@ abstract class CachedQuotaProvider<Q : ProviderQuota> : QuotaProvider {
     }
 
     /**
-     * Records a failed fetch. While a reading exists, a temporary failure (offline, timeout, rate
-     * limit, server error) keeps that reading on screen instead of replacing it with an error: the
-     * popup's "Updated" row already shows how old it is, and the next successful refresh replaces
-     * it. Failures the user has to act on are reported immediately.
+     * Records a failed fetch and whether it was temporary (offline, timeout, rate limit, server
+     * error). The error is always kept for the settings page; [isLastErrorTransient] lets the
+     * status bar and popup keep showing the last reading instead of replacing it with a message
+     * that resolves itself.
      */
     protected fun storeFetchFailure(statusCode: Int, error: String?, rawJson: String? = null) {
-        if (isTransientFetchFailure(statusCode) && lastQuotaRef.get() != null) {
-            return
-        }
-        storeError(error, rawJson)
+        storeError(error, rawJson, transient = isTransientFetchFailure(statusCode))
     }
 
-    protected fun storeError(error: String?, rawJson: String? = null) {
+    protected fun storeError(error: String?, rawJson: String? = null, transient: Boolean = false) {
         // Keep the last good quota so transient network blips do not blank the UI/MCP.
         // clearData() is the only path that drops success state (logout / not configured).
         lastErrorRef.set(error)
+        lastErrorTransientRef.set(transient && error != null)
         if (rawJson != null) {
             lastRawJsonRef.set(rawJson)
         }

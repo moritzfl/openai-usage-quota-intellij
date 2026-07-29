@@ -13,6 +13,9 @@ class SuperGrokQuotaProvider(
     private val tokenRefresher: (staleAccessToken: String?) -> String? = { staleToken ->
         QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.SUPERGROK, staleToken)
     },
+    private val loggedInProvider: () -> Boolean = {
+        QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.SUPERGROK)
+    },
 ) : CachedQuotaProvider<SuperGrokQuota>() {
     override val type = QuotaProviderType.SUPERGROK
     override val notConfiguredMessage = "Grok login required. Log in from SuperGrok settings."
@@ -20,7 +23,10 @@ class SuperGrokQuotaProvider(
     override fun refresh() {
         val accessToken = tokenProvider()
         if (accessToken.isNullOrBlank()) {
-            clearData(notConfiguredMessage)
+            storeMissingAccessToken(
+                loggedInProvider(),
+                "Grok token could not be refreshed. Trying again with the next update.",
+            )
             return
         }
 

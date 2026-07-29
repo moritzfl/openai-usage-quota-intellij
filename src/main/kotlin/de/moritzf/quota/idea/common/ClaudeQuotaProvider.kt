@@ -23,14 +23,7 @@ class ClaudeQuotaProvider(
     override fun refresh() {
         val accessToken = tokenProvider()
         if (accessToken.isNullOrBlank()) {
-            if (loggedInProvider()) {
-                // The login is still stored, only this refresh produced no token. Reporting it as
-                // "log in again" sends users through a needless browser login for what a later
-                // update fixes on its own.
-                storeError(TOKEN_UNAVAILABLE_MESSAGE)
-            } else {
-                clearData(notConfiguredMessage)
-            }
+            storeMissingAccessToken(loggedInProvider(), TOKEN_UNAVAILABLE_MESSAGE)
             return
         }
 
@@ -38,8 +31,7 @@ class ClaudeQuotaProvider(
             val quota = fetchQuotaWithAuthRetry(accessToken)
             storeQuota(quota, quota.rawJson)
         } catch (exception: ClaudeQuotaException) {
-            if (exception.statusCode == 429 && lastQuotaRef.get() != null) return
-            storeError(exception.message ?: "Request failed", exception.rawBody)
+            storeFetchFailure(exception.statusCode, exception.message ?: "Request failed", exception.rawBody)
         } catch (exception: Exception) {
             storeError(exception.message ?: "Request failed")
         }

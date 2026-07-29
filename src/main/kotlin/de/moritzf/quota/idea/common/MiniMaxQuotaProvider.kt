@@ -39,6 +39,10 @@ class MiniMaxQuotaProvider(
             }
         }
 
-        storeError(lastException?.message ?: "Request failed. Check your connection.", lastException?.rawBody)
+        storeFetchFailure(
+            lastException?.statusCode ?: 0,
+            lastException?.message ?: "Request failed. Check your connection.",
+            lastException?.rawBody,
+        )
     }
 }

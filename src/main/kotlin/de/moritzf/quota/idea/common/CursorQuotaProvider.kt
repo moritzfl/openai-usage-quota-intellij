@@ -27,7 +27,11 @@ class CursorQuotaProvider(
             val quota = cursorClient.fetchQuota(auth.accessToken, auth)
             storeQuota(quota, quota.rawJson)
         } catch (exception: CursorQuotaException) {
-            storeError(exception.message ?: "Usage request failed (HTTP ${exception.statusCode}). Try again later.", exception.responseBody)
+            storeFetchFailure(
+                exception.statusCode,
+                exception.message ?: "Usage request failed (HTTP ${exception.statusCode}). Try again later.",
+                exception.responseBody,
+            )
         } catch (exception: Exception) {
             storeError(exception.message ?: "Usage request failed. Check your connection.")
         }
