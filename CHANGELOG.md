@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-07-29
 - Claude no longer asks you to log in again after a network or server hiccup: refreshing your login is retried, and a refresh that still fails keeps both your login and the last usage numbers instead of showing “login required”.
 - Ollama Cloud quota now uses the official usage API with your API key (`GET https://ollama.com/api/usage`). Session cookies and HTML scraping were removed; one API key covers quota, web search, and the local proxy, and the stored Ollama cookies are deleted from Password Safe.
 - A temporary problem no longer blanks the quota: while you are offline, timed out, rate limited, or the provider has a server hiccup, the last known usage stays on screen with its “Updated” time instead of being replaced by an error. Problems you need to act on (expired login, wrong API key) are still shown right away, and the settings page keeps showing the exact failure.
