@@ -8,8 +8,8 @@ import com.intellij.ide.passwordSafe.PasswordSafe
  */
 object CredentialStorage {
     const val MEMORY_ONLY_WARNING: String =
-        "IDE password storage is set to forget passwords after restart, so every login, session" +
-            " cookie, and API key stored here is lost when the IDE closes. Change it in" +
+        "IDE password storage is set to forget passwords after restart: every login, session" +
+            " cookie, and API key is lost when the IDE closes. Change it in" +
             " Settings | Appearance & Behavior | System Settings | Passwords."
 
     /**

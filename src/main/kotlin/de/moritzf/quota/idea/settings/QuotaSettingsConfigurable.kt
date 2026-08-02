@@ -12,6 +12,8 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.dsl.builder.Align
+import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.AlignY
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.messages.MessageBusConnection
@@ -251,11 +253,13 @@ class QuotaSettingsConfigurable : Configurable {
         }
         return panel {
             // Shown once for the whole dialog: the setting is an IDE-wide one, and it drops the
-            // logins, session cookies, and API keys of every provider alike.
+            // logins, session cookies, and API keys of every provider alike. `text` wraps to the
+            // width the dialog already has, so the warning never widens the settings window.
             row {
-                cell(
-                    JBLabel(CredentialStorage.MEMORY_ONLY_WARNING, AllIcons.General.Warning, JBLabel.LEFT)
-                ).align(Align.FILL)
+                icon(AllIcons.General.Warning).align(AlignY.TOP).gap(RightGap.SMALL)
+                text(CredentialStorage.MEMORY_ONLY_WARNING)
+                    .resizableColumn()
+                    .align(AlignX.FILL)
             }.visible(CredentialStorage.isMemoryOnly())
 
             // resizableRow is what lets the tabs use the dialog height; without it every tab stays
