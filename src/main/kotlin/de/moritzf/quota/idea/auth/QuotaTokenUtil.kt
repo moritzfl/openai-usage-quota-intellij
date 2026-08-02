@@ -5,6 +5,7 @@ import de.moritzf.quota.openai.dto.OpenAiAuthorizationDto
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonObject
+import java.security.MessageDigest
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
@@ -55,6 +56,22 @@ object QuotaTokenUtil {
     fun extractGoogleHd(token: String?): String? {
         val payload = extractPayload(token) ?: return null
         return payload["hd"]?.toString()?.removeSurrounding("\"")?.takeUnless { it.isBlank() }
+    }
+
+    /**
+     * Short, non-reversible identifier for a token, safe to write into idea.log. It lets a support
+     * log show whether a token was rotated, reused, or replaced by another IDE process without ever
+     * exposing the token itself.
+     */
+    @JvmStatic
+    fun fingerprint(token: String?): String {
+        val value = token?.takeUnless { it.isBlank() } ?: return "none"
+        return try {
+            val digest = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8))
+            digest.take(4).joinToString("") { "%02x".format(it) }
+        } catch (_: Exception) {
+            "unavailable"
+        }
     }
 
     @JvmStatic

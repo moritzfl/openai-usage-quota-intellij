@@ -6,12 +6,32 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
 /**
  * Tests for extracting account metadata from OAuth/JWT tokens.
  */
 class QuotaTokenUtilTest {
+    @Test
+    fun fingerprintIdentifiesTokensWithoutRevealingThem() {
+        val token = "sk-ant-oat01-super-secret-token"
+
+        val fingerprint = QuotaTokenUtil.fingerprint(token)
+
+        assertEquals(8, fingerprint.length)
+        assertEquals(fingerprint, QuotaTokenUtil.fingerprint(token))
+        assertNotEquals(fingerprint, QuotaTokenUtil.fingerprint(token + "x"))
+        assertFalse(token.contains(fingerprint), "the fingerprint must not be a slice of the token")
+    }
+
+    @Test
+    fun fingerprintReportsMissingTokens() {
+        assertEquals("none", QuotaTokenUtil.fingerprint(null))
+        assertEquals("none", QuotaTokenUtil.fingerprint("   "))
+    }
+
     @Test
     fun extractChatGptAccountIdReturnsTrimmedAccountIdWhenPresent() {
         @Language("JSON")

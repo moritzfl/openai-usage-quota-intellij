@@ -170,6 +170,7 @@ class QuotaAuthService(
             }
 
             val clearMarker = currentCredentialClearMarker(state)
+            logRefreshAttempt(state, latestCredentials, "upstream rejected the access token")
             return try {
                 val refreshed = runBlocking {
                     state.tokenOperations.refreshCredentials(latestCredentials)
@@ -293,9 +294,31 @@ class QuotaAuthService(
                 state.cachedCredentials.set(null)
                 return null
             }
+            logExternalCredentialChange(state, credentials)
             state.cachedCredentials.set(credentials)
             return credentials
         }
+    }
+
+    /**
+     * Reports when the persisted login differs from the copy this IDE last saw without this IDE
+     * having written it. That only happens when another JetBrains IDE shares the credential store,
+     * which is the situation where two refreshes race for the same rotating refresh token.
+     */
+    private fun logExternalCredentialChange(state: ProviderAuthState, loaded: OAuthCredentials?) {
+        val cached = state.cachedCredentials.get() ?: return
+        if (loaded == null) {
+            LOG.info("Stored OAuth credentials for ${state.type.displayName} disappeared outside this IDE")
+            return
+        }
+        if (loaded.refreshToken == cached.refreshToken) {
+            return
+        }
+        LOG.info(
+            "Stored OAuth credentials for ${state.type.displayName} changed outside this IDE:" +
+                " refresh ${QuotaTokenUtil.fingerprint(cached.refreshToken)}" +
+                " -> ${QuotaTokenUtil.fingerprint(loaded.refreshToken)}"
+        )
     }
 
     private fun refreshCredentialsBlocking(state: ProviderAuthState): OAuthCredentials? {
@@ -306,6 +329,7 @@ class QuotaAuthService(
             }
 
             val clearMarker = currentCredentialClearMarker(state)
+            logRefreshAttempt(state, latestCredentials, "access token expired")
             return try {
                 val refreshed = runBlocking {
                     state.tokenOperations.refreshCredentials(latestCredentials)
@@ -322,6 +346,14 @@ class QuotaAuthService(
                 null
             }
         }
+    }
+
+    private fun logRefreshAttempt(state: ProviderAuthState, credentials: OAuthCredentials, reason: String) {
+        LOG.info(
+            "Refreshing ${state.type.displayName} token because $reason" +
+                " (refresh=${QuotaTokenUtil.fingerprint(credentials.refreshToken)}," +
+                " expiredForMs=${System.currentTimeMillis() - credentials.expiresAt})"
+        )
     }
 
     private fun currentCredentialClearMarker(state: ProviderAuthState): Long {

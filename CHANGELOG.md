@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 - The settings window now warns when the IDE is set to forget passwords after restart. That setting makes every login, session cookie, and API key of every provider disappear when the IDE closes, which otherwise just looks like the providers logging you out.
+- Login problems are now traceable in the IDE log (Help | Show Log): every login refresh records why it ran, whether it succeeded, why it was rejected, and whether another IDE changed the stored login. No tokens or keys are written to the log.
 
 ## [1.7.1] - 2026-07-29
 - MCP sync targets table in settings now shows its add and remove buttons at the top.

@@ -56,7 +56,10 @@ class OAuthTokenClient(
     }
 
     override suspend fun refreshCredentials(existing: OAuthCredentials): OAuthCredentials {
-        LOG.info("Refreshing OAuth token")
+        LOG.info(
+            "Refreshing OAuth token (access=${QuotaTokenUtil.fingerprint(existing.accessToken)}," +
+                " refresh=${QuotaTokenUtil.fingerprint(existing.refreshToken)})"
+        )
         val params = linkedMapOf(
             "grant_type" to "refresh_token",
             "client_id" to config.clientId,
@@ -65,8 +68,12 @@ class OAuthTokenClient(
         config.clientSecret?.let { params["client_secret"] = it }
         val response = postTokenWithRetry(params)
         if (response.statusCode() !in 200..299) {
-            LOG.warn("Token refresh failed: ${response.statusCode()}")
-            throw createRequestException("Token refresh failed", response)
+            val exception = createRequestException("Token refresh failed", response)
+            LOG.warn(
+                "Token refresh failed: HTTP ${response.statusCode()} oauthError=${exception.oauthError ?: "none"}" +
+                    " terminal=${exception.isTerminalAuthFailure()}"
+            )
+            throw exception
         }
 
         val tokenResponse = parseResponse(response.body())
@@ -78,6 +85,12 @@ class OAuthTokenClient(
             if (credentials.hd == null) {
                 credentials.hd = existing.hd
             }
+            LOG.info(
+                "OAuth token refreshed (access=${QuotaTokenUtil.fingerprint(credentials.accessToken)}," +
+                    " refresh=${QuotaTokenUtil.fingerprint(credentials.refreshToken)}," +
+                    " rotated=${credentials.refreshToken != existing.refreshToken}," +
+                    " expiresInMs=${credentials.expiresAt - System.currentTimeMillis()})"
+            )
         }
     }
 

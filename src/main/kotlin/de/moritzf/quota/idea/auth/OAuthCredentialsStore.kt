@@ -4,6 +4,7 @@ import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.credentialStore.Credentials
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.openapi.diagnostic.Logger
+import de.moritzf.quota.idea.common.CredentialStorage
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.shared.JsonSupport
 
@@ -43,6 +44,11 @@ class OAuthCredentialsStore(
         val json = JsonSupport.json.encodeToString(credentials)
         try {
             credentialWriter(attributes, Credentials(userName, json))
+            LOG.info(
+                "Saved OAuth credentials for $userName (access=${QuotaTokenUtil.fingerprint(credentials.accessToken)}," +
+                    " refresh=${QuotaTokenUtil.fingerprint(credentials.refreshToken)}," +
+                    " storage=${CredentialStorage.describe()})"
+            )
         } catch (exception: Exception) {
             LOG.warn("Failed to save OAuth credentials", exception)
             throw IllegalStateException("Could not persist OAuth credentials", exception)
