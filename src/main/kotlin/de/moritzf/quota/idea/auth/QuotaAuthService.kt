@@ -13,6 +13,7 @@ import de.moritzf.quota.idea.auth.OAuthLoginFlow
 import de.moritzf.quota.idea.auth.OAuthTokenClient
 import de.moritzf.quota.idea.auth.OAuthTokenRequestException
 import de.moritzf.quota.idea.auth.OAuthTokenOperations
+import de.moritzf.quota.idea.common.CredentialStorage
 import de.moritzf.quota.idea.common.QuotaProviderType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -67,6 +68,9 @@ class QuotaAuthService(
     }
 
     init {
+        if (CredentialStorage.isMemoryOnly()) {
+            LOG.warn("IDE credential storage is memory-only: ${CredentialStorage.MEMORY_ONLY_WARNING}")
+        }
         refreshCacheAsync(QuotaProviderType.OPEN_AI)
         refreshCacheAsync(QuotaProviderType.SUPERGROK)
         refreshCacheAsync(QuotaProviderType.CLAUDE)

@@ -1,5 +1,6 @@
 package de.moritzf.quota.idea.settings
 
+import com.intellij.icons.AllIcons
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
@@ -17,6 +18,7 @@ import com.intellij.util.messages.MessageBusConnection
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.components.BorderLayoutPanel
+import de.moritzf.quota.idea.common.CredentialStorage
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaProviderRegistry
 import de.moritzf.quota.idea.common.QuotaUsageListener
@@ -248,6 +250,14 @@ class QuotaSettingsConfigurable : Configurable {
             addTab("Proxy", proxySettingsPanel!!)
         }
         return panel {
+            // Shown once for the whole dialog: the setting is an IDE-wide one, and it drops the
+            // logins, session cookies, and API keys of every provider alike.
+            row {
+                cell(
+                    JBLabel(CredentialStorage.MEMORY_ONLY_WARNING, AllIcons.General.Warning, JBLabel.LEFT)
+                ).align(Align.FILL)
+            }.visible(CredentialStorage.isMemoryOnly())
+
             // resizableRow is what lets the tabs use the dialog height; without it every tab stays
             // at the preferred height of the largest one and the rest of the dialog stays empty.
             row {
