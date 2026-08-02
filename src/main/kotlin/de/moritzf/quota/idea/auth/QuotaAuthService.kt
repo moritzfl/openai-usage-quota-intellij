@@ -382,8 +382,28 @@ class QuotaAuthService(
         }
     }
 
+    /**
+     * Drops the stored login after the token endpoint rejected the refresh token.
+     *
+     * The persisted entry is re-read first because the IDE credential store is shared between all
+     * JetBrains IDEs on the machine: a second IDE can rotate the refresh token between our read and
+     * our refresh, and the rejection then only means "this copy is stale", not "the login is gone".
+     * Clearing on that would log the user out of a perfectly good session.
+     */
     private fun clearCredentialsIfUnchanged(state: ProviderAuthState, expected: OAuthCredentials) {
+        val persisted = runCatching { state.credentialStore.load() }.getOrNull()
         synchronized(state.credentialsLock) {
+            if (persisted != null && persisted.refreshToken != expected.refreshToken) {
+                LOG.info(
+                    "Kept OAuth credentials for ${state.type.displayName} after a rejected refresh:" +
+                        " stored refresh token changed to ${QuotaTokenUtil.fingerprint(persisted.refreshToken)}" +
+                        " while ${QuotaTokenUtil.fingerprint(expected.refreshToken)} was in flight," +
+                        " so another IDE process rotated it"
+                )
+                state.cachedCredentials.set(persisted)
+                state.cacheLoaded.set(true)
+                return
+            }
             if (!sameCredentials(state.cachedCredentials.get(), expected)) {
                 LOG.info("Skipped clearing OAuth credentials for ${state.type.displayName} after refresh failure because credentials changed")
                 return
@@ -393,7 +413,10 @@ class QuotaAuthService(
             state.cacheLoaded.set(true)
             state.credentialStore.clear()
         }
-        LOG.info("Cleared stored OAuth credentials for ${state.type.displayName} after refresh failure")
+        LOG.warn(
+            "Cleared stored OAuth credentials for ${state.type.displayName} after the token endpoint rejected" +
+                " refresh token ${QuotaTokenUtil.fingerprint(expected.refreshToken)}; a new login is required"
+        )
     }
 
     override fun dispose() {

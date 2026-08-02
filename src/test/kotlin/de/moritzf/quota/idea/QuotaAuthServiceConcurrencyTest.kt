@@ -141,6 +141,30 @@ class QuotaAuthServiceConcurrencyTest {
     }
 
     @Test
+    fun terminalRefreshFailureKeepsCredentialsRotatedByAnotherIde() {
+        // The IDE credential store is shared between JetBrains IDEs: a second IDE can rotate the
+        // refresh token while ours is in flight. The rejection then only means our copy was stale.
+        val store = InMemoryCredentialStore(expiredCredentials())
+        val service = createService(
+            store = store,
+            tokenOperations = TestTokenOperations(
+                onRefresh = {
+                    store.save(validCredentials(accessToken = "other-ide-token", refreshToken = "other-ide-refresh"))
+                    throw OAuthTokenRequestException("invalid grant", 400, "invalid_grant")
+                },
+            ),
+        )
+
+        try {
+            assertNull(service.getAccessTokenBlocking(QuotaProviderType.OPEN_AI))
+            assertEquals("other-ide-token", store.current()?.accessToken)
+            assertTrue(service.isLoggedIn(QuotaProviderType.OPEN_AI))
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
     fun nonTerminalOauthRefreshFailureKeepsStoredCredentials() {
         val existing = expiredCredentials()
         val store = InMemoryCredentialStore(existing)
