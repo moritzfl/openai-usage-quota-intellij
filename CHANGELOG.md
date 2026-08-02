@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.2] - 2026-08-02
 - Running two JetBrains IDEs no longer costs you a browser login (Claude, OpenAI/Codex, SuperGrok). Both IDEs share the same password storage and refresh the same login, and the IDE that lost the race used to throw the login away; it now notices the newer login and keeps using it.
 - A connection that drops while a login is being refreshed no longer costs you that login either. The refresh is now only repeated when it never reached the provider, because repeating it afterwards makes the provider reject the login for good.
 - The settings window now warns when the IDE is set to forget passwords after restart. That setting makes every login, session cookie, and API key of every provider disappear when the IDE closes, which otherwise just looks like the providers logging you out.
