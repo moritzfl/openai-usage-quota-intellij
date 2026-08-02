@@ -5,10 +5,14 @@ import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.openai.dto.OAuthTokenResponseDto
 import de.moritzf.quota.idea.auth.QuotaTokenUtil
 import java.io.IOException
+import java.net.ConnectException
 import java.net.URI
+import java.net.UnknownHostException
 import java.net.http.HttpClient
+import java.net.http.HttpConnectTimeoutException
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.channels.UnresolvedAddressException
 import java.time.Duration
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.buildJsonObject
@@ -95,9 +99,14 @@ class OAuthTokenClient(
     }
 
     /**
-     * Retries a refresh that failed on a server error or a dropped connection. Without this a
-     * single blip ends the refresh, and the provider reports the account as not logged in until
-     * the next scheduled update. Only transient failures are retried; a rejected token is final.
+     * Retries a refresh that failed before the token endpoint could act on the request. Without this
+     * a single blip ends the refresh, and the provider reports the account as not logged in until
+     * the next scheduled update.
+     *
+     * The retry is deliberately narrow because providers such as Anthropic rotate the refresh token
+     * on every use: once the request reached the endpoint the old token may already be spent, so
+     * resending it would be answered with `invalid_grant` and look like a revoked login. Only
+     * failures that prove the request never got a response are retried.
      */
     private suspend fun postTokenWithRetry(parameters: Map<String, String>): HttpResponse<String> {
         for (attempt in 0 until MAX_REFRESH_ATTEMPTS) {
@@ -112,13 +121,32 @@ class OAuthTokenClient(
                 }
                 LOG.warn("Token refresh returned HTTP ${response.statusCode()}, retrying")
             } catch (exception: IOException) {
-                if (lastAttempt) {
+                if (lastAttempt || !isConnectFailure(exception)) {
                     throw exception
                 }
-                LOG.warn("Token refresh request failed, retrying", exception)
+                LOG.warn("Token refresh could not reach the token endpoint, retrying", exception)
             }
         }
         throw IOException("Token refresh failed")
+    }
+
+    /**
+     * True when the failure happened while establishing the connection, so the token endpoint never
+     * saw the request and the refresh token is untouched.
+     */
+    private fun isConnectFailure(exception: IOException): Boolean {
+        var current: Throwable? = exception
+        while (current != null) {
+            if (current is HttpConnectTimeoutException ||
+                current is ConnectException ||
+                current is UnknownHostException ||
+                current is UnresolvedAddressException
+            ) {
+                return true
+            }
+            current = current.cause?.takeIf { it !== current }
+        }
+        return false
     }
 
     private fun postToken(parameters: Map<String, String>): HttpResponse<String> {

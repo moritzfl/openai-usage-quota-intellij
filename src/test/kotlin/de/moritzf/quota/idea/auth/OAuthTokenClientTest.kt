@@ -89,17 +89,48 @@ class OAuthTokenClientTest {
     }
 
     @Test
-    fun refreshRetriesDroppedConnections() = runBlocking {
+    fun refreshRetriesUnreachableTokenEndpoint() = runBlocking {
         val http = FakeHttpClient(
             responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
             failuresBeforeSuccess = 1,
-            failWith = { java.io.IOException("connection reset") },
+            failWith = { java.net.ConnectException("connection refused") },
         )
 
         val credentials = OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
 
         assertEquals(2, http.attempts)
         assertEquals("new-access", credentials.accessToken)
+    }
+
+    @Test
+    fun refreshRetriesConnectFailureReportedAsCause() = runBlocking {
+        val http = FakeHttpClient(
+            responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
+            failuresBeforeSuccess = 1,
+            failWith = { java.io.IOException("failed", java.net.UnknownHostException("auth.test")) },
+        )
+
+        val credentials = OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+
+        assertEquals(2, http.attempts)
+        assertEquals("new-access", credentials.accessToken)
+    }
+
+    @Test
+    fun refreshDoesNotRetryConnectionDroppedAfterSending() = runBlocking {
+        // The endpoint may already have rotated the refresh token, so resending it would be
+        // answered with invalid_grant and look like a revoked login.
+        val http = FakeHttpClient(
+            responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
+            failuresBeforeSuccess = 1,
+            failWith = { java.io.IOException("connection reset") },
+        )
+
+        assertFailsWith<java.io.IOException> {
+            OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+        }
+
+        assertEquals(1, http.attempts, "a spent refresh token must not be resent")
     }
 
     @Test
