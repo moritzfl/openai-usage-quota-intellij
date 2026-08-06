@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- Ollama Cloud MCP `subscription_quota` now returns the provider usage JSON directly, like the other providers, instead of a plugin-shaped copy.
 
 ## [1.7.3] - 2026-08-06
 - Ollama Cloud no longer shows “unknown” for the time left on session/weekly usage. The official usage API does not send a reset timestamp yet, so the plugin shows the known window length (5h / 7d) instead until a real countdown is available.

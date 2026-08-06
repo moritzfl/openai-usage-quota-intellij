@@ -188,13 +188,7 @@ internal object ProviderCatalog {
             ),
             quotaFactory = ::OllamaQuotaProvider,
             snapshotCodec = EnvelopeQuotaCodec(OllamaQuota.serializer()),
-            mcpQuota = UsageQuotaMcpRegistration(
-                emptyMessage = "No Ollama usage response available",
-                json = { service, _ ->
-                    val quota = service.getLastQuota(QuotaProviderType.OLLAMA) as? OllamaQuota
-                    quota?.let { runCatching { JsonSupport.json.encodeToString(OllamaQuota.serializer(), it) }.getOrNull() }
-                },
-            ),
+            mcpEmpty = "No Ollama usage response available",
             settings = { ctx -> OllamaSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = OllamaUi,
             // Quota, proxy, and web search all use the Ollama API key.
