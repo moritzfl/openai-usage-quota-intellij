@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.4] - 2026-08-06
 - Ollama Cloud MCP `subscription_quota` now returns the provider usage JSON directly, like the other providers, instead of a plugin-shaped copy.
 
 ## [1.7.3] - 2026-08-06
