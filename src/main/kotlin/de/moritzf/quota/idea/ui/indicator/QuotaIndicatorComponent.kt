@@ -63,6 +63,7 @@ internal data class OpenCodeIndicatorState(
 internal data class OllamaIndicatorState(
     val percent: Int,
     val resetsAt: Instant?,
+    val period: java.time.Duration,
 )
 
 internal data class ZaiIndicatorState(
@@ -269,12 +270,21 @@ internal class QuotaIndicatorComponent(
 internal fun buildOllamaTooltipText(quota: de.moritzf.quota.ollama.OllamaQuota?, error: String?): String {
     if (error != null) return "Ollama quota: $error"
     if (quota == null) return "Ollama quota: loading"
-    val planDisplay = quota.plan.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() } ?: "Free"
     val parts = mutableListOf<String>()
-    quota.sessionUsage?.let { parts.add("Session: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    quota.weeklyUsage?.let { parts.add("Weekly: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    if (parts.isEmpty()) return "Ollama quota: $planDisplay plan (no usage data)"
-    return "Ollama quota: $planDisplay plan\n${parts.joinToString("\n")}"
+    // /api/usage currently omits resets_at; fall back to known window lengths (5h / 7d)
+    // instead of printing "unknown".
+    quota.sessionUsage?.let {
+        parts.add(
+            "Session: ${formatPercentWithOptionalTime(it.usagePercent.roundToInt(), it.resetsAt, QuotaPeriodDurations.ROLLING_5H)}",
+        )
+    }
+    quota.weeklyUsage?.let {
+        parts.add(
+            "Weekly: ${formatPercentWithOptionalTime(it.usagePercent.roundToInt(), it.resetsAt, QuotaPeriodDurations.WEEKLY)}",
+        )
+    }
+    if (parts.isEmpty()) return "Ollama quota (no usage data)"
+    return "Ollama quota\n${parts.joinToString("\n")}"
 }
 
 internal fun ollamaBarDisplayText(quota: de.moritzf.quota.ollama.OllamaQuota?, error: String?): String {
@@ -282,10 +292,7 @@ internal fun ollamaBarDisplayText(quota: de.moritzf.quota.ollama.OllamaQuota?, e
     if (quota == null) return "loading..."
 
     val state = ollamaIndicatorState(quota) ?: return "no data"
-
-    val reset = QuotaUiUtil.formatResetCompact(state.resetsAt)
-    val text = "${state.percent}%"
-    return if (reset != null) "$text • $reset" else text
+    return formatPercentWithOptionalTime(state.percent, state.resetsAt, state.period)
 }
 
 internal fun buildZaiTooltipText(quota: ZaiQuota?, error: String?): String {
@@ -797,22 +804,46 @@ private fun formatCompactUsd(value: Double): String {
 }
 
 internal fun ollamaIndicatorState(quota: de.moritzf.quota.ollama.OllamaQuota): OllamaIndicatorState? {
-    val windows = listOfNotNull(quota.sessionUsage, quota.weeklyUsage)
+    val windows = listOfNotNull(
+        quota.sessionUsage?.let { it to QuotaPeriodDurations.ROLLING_5H },
+        quota.weeklyUsage?.let { it to QuotaPeriodDurations.WEEKLY },
+    )
     if (windows.isEmpty()) return null
 
-    val exhausted = windows.filter { it.usagePercent >= 100.0 }
+    val exhausted = windows.filter { (window, _) -> window.usagePercent >= 100.0 }
     if (exhausted.isNotEmpty()) {
+        val (window, period) = exhausted.maxBy { (window, _) ->
+            window.resetsAt?.toEpochMilliseconds() ?: Long.MIN_VALUE
+        }
         return OllamaIndicatorState(
             percent = 100,
-            resetsAt = exhausted.maxByOrNull { it.resetsAt?.toEpochMilliseconds() ?: Long.MIN_VALUE }?.resetsAt,
+            resetsAt = window.resetsAt,
+            period = period,
         )
     }
 
-    val window = windows.first()
+    val (window, period) = windows.first()
     return OllamaIndicatorState(
         percent = clampPercent(window.usagePercent.roundToInt()),
         resetsAt = window.resetsAt,
+        period = period,
     )
+}
+
+/**
+ * Formats `42% • 1h` when [resetsAt] is known. When the provider omits reset time, falls back to the
+ * known window length as `42% (5h)` so the UI never shows a fake "unknown".
+ */
+internal fun formatPercentWithOptionalTime(
+    percent: Int,
+    resetsAt: Instant?,
+    fallbackPeriod: java.time.Duration? = null,
+): String {
+    val base = "${clampPercent(percent)}%"
+    val reset = QuotaUiUtil.formatResetCompact(resetsAt)
+    if (reset != null) return "$base • $reset"
+    val window = fallbackPeriod?.let { QuotaUiUtil.formatCompactDuration(it) } ?: return base
+    return "$base ($window)"
 }
 
 internal fun zaiIndicatorState(quota: ZaiQuota): ZaiIndicatorState? {

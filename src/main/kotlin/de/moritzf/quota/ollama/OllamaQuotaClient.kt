@@ -118,15 +118,9 @@ open class OllamaQuotaClient(
             }
 
             return OllamaQuota(
-                plan = readPlan(root),
                 sessionUsage = sessionUsage,
                 weeklyUsage = weeklyUsage,
             )
-        }
-
-        /** The plan label is optional and never allowed to break usage parsing. */
-        private fun readPlan(root: JsonObject): String {
-            return (root["plan"] as? JsonPrimitive)?.contentOrNull?.trim().orEmpty()
         }
 
         private fun OllamaLimitWindowDto.toWindow(): OllamaUsageWindow? {

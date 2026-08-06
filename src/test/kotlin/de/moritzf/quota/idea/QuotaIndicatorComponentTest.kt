@@ -12,6 +12,7 @@ import de.moritzf.quota.idea.ui.indicator.buildGitHubTooltipText
 import de.moritzf.quota.idea.ui.indicator.gitHubBarDisplayText
 import de.moritzf.quota.idea.ui.indicator.openCodeBarDisplayText
 import de.moritzf.quota.idea.ui.indicator.ollamaBarDisplayText
+import de.moritzf.quota.idea.ui.indicator.buildOllamaTooltipText
 import de.moritzf.quota.idea.ui.indicator.buildOpenCodeTooltipText
 import de.moritzf.quota.idea.ui.indicator.indicatorBarDisplayText
 import de.moritzf.quota.idea.ui.indicator.indicatorDisplayPercent
@@ -270,6 +271,34 @@ class QuotaIndicatorComponentTest {
 
         val text = ollamaBarDisplayText(quota, error = null)
         assertTrue(text.startsWith("12% •"))
+    }
+
+    @Test
+    fun ollamaBarDisplayTextFallsBackToKnownWindowWhenResetMissing() {
+        val quota = OllamaQuota(
+            sessionUsage = OllamaUsageWindow(usagePercent = 8.0),
+            weeklyUsage = OllamaUsageWindow(usagePercent = 5.7),
+        )
+
+        assertEquals("8% (5h)", ollamaBarDisplayText(quota, error = null))
+        assertEquals(
+            "Ollama quota\nSession: 8% (5h)\nWeekly: 6% (7d)",
+            buildOllamaTooltipText(quota, error = null),
+        )
+    }
+
+    @Test
+    fun ollamaTooltipPrefersResetCountdownOverWindowFallback() {
+        val now = Clock.System.now()
+        val quota = OllamaQuota(
+            sessionUsage = OllamaUsageWindow(usagePercent = 8.0, resetsAt = now.plus(3600.seconds)),
+            weeklyUsage = OllamaUsageWindow(usagePercent = 5.7),
+        )
+
+        val tooltip = buildOllamaTooltipText(quota, error = null)
+        assertTrue(tooltip.contains("Session: 8% •"))
+        assertTrue(tooltip.contains("Weekly: 6% (7d)"))
+        assertTrue(!tooltip.contains("unknown"))
     }
 
     @Test

@@ -2,14 +2,13 @@ package de.moritzf.quota.idea.ui.popup
 
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.indicator.QuotaIcons
+import de.moritzf.quota.idea.ui.indicator.QuotaPeriodDurations
 import de.moritzf.quota.idea.ui.indicator.clampPercent
 import de.moritzf.quota.ollama.OllamaQuota
 import kotlin.math.roundToInt
 import de.moritzf.quota.ollama.OllamaUsageWindow
-import com.intellij.openapi.ui.VerticalFlowLayout
 import com.intellij.util.ui.JBUI
 import de.moritzf.quota.shared.ProviderQuota
-import javax.swing.JPanel
 
 private const val OLLAMA_LABEL = "Ollama Cloud"
 
@@ -59,11 +58,14 @@ internal class OllamaPopupSection : ProviderPopupSection() {
                     errorLabel.text = "Ollama limit reached"
                 }
 
-                val planTitle = quota.plan.takeIf { it.isNotBlank() }?.replaceFirstChar { it.uppercase() }
                 titleLabel.isVisible = true
-                titleLabel.text = if (planTitle != null) "$OLLAMA_LABEL ($planTitle)" else OLLAMA_LABEL
-                quota.sessionUsage?.let { sessionBlock.updateOllama(it, "Session") } ?: sessionBlock.clear()
-                quota.weeklyUsage?.let { weeklyBlock.updateOllama(it, "Weekly") } ?: weeklyBlock.clear()
+                titleLabel.text = OLLAMA_LABEL
+                quota.sessionUsage?.let {
+                    sessionBlock.updateOllama(it, "Session", QuotaPeriodDurations.ROLLING_5H)
+                } ?: sessionBlock.clear()
+                quota.weeklyUsage?.let {
+                    weeklyBlock.updateOllama(it, "Weekly", QuotaPeriodDurations.WEEKLY)
+                } ?: weeklyBlock.clear()
             }
         }
     }
@@ -79,11 +81,20 @@ internal class OllamaPopupSection : ProviderPopupSection() {
         weeklyBlock.isVisible = false
     }
 
-    private fun WindowBlockPanel.updateOllama(window: OllamaUsageWindow, label: String) {
+    private fun WindowBlockPanel.updateOllama(
+        window: OllamaUsageWindow,
+        label: String,
+        period: java.time.Duration,
+    ) {
         val percent = clampPercent(window.usagePercent.roundToInt())
         val resetText = QuotaUiUtil.formatReset(window.resetsAt)
         var info = "$percent% used"
-        if (resetText != null) info += " - $resetText"
+        if (resetText != null) {
+            info += " - $resetText"
+        } else {
+            // API omits resets_at; show known window length instead of leaving time blank/"unknown".
+            QuotaUiUtil.formatCompactDuration(period)?.let { info += " ($it)" }
+        }
         update("$label limit", info, percent)
     }
 }

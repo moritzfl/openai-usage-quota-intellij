@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 class QuotaSnapshotCacheTest {
     @Test
     fun preservesRawResponsesForTransientRawQuotaTypes() {
-        assertEquals("ollama raw", roundTrip(QuotaProviderType.OLLAMA, OllamaQuota(plan = "Pro"), "ollama raw").rawJson)
+        assertEquals("ollama raw", roundTrip(QuotaProviderType.OLLAMA, OllamaQuota(), "ollama raw").rawJson)
         assertEquals("zai raw", roundTrip(QuotaProviderType.ZAI, ZaiQuota(plan = "Pro"), "zai raw").rawJson)
         assertEquals("minimax raw", roundTrip(QuotaProviderType.MINIMAX, MiniMaxQuota(plan = "Pro"), "minimax raw").rawJson)
         assertEquals("kimi raw", roundTrip(QuotaProviderType.KIMI, KimiQuota(plan = "Pro"), "kimi raw").rawJson)
@@ -29,21 +29,21 @@ class QuotaSnapshotCacheTest {
 
     @Test
     fun decodesLegacyQuotaCacheWithoutRawResponse() {
-        val legacyOllama = """{"plan":"Pro"}"""
+        // Older caches may still carry a scraped "plan" field; ignore it and keep decoding.
+        val legacyOllama = """{"plan":"Pro","sessionUsage":{"usagePercent":12.5}}"""
 
         val decoded = QuotaSnapshotCache.decode(QuotaProviderType.OLLAMA, legacyOllama) as? OllamaQuota
 
         assertNotNull(decoded)
-        assertEquals("Pro", decoded.plan)
+        assertEquals(12.5, decoded.sessionUsage?.usagePercent)
         assertEquals(null, decoded.rawJson)
     }
 
     @Test
     fun redactsSecretLikeFieldsFromPersistedRawResponses() {
-        val quota = OllamaQuota(plan = "Pro")
+        val quota = OllamaQuota()
         quota.rawJson = """
             {
-              "plan": "Pro",
               "access_token": "access-secret",
               "headers": {
                 "Authorization": "Bearer secret",
@@ -63,7 +63,6 @@ class QuotaSnapshotCacheTest {
         assertFalse(raw.contains("Bearer secret"))
         assertFalse(raw.contains("api-secret"))
         assertFalse(raw.contains("refresh-secret"))
-        assertTrue(raw.contains("Pro"))
         assertTrue(raw.contains("42"))
         assertTrue(raw.contains("123"))
     }

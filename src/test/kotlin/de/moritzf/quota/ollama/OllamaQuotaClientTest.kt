@@ -40,7 +40,6 @@ class OllamaQuotaClientTest {
 
         val quota = OllamaQuotaClient.parseQuota(json)
 
-        assertEquals("", quota.plan)
         val session = assertNotNull(quota.sessionUsage)
         assertEquals(4.6, session.usagePercent, absoluteTolerance = 0.0001)
         assertNull(session.resetsAt)
@@ -52,7 +51,6 @@ class OllamaQuotaClientTest {
     fun parseQuotaAcceptsPercentValuesAboveOne() {
         val json = """
             {
-              "plan": "pro",
               "limits": {
                 "session": { "usage": 12.5 },
                 "weekly": { "usage": 50 }
@@ -62,7 +60,6 @@ class OllamaQuotaClientTest {
 
         val quota = OllamaQuotaClient.parseQuota(json)
 
-        assertEquals("pro", quota.plan)
         assertEquals(12.5, assertNotNull(quota.sessionUsage).usagePercent, absoluteTolerance = 0.0001)
         assertEquals(50.0, assertNotNull(quota.weeklyUsage).usagePercent, absoluteTolerance = 0.0001)
     }
@@ -106,10 +103,9 @@ class OllamaQuotaClientTest {
         val quota = OllamaQuotaClient.parseQuota(json)
 
         // Reshaped session block drops only itself; weekly usage still shows.
+        // Extra root fields (plan/credits/activity) are ignored entirely.
         assertNull(quota.sessionUsage)
         assertEquals(5.1, assertNotNull(quota.weeklyUsage).usagePercent, absoluteTolerance = 0.0001)
-        // A non-string plan must not break usage parsing.
-        assertEquals("", quota.plan)
     }
 
     @Test

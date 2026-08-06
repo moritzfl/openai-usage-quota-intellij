@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- Ollama Cloud no longer shows “unknown” for the time left on session/weekly usage. The official usage API does not send a reset timestamp yet, so the plugin shows the known window length (5h / 7d) instead until a real countdown is available.
+- Ollama Cloud no longer shows a plan name. The usage API does not include one, and the plugin no longer guesses.
 
 ## [1.7.2] - 2026-08-02
 - Running two JetBrains IDEs no longer costs you a browser login (Claude, OpenAI/Codex, SuperGrok). Both IDEs share the same password storage and refresh the same login, and the IDE that lost the race used to throw the login away; it now notices the newer login and keeps using it.

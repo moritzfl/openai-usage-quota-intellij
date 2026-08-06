@@ -10,7 +10,6 @@ import kotlinx.serialization.Transient
  */
 @Serializable
 data class OllamaQuota(
-    val plan: String = "",
     val sessionUsage: OllamaUsageWindow? = null,
     val weeklyUsage: OllamaUsageWindow? = null,
     override var fetchedAt: Instant? = null,
