@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.3] - 2026-08-06
 - Ollama Cloud no longer shows “unknown” for the time left on session/weekly usage. The official usage API does not send a reset timestamp yet, so the plugin shows the known window length (5h / 7d) instead until a real countdown is available.
 - Ollama Cloud no longer shows a plan name. The usage API does not include one, and the plugin no longer guesses.
 
