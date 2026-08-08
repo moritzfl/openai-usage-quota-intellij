@@ -11,6 +11,7 @@ import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorData
 import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorSource
 import de.moritzf.quota.shared.ProviderQuota
 import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -44,6 +45,15 @@ class QuotaUsageService(
 
     private val states: Map<QuotaProviderType, ProviderState> =
         providers.associateBy({ it.type }, ::ProviderState)
+    /**
+     * Sticky per-provider, per-window activity baselines for "Last used" detection.
+     * Only move a window baseline on significant increase (marks last-used) or
+     * significant decrease (reset/decay). Sub-threshold growth must NOT move the
+     * baseline, otherwise slow usage never accumulates past [MIN_USAGE_INCREASE]
+     * between polls. Windows are compared independently so decay in one limit
+     * cannot cancel growth in another.
+     */
+    private val activityBaselines = ConcurrentHashMap<QuotaProviderType, Map<String, Double>>()
     private var scheduled: ScheduledFuture<*>? = null
 
     init {
@@ -117,6 +127,7 @@ class QuotaUsageService(
     fun clearUsageData(type: QuotaProviderType, error: String? = null) {
         val provider = provider(type) ?: return
         provider.clearData(error ?: provider.notConfiguredMessage)
+        activityBaselines.remove(type)
         settingsProvider()?.setCachedQuotaJson(type, null)
         publishUpdate()
     }
@@ -178,16 +189,10 @@ class QuotaUsageService(
             val settings = settingsProvider()
             // Activity fractions sum all usage windows so growth in a small window
             // (for example Claude's 5-hour limit) is not masked by a larger window's max.
-            val oldFraction = settings?.let(provider::cachedActivityFraction)
+            // Baseline is sticky: compare against the last significant reading, not the
+            // display cache (which advances every poll and would erase slow growth).
             provider.refresh()
-            val newFraction = provider.currentActivityFraction()
-
-            val significantChange = oldFraction != null && newFraction != null &&
-                kotlin.math.abs(newFraction - oldFraction) >= MIN_USAGE_INCREASE
-
-            if (settings != null && significantChange && newFraction > oldFraction) {
-                settings.lastActiveSource = provider.type.id
-            }
+            noteActivity(type, provider, settings)
 
             // Always persist successful snapshots so restarts do not lag behind slow usage growth.
             if (provider.getLastQuota() != null) {
@@ -204,6 +209,55 @@ class QuotaUsageService(
                     state.inFlight = null
                 }
             }
+        }
+    }
+
+    private fun noteActivity(
+        type: QuotaProviderType,
+        provider: QuotaProvider,
+        settings: QuotaSettingsState?,
+    ) {
+        if (settings == null) return
+        val current = provider.currentActivityWindows()
+        if (current.isEmpty()) return
+
+        val previous = activityBaselines[type]
+            ?: provider.cachedActivityWindows(settings).takeIf { it.isNotEmpty() }
+        if (previous == null) {
+            activityBaselines[type] = current
+            return
+        }
+
+        var sawIncrease = false
+        val nextBaseline = LinkedHashMap<String, Double>(current.size)
+        for ((name, newValue) in current) {
+            val oldValue = previous[name]
+            if (oldValue == null) {
+                // New window appeared — seed only; a mid-life appearance at a high
+                // value is not proof of a fresh request from this poll cycle.
+                nextBaseline[name] = newValue
+                continue
+            }
+            val delta = newValue - oldValue
+            when {
+                delta >= MIN_USAGE_INCREASE -> {
+                    sawIncrease = true
+                    nextBaseline[name] = newValue
+                }
+                delta <= -MIN_USAGE_INCREASE -> {
+                    // Window reset or natural decay — drop baseline so later growth counts.
+                    nextBaseline[name] = newValue
+                }
+                else -> {
+                    // Sub-threshold change: keep old baseline so slow growth accumulates.
+                    nextBaseline[name] = oldValue
+                }
+            }
+        }
+        // Drop baselines for windows that disappeared from the payload.
+        activityBaselines[type] = nextBaseline
+        if (sawIncrease) {
+            settings.lastActiveSource = provider.type.id
         }
     }
 

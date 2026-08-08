@@ -45,17 +45,17 @@ data class ClaudeQuota(
         return windows.maxOrNull()?.let { it / 100.0 }
     }
 
-    override fun activityFraction(): Double? {
-        val windows = listOfNotNull(
-            fiveHourUsage?.usagePercent,
-            sevenDayUsage?.usagePercent,
-            sevenDaySonnetUsage?.usagePercent,
-            sevenDayOpusUsage?.usagePercent,
-            sevenDayOauthAppsUsage?.usagePercent,
-            routinesUsage?.usagePercent,
-            extraUsage?.usagePercent?.takeIf { extraUsage.isEnabled },
-        ) + scopedLimits.map { it.usagePercent }
-        return windows.takeIf { it.isNotEmpty() }?.sum()?.let { it / 100.0 }
+    override fun activityWindows(): Map<String, Double> = buildMap {
+        fiveHourUsage?.usagePercent?.let { put("fiveHour", it / 100.0) }
+        sevenDayUsage?.usagePercent?.let { put("sevenDay", it / 100.0) }
+        sevenDaySonnetUsage?.usagePercent?.let { put("sevenDaySonnet", it / 100.0) }
+        sevenDayOpusUsage?.usagePercent?.let { put("sevenDayOpus", it / 100.0) }
+        sevenDayOauthAppsUsage?.usagePercent?.let { put("sevenDayOauthApps", it / 100.0) }
+        routinesUsage?.usagePercent?.let { put("routines", it / 100.0) }
+        extraUsage?.usagePercent?.takeIf { extraUsage.isEnabled }?.let { put("extra", it / 100.0) }
+        scopedLimits.forEachIndexed { index, window ->
+            put("scoped:${window.label.ifBlank { index.toString() }}", window.usagePercent / 100.0)
+        }
     }
 
     fun primaryWindow(): ClaudeUsageWindow? {

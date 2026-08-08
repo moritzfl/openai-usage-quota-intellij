@@ -22,8 +22,8 @@ interface QuotaProvider {
     fun getLastRawJson(): String? = null
     fun currentUsageFraction(): Double? = null
     fun cachedUsageFraction(settings: QuotaSettingsState): Double? = null
-    fun currentActivityFraction(): Double? = null
-    fun cachedActivityFraction(settings: QuotaSettingsState): Double? = null
+    fun currentActivityWindows(): Map<String, Double> = emptyMap()
+    fun cachedActivityWindows(settings: QuotaSettingsState): Map<String, Double> = emptyMap()
     fun hydrateFromCache(settings: QuotaSettingsState) {}
     fun persistToCache(settings: QuotaSettingsState) {}
 }

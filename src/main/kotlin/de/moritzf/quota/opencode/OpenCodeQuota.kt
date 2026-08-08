@@ -34,13 +34,12 @@ data class OpenCodeQuota(
         return windows.maxOrNull()?.let { it / 100.0 }
     }
 
-    override fun activityFraction(): Double? {
-        val windows = listOfNotNull(
-            rollingUsage?.usagePercent?.toDouble(),
-            weeklyUsage?.usagePercent?.toDouble(),
-            monthlyUsage?.usagePercent?.toDouble(),
-        )
-        return windows.takeIf { it.isNotEmpty() }?.sum()?.let { it / 100.0 }
+    override fun activityWindows(): Map<String, Double> = buildMap {
+        rollingUsage?.let { put("rolling", it.usagePercent / 100.0) }
+        weeklyUsage?.let { put("weekly", it.usagePercent / 100.0) }
+        monthlyUsage?.let { put("monthly", it.usagePercent / 100.0) }
+        // Zen credit burn: lower balance => higher activity signal.
+        availableBalance?.let { put("balanceSpend", -it.toDouble() / 1_000_000.0) }
     }
 
     fun hasAvailableBalance(): Boolean {

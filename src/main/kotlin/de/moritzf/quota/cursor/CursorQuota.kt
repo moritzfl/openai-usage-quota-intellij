@@ -37,15 +37,12 @@ data class CursorQuota(
 
     override fun usageFraction(): Double? = primaryUsagePercent()?.let { it / 100.0 }
 
-    override fun activityFraction(): Double? {
-        val windows = listOfNotNull(
-            requestUsage?.usagePercent(),
-            planUsage?.totalPercentUsed,
-            spendLimit?.usagePercent(),
-            onDemandUsage?.usagePercent(),
-            teamOnDemandUsage?.usagePercent(),
-        )
-        return windows.takeIf { it.isNotEmpty() }?.sum()?.let { it / 100.0 }
+    override fun activityWindows(): Map<String, Double> = buildMap {
+        requestUsage?.usagePercent()?.let { put("request", it / 100.0) }
+        planUsage?.totalPercentUsed?.let { put("plan", it / 100.0) }
+        spendLimit?.usagePercent()?.let { put("spendLimit", it / 100.0) }
+        onDemandUsage?.usagePercent()?.let { put("onDemand", it / 100.0) }
+        teamOnDemandUsage?.usagePercent()?.let { put("teamOnDemand", it / 100.0) }
     }
 }
 

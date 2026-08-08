@@ -30,9 +30,10 @@ data class GitHubQuota(
         return limitedWindows().maxOfOrNull { it.usagePercent }?.let { it / 100.0 }
     }
 
-    override fun activityFraction(): Double? {
-        val windows = limitedWindows()
-        return windows.takeIf { it.isNotEmpty() }?.sumOf { it.usagePercent }?.let { it / 100.0 }
+    override fun activityWindows(): Map<String, Double> = buildMap {
+        premiumInteractions?.takeUnless { it.unlimited }?.usagePercent?.let { put("premium", it / 100.0) }
+        chat?.takeUnless { it.unlimited }?.usagePercent?.let { put("chat", it / 100.0) }
+        completions?.takeUnless { it.unlimited }?.usagePercent?.let { put("completions", it / 100.0) }
     }
 
     /** Windows in display priority order, limited ones first. */
