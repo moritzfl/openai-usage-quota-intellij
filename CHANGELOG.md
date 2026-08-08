@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.5] - 2026-08-08
 - "Last used" status bar source now tracks slow usage growth and per-limit changes correctly. It no longer stays stuck on an old provider when another subscription is being used (for example OpenCode Go, Ollama, or SuperGrok while Codex is maxed out).
 
 ## [1.7.4] - 2026-08-06
