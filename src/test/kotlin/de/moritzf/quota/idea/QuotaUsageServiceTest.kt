@@ -530,6 +530,74 @@ class QuotaUsageServiceTest {
     }
 
     @Test
+    fun slowGrowthAndOpposingWindowDecayStillUpdatesLastActiveSource() {
+        // 1) Sticky baseline: +0.3% per poll accumulates past 0.5%.
+        // 2) Per-window compare: primary decay must not cancel secondary growth.
+        val settings = QuotaSettingsState().apply { lastActiveSource = "supergrok" }
+        var primaryPercent = 90.0
+        var secondaryPercent = 20.0
+        val provider = OpenAiQuotaProvider(
+            quotaFetcher = { _, _ ->
+                OpenAiCodexQuota(allowed = true).apply {
+                    primary = UsageWindow(usedPercent = primaryPercent)
+                    secondary = UsageWindow(usedPercent = secondaryPercent)
+                }
+            },
+            accessTokenProvider = { "t" },
+            accountIdProvider = { "a" },
+        )
+        val service = createService(openAiProvider = provider, settingsProvider = { settings })
+
+        try {
+            service.refreshNowBlocking()
+            assertEquals("supergrok", settings.lastActiveSource)
+
+            // Sub-threshold secondary growth alone — not enough yet.
+            secondaryPercent = 20.3
+            service.refreshNowBlocking()
+            assertEquals("supergrok", settings.lastActiveSource)
+
+            // Accumulated secondary growth crosses 0.5% while primary decays hard
+            // (sum would drop; per-window still sees secondary increase).
+            primaryPercent = 80.0
+            secondaryPercent = 20.6
+            service.refreshNowBlocking()
+            assertEquals("openai", settings.lastActiveSource)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun openCodeWindowGrowthUpdatesLastActiveSource() {
+        val settings = QuotaSettingsState().apply { lastActiveSource = "openai" }
+        var rolling = 80
+        val openCodeProvider = OpenCodeQuotaProvider(
+            openCodeClient = object : OpenCodeQuotaClient() {
+                override fun discoverWorkspaceId(sessionCookie: String) = "wrk-1"
+                override fun fetchQuota(sessionCookie: String, workspaceId: String) = OpenCodeQuota(
+                    rollingUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 1000, usagePercent = rolling),
+                    weeklyUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 10000, usagePercent = 50),
+                )
+            },
+            openCodeCookieProvider = { "cookie" },
+            settingsProvider = { settings },
+        )
+        val service = createService(openCodeProvider = openCodeProvider, settingsProvider = { settings })
+
+        try {
+            service.refreshNowBlocking()
+            assertEquals("openai", settings.lastActiveSource)
+
+            rolling = 85
+            service.refreshNowBlocking()
+            assertEquals("opencode", settings.lastActiveSource)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
     fun scheduleRefreshTiming() {
         val settings = QuotaSettingsState().apply { refreshMinutes = 15 }
         val service = createService(settingsProvider = { settings }, scheduleOnInit = true)

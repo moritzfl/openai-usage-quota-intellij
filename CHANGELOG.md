@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- "Last used" status bar source now tracks slow usage growth and per-limit changes correctly. It no longer stays stuck on an old provider when another subscription is being used (for example OpenCode Go, Ollama, or SuperGrok while Codex is maxed out).
 
 ## [1.7.4] - 2026-08-06
 - Ollama Cloud MCP `subscription_quota` now returns the provider usage JSON directly, like the other providers, instead of a plugin-shaped copy.
