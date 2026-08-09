@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- "Last used" status bar source correctly switches to OpenCode (and other providers) after real usage, instead of staying stuck on OpenAI at 0%. Provider selection now uses one shared id everywhere (`opencode`, `openai`, …) so enum names can no longer be confused with storage keys.
 
 ## [1.7.5] - 2026-08-08
 - "Last used" status bar source now tracks slow usage growth and per-limit changes correctly. It no longer stays stuck on an old provider when another subscription is being used (for example OpenCode Go, Ollama, or SuperGrok while Codex is maxed out).
