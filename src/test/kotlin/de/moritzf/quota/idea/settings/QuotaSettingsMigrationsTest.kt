@@ -2,8 +2,11 @@ package de.moritzf.quota.idea.settings
 
 import com.intellij.openapi.util.JDOMUtil
 import com.intellij.util.xmlb.XmlSerializer
+import de.moritzf.quota.idea.common.QuotaProviderType
+import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class QuotaSettingsMigrationsTest {
@@ -127,6 +130,41 @@ class QuotaSettingsMigrationsTest {
             QuotaSettingsMigrations.ALL.all { it.version in 1..QuotaSettingsMigrations.CURRENT_VERSION },
             "every migration needs a version that CURRENT_VERSION covers",
         )
+    }
+
+    @Test
+    fun normalizeIndicatorSourceStorageIdsRewritesEnumNamesToProviderIds() {
+        val state = QuotaSettingsState().apply {
+            settingsVersion = 1
+            indicatorSource = "OPEN_CODE"
+            lastActiveSource = "OPEN_AI"
+        }
+
+        QuotaSettingsMigrations.run(state)
+
+        assertEquals(QuotaIndicatorSource.OPEN_CODE.storageId, state.indicatorSource)
+        assertEquals(QuotaProviderType.OPEN_AI.id, state.lastActiveSource)
+        assertEquals(QuotaProviderType.OPEN_CODE, state.source().providerType)
+        assertEquals(QuotaProviderType.OPEN_AI, state.lastActiveProvider())
+    }
+
+    @Test
+    fun normalizeIndicatorSourceStorageIdsKeepsCanonicalIdsAndClearsJunk() {
+        val state = QuotaSettingsState().apply {
+            settingsVersion = 1
+            indicatorSource = "last_used"
+            lastActiveSource = "opencode"
+        }
+        QuotaSettingsMigrations.run(state)
+        assertEquals(QuotaIndicatorSource.LAST_USED_ID, state.indicatorSource)
+        assertEquals(QuotaProviderType.OPEN_CODE.id, state.lastActiveSource)
+
+        val junk = QuotaSettingsState().apply {
+            settingsVersion = 1
+            lastActiveSource = "not-a-provider"
+        }
+        QuotaSettingsMigrations.run(junk)
+        assertNull(junk.lastActiveSource)
     }
 
     private class RecordingMigration(

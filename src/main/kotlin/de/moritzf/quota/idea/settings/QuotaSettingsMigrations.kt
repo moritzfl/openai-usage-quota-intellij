@@ -4,6 +4,8 @@ import com.intellij.credentialStore.CredentialAttributes
 import com.intellij.ide.passwordSafe.PasswordSafe
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import de.moritzf.quota.idea.common.QuotaProviderType
+import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorSource
 
 /**
  * One-off cleanup of persisted data, keyed by the settings version that introduced it.
@@ -30,9 +32,12 @@ internal interface QuotaSettingsMigration {
  */
 internal object QuotaSettingsMigrations {
     /** Raise by one whenever a migration is added, and tag the new migration with that value. */
-    const val CURRENT_VERSION: Int = 1
+    const val CURRENT_VERSION: Int = 2
 
-    val ALL: List<QuotaSettingsMigration> = listOf(DropOllamaSessionCookieCredentials)
+    val ALL: List<QuotaSettingsMigration> = listOf(
+        DropOllamaSessionCookieCredentials,
+        NormalizeIndicatorSourceStorageIds,
+    )
 
     fun run(state: QuotaSettingsState, migrations: List<QuotaSettingsMigration> = ALL) {
         migrations
@@ -75,5 +80,21 @@ internal object DropOllamaSessionCookieCredentials : QuotaSettingsMigration {
                 }
             }
         }
+    }
+}
+
+internal object NormalizeIndicatorSourceStorageIds : QuotaSettingsMigration {
+    override val id = "normalize-indicator-source-storage-ids"
+    override val version = 2
+
+    override fun apply(state: QuotaSettingsState) {
+        state.indicatorSource = QuotaIndicatorSource.fromStorageValue(state.indicatorSource).storageId
+        val active = state.lastActiveSource?.trim().orEmpty()
+        if (active.isEmpty()) return
+        val provider = QuotaProviderType.fromId(active)
+            ?: QuotaIndicatorSource.entries
+                .firstOrNull { it.name.equals(active, ignoreCase = true) }
+                ?.providerType
+        state.lastActiveSource = provider?.id
     }
 }
