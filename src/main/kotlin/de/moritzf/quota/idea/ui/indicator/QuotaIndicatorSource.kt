@@ -18,17 +18,25 @@ enum class QuotaIndicatorSource(
     ZAI("Z.ai", QuotaProviderType.ZAI),
     LAST_USED("Last used");
 
+    val storageId: String
+        get() = providerType?.id ?: LAST_USED_ID
+
     override fun toString(): String = displayName
 
     companion object {
+        const val LAST_USED_ID: String = "last_used"
+
+        fun forProvider(type: QuotaProviderType): QuotaIndicatorSource =
+            entries.first { it.providerType == type }
+
         @JvmStatic
         fun fromStorageValue(value: String?): QuotaIndicatorSource {
             if (value.isNullOrBlank()) return OPEN_AI
             val trimmed = value.trim()
-            return entries.firstOrNull { it.name == trimmed }
-                ?: QuotaProviderType.fromName(trimmed)?.let { type ->
-                    entries.firstOrNull { it.providerType == type }
-                } ?: OPEN_AI
+            val key = trimmed.lowercase()
+            return entries.firstOrNull { it.storageId == key }
+                ?: entries.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
+                ?: OPEN_AI
         }
     }
 }

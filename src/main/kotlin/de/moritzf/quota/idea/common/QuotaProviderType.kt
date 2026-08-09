@@ -13,12 +13,8 @@ enum class QuotaProviderType(val id: String, val displayName: String) {
     KIMI("kimi", "Kimi");
 
     companion object {
-        fun fromId(id: String): QuotaProviderType? = entries.firstOrNull { it.id == id }
-
-        fun fromName(name: String): QuotaProviderType? {
-            val normalized = name.trim().uppercase()
-            return entries.firstOrNull { it.name == normalized }
-        }
+        fun fromId(id: String): QuotaProviderType? =
+            entries.firstOrNull { it.id.equals(id.trim(), ignoreCase = true) }
 
         fun alphabeticalOrder(): List<QuotaProviderType> = QuotaProviderRegistry.defaultProviderOrder()
 

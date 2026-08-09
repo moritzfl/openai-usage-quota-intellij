@@ -2,6 +2,7 @@ package de.moritzf.quota.idea
 
 import de.moritzf.quota.idea.common.*
 import de.moritzf.quota.idea.settings.QuotaSettingsState
+import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorSource
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.openai.OpenAiCodexQuotaException
 import de.moritzf.quota.openai.UsageWindow
@@ -490,7 +491,7 @@ class QuotaUsageServiceTest {
             service.refreshNowBlocking()
             usage = 0.2 // significant change >0.005
             service.refreshNowBlocking()
-            assertEquals("openai", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.OPEN_AI, settings.lastActiveProvider())
         } finally {
             service.dispose()
         }
@@ -502,7 +503,7 @@ class QuotaUsageServiceTest {
         // activity in a small window (e.g. Claude 5-hour) was masked by a larger,
         // slow-moving window (e.g. weekly) and the indicator stayed stuck on the
         // previously active provider.
-        val settings = QuotaSettingsState().apply { lastActiveSource = "supergrok" }
+        val settings = QuotaSettingsState().apply { setLastActiveProvider(QuotaProviderType.SUPERGROK) }
         var primaryPercent = 8.0
         val provider = OpenAiQuotaProvider(
             quotaFetcher = { _, _ ->
@@ -518,12 +519,12 @@ class QuotaUsageServiceTest {
 
         try {
             service.refreshNowBlocking()
-            assertEquals("supergrok", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.SUPERGROK, settings.lastActiveProvider())
 
             primaryPercent = 10.0 // small window grows; max across windows stays 22%
             service.refreshNowBlocking()
 
-            assertEquals("openai", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.OPEN_AI, settings.lastActiveProvider())
         } finally {
             service.dispose()
         }
@@ -533,7 +534,7 @@ class QuotaUsageServiceTest {
     fun slowGrowthAndOpposingWindowDecayStillUpdatesLastActiveSource() {
         // 1) Sticky baseline: +0.3% per poll accumulates past 0.5%.
         // 2) Per-window compare: primary decay must not cancel secondary growth.
-        val settings = QuotaSettingsState().apply { lastActiveSource = "supergrok" }
+        val settings = QuotaSettingsState().apply { setLastActiveProvider(QuotaProviderType.SUPERGROK) }
         var primaryPercent = 90.0
         var secondaryPercent = 20.0
         val provider = OpenAiQuotaProvider(
@@ -550,19 +551,19 @@ class QuotaUsageServiceTest {
 
         try {
             service.refreshNowBlocking()
-            assertEquals("supergrok", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.SUPERGROK, settings.lastActiveProvider())
 
             // Sub-threshold secondary growth alone — not enough yet.
             secondaryPercent = 20.3
             service.refreshNowBlocking()
-            assertEquals("supergrok", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.SUPERGROK, settings.lastActiveProvider())
 
             // Accumulated secondary growth crosses 0.5% while primary decays hard
             // (sum would drop; per-window still sees secondary increase).
             primaryPercent = 80.0
             secondaryPercent = 20.6
             service.refreshNowBlocking()
-            assertEquals("openai", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.OPEN_AI, settings.lastActiveProvider())
         } finally {
             service.dispose()
         }
@@ -570,7 +571,7 @@ class QuotaUsageServiceTest {
 
     @Test
     fun openCodeWindowGrowthUpdatesLastActiveSource() {
-        val settings = QuotaSettingsState().apply { lastActiveSource = "openai" }
+        val settings = QuotaSettingsState().apply { setLastActiveProvider(QuotaProviderType.OPEN_AI) }
         var rolling = 80
         val openCodeProvider = OpenCodeQuotaProvider(
             openCodeClient = object : OpenCodeQuotaClient() {
@@ -587,11 +588,15 @@ class QuotaUsageServiceTest {
 
         try {
             service.refreshNowBlocking()
-            assertEquals("openai", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.OPEN_AI, settings.lastActiveProvider())
 
             rolling = 85
             service.refreshNowBlocking()
-            assertEquals("opencode", settings.lastActiveSource)
+            assertEquals(QuotaProviderType.OPEN_CODE, settings.lastActiveProvider())
+
+            settings.setSource(QuotaIndicatorSource.LAST_USED)
+            val indicator = service.getEffectiveIndicatorData()
+            assertEquals(QuotaProviderType.OPEN_CODE, indicator.type)
         } finally {
             service.dispose()
         }

@@ -257,15 +257,12 @@ class QuotaUsageService(
         // Drop baselines for windows that disappeared from the payload.
         activityBaselines[type] = nextBaseline
         if (sawIncrease) {
-            settings.lastActiveSource = provider.type.id
+            settings.setLastActiveProvider(provider.type)
         }
     }
 
     private fun resolveLastActiveSource(settings: QuotaSettingsState?): QuotaIndicatorSource {
-        val active = settings?.lastActiveSource
-        if (!active.isNullOrBlank()) {
-            return QuotaIndicatorSource.fromStorageValue(active)
-        }
+        settings?.lastActiveProvider()?.let { return QuotaIndicatorSource.forProvider(it) }
         return settings?.lastUsedSource() ?: QuotaIndicatorSource.OPEN_AI
     }
 

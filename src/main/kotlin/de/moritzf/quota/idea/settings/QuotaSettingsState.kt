@@ -28,7 +28,7 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
     var refreshMinutes: Int = 5
     var statusBarDisplayMode: String = QuotaDisplayMode.ICON_ONLY.name
     var indicatorLocation: String = QuotaIndicatorLocation.STATUS_BAR.name
-    var indicatorSource: String = QuotaIndicatorSource.OPEN_AI.name
+    var indicatorSource: String = QuotaIndicatorSource.OPEN_AI.storageId
     var lastProviderUpdates: MutableMap<String, Long> = mutableMapOf()
     var hiddenFromQuotaPopup: MutableList<String> = mutableListOf()
     var cachedQuotaJsons: MutableMap<String, String> = mutableMapOf()
@@ -211,7 +211,14 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
         MiniMaxRegionPreference.fromStorageValue(minimaxRegionPreference)
 
     fun setSource(source: QuotaIndicatorSource) {
-        indicatorSource = source.name
+        indicatorSource = source.storageId
+    }
+
+    fun lastActiveProvider(): QuotaProviderType? =
+        lastActiveSource?.let(QuotaProviderType::fromId)
+
+    fun setLastActiveProvider(type: QuotaProviderType) {
+        lastActiveSource = type.id
     }
 
     fun isHiddenFromPopup(provider: QuotaProviderType): Boolean = provider.id in hiddenFromQuotaPopup
@@ -279,8 +286,8 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
         }
         if (updates.values.max() == 0L) return QuotaIndicatorSource.OPEN_AI
         val latest = QuotaProviderRegistry.defaultProviderOrder().maxByOrNull { updates.getValue(it) }
-        return QuotaIndicatorSource.entries.firstOrNull { it.providerType == latest }
-            ?: QuotaIndicatorSource.OPEN_AI
+            ?: return QuotaIndicatorSource.OPEN_AI
+        return QuotaIndicatorSource.forProvider(latest)
     }
 
     companion object {

@@ -6,6 +6,7 @@ import de.moritzf.quota.idea.mcp.UsageQuotaMcpRegistry
 import de.moritzf.quota.idea.settings.ProviderSettingsRegistry
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.ui.indicator.ProviderUiRegistry
+import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -71,5 +72,20 @@ class ProviderCatalogTest {
             ProviderCatalog.all.filter { it.ideProxyFactory != null }.map { it.type }.toSet(),
         )
         assertTrue(proxyTypes.isNotEmpty())
+    }
+
+    @Test
+    fun indicatorSourcesShareProviderStorageIds() {
+        val providerSources = QuotaIndicatorSource.entries.filter { it.providerType != null }
+        assertEquals(QuotaProviderType.entries.toSet(), providerSources.map { it.providerType }.toSet())
+        for (source in providerSources) {
+            val type = checkNotNull(source.providerType)
+            assertEquals(type.id, source.storageId)
+            assertEquals(source, QuotaIndicatorSource.fromStorageValue(type.id))
+        }
+        assertEquals(
+            QuotaIndicatorSource.LAST_USED,
+            QuotaIndicatorSource.fromStorageValue(QuotaIndicatorSource.LAST_USED_ID),
+        )
     }
 }
