@@ -570,6 +570,60 @@ class QuotaUsageServiceTest {
     }
 
     @Test
+    fun restartKeepsPersistedLastActiveProviderWithoutRefresh() {
+        // lastActiveSource is already written to openai-usage-quota.xml; after IDE restart
+        // the indicator must honor it immediately from cache (no activity delta required).
+        val settings = QuotaSettingsState().apply {
+            setSource(QuotaIndicatorSource.LAST_USED)
+            setLastActiveProvider(QuotaProviderType.OPEN_CODE)
+            setCachedQuotaJson(
+                QuotaProviderType.OPEN_CODE,
+                checkNotNull(
+                    QuotaSnapshotCache.encode(
+                        QuotaProviderType.OPEN_CODE,
+                        OpenCodeQuota(
+                            rollingUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 1000, usagePercent = 41),
+                            weeklyUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 10000, usagePercent = 97),
+                        ),
+                    ),
+                ),
+            )
+            setCachedQuotaJson(
+                QuotaProviderType.OPEN_AI,
+                checkNotNull(
+                    QuotaSnapshotCache.encode(
+                        QuotaProviderType.OPEN_AI,
+                        OpenAiCodexQuota(allowed = true).apply {
+                            primary = UsageWindow(usedPercent = 0.0)
+                        },
+                    ),
+                ),
+            )
+        }
+        val service = createService(
+            openAiProvider = OpenAiQuotaProvider(
+                quotaFetcher = { _, _ -> error("restart path must not refresh") },
+                accessTokenProvider = { "t" },
+                accountIdProvider = { "a" },
+            ),
+            openCodeProvider = OpenCodeQuotaProvider(
+                openCodeCookieProvider = { error("restart path must not refresh") },
+                settingsProvider = { settings },
+            ),
+            settingsProvider = { settings },
+        )
+
+        try {
+            val indicator = service.getEffectiveIndicatorData()
+            assertEquals(QuotaProviderType.OPEN_CODE, indicator.type)
+            assertEquals(0.97, indicator.quota!!.usageFraction()!!, 0.0001)
+            assertEquals(QuotaProviderType.OPEN_CODE, settings.lastActiveProvider())
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
     fun openCodeWindowGrowthUpdatesLastActiveSource() {
         val settings = QuotaSettingsState().apply { setLastActiveProvider(QuotaProviderType.OPEN_AI) }
         var rolling = 80
