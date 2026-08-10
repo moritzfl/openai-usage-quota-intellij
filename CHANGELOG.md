@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.7] - 2026-08-10
 - Ollama Cloud now shows a real countdown for session and weekly limits. When the usage API omits reset times, the plugin uses the global schedule (5-hour session grid and Monday 00:00 UTC weekly).
 - Dropped old settings/cache compatibility shims. Outdated cached quota snapshots are ignored until the next successful refresh instead of being force-decoded.
 
