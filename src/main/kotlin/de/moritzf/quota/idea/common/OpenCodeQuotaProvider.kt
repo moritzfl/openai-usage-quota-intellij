@@ -79,15 +79,6 @@ class OpenCodeQuotaProvider(
         OpenCodeQuotaClient.clearCachedFunctionId()
     }
 
-    override fun hydrateFromCache(settings: QuotaSettingsState) {
-        val cached = decodeCached(settings)
-        if (cached?.rawJson == null) {
-            cached?.rawJson = OpenCodeQuotaClient.buildRawResponse(cached.rawGoJson, cached.rawBillingJson)
-        }
-        lastQuotaRef.set(cached)
-        lastRawJsonRef.set(cached?.rawJson)
-    }
-
     private fun fetchOpenCodeQuota(sessionCookie: String): OpenCodeQuota {
         val workspaceId = resolveWorkspaceId(sessionCookie)
         return openCodeClient.fetchQuota(sessionCookie, workspaceId)

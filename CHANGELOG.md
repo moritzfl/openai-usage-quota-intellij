@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 - Ollama Cloud now shows a real countdown for session and weekly limits. When the usage API omits reset times, the plugin uses the global schedule (5-hour session grid and Monday 00:00 UTC weekly).
+- Dropped old settings/cache compatibility shims. Outdated cached quota snapshots are ignored until the next successful refresh instead of being force-decoded.
 
 ## [1.7.6] - 2026-08-09
 - "Last used" status bar source correctly switches to OpenCode (and other providers) after real usage, instead of staying stuck on OpenAI at 0%. Provider selection now uses one shared id everywhere (`opencode`, `openai`, …) so enum names can no longer be confused with storage keys. The last active provider is kept across IDE restarts (it was already saved, but the id mismatch made the status bar ignore it and fall back to OpenAI).

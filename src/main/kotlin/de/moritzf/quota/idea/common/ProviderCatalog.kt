@@ -223,7 +223,7 @@ internal object ProviderCatalog {
             type = QuotaProviderType.OPEN_CODE,
             capabilities = ProviderCapabilities(subscriptionProxy = true),
             quotaFactory = ::OpenCodeQuotaProvider,
-            snapshotCodec = PlainQuotaCodec(OpenCodeQuota.serializer()),
+            snapshotCodec = EnvelopeQuotaCodec(OpenCodeQuota.serializer()),
             mcpQuota = UsageQuotaMcpRegistration(
                 emptyMessage = "No OpenCode usage response available",
                 json = { service, _ ->

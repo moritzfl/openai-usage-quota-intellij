@@ -28,15 +28,11 @@ class QuotaSnapshotCacheTest {
     }
 
     @Test
-    fun decodesLegacyQuotaCacheWithoutRawResponse() {
-        // Older caches may still carry a scraped "plan" field; ignore it and keep decoding.
-        val legacyOllama = """{"plan":"Pro","sessionUsage":{"usagePercent":12.5}}"""
-
-        val decoded = QuotaSnapshotCache.decode(QuotaProviderType.OLLAMA, legacyOllama) as? OllamaQuota
-
-        assertNotNull(decoded)
-        assertEquals(12.5, decoded.sessionUsage?.usagePercent)
-        assertEquals(null, decoded.rawJson)
+    fun rejectsPlainQuotaPayloadsWithoutEnvelope() {
+        // Current format is always {quota, rawResponse}. Stale plain snapshots are dropped;
+        // the next live refresh rehydrates.
+        val plainOllama = """{"sessionUsage":{"usagePercent":12.5}}"""
+        assertEquals(null, QuotaSnapshotCache.decode(QuotaProviderType.OLLAMA, plainOllama))
     }
 
     @Test

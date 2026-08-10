@@ -54,7 +54,7 @@
 ## Settings And Releases
 
 - Provider state is mostly map/list based in `QuotaSettingsState`; avoid adding per-provider fields unless persistence or migration requires them.
-- Legacy settings fields are for migration only. Keep them readable when changing persisted data.
+- Do not keep backwards-compat decode paths just to revive old cached quota snapshots. If the cache shape changes, drop unreadable entries and wait for the next live refresh.
 - Add changelog entries under `## [Unreleased]`. Do not edit released changelog sections unless explicitly requested.
 - Keep this file concise and update it when project-level agent guidance changes.
 - Do not push unless explicitly requested.

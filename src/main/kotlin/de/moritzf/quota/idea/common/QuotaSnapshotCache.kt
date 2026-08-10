@@ -57,29 +57,14 @@ internal class EnvelopeQuotaCodec<Q : ProviderQuota>(
     }
 
     override fun decode(json: String): Q? {
-        val fromEnvelope = runCatching {
+        return runCatching {
             val envelope = JsonSupport.json.decodeFromString(envelopeSerializer, json)
             envelope.quota.apply { rawJson = envelope.rawResponse }
         }.getOrNull()
-        return fromEnvelope
-            ?: runCatching { JsonSupport.json.decodeFromString(serializer, json) }.getOrNull()
     }
 
     override fun encodePlain(quota: Q): String? {
         return runCatching { JsonSupport.json.encodeToString(serializer, quota) }.getOrNull()
-    }
-}
-
-/** Persists the bare quota payload without an envelope. */
-internal class PlainQuotaCodec<Q : ProviderQuota>(
-    private val serializer: KSerializer<Q>,
-) : QuotaCodec<Q> {
-    override fun encode(quota: Q): String? {
-        return runCatching { JsonSupport.json.encodeToString(serializer, quota) }.getOrNull()
-    }
-
-    override fun decode(json: String): Q? {
-        return runCatching { JsonSupport.json.decodeFromString(serializer, json) }.getOrNull()
     }
 }
 

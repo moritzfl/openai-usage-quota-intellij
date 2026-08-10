@@ -48,57 +48,6 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
     /** Shape of the persisted data; raised by [QuotaSettingsMigrations] as migrations run. */
     var settingsVersion: Int = 0
 
-    // Legacy per-provider fields kept only so settings written by older
-    // versions still deserialize; loadState migrates them into the maps.
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastOpenAiUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastOpenCodeUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastOllamaUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastZaiUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastMiniMaxUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastKimiUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastGitHubUpdate: Long = 0
-    @Deprecated("Migrated into lastProviderUpdates")
-    var lastCursorUpdate: Long = 0
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideOpenAiFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideOpenCodeFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideOllamaFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideZaiFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideMiniMaxFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideKimiFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideGitHubFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into hiddenFromQuotaPopup")
-    var hideCursorFromQuotaPopup: Boolean = false
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedOpenAiQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedOpenCodeQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedOllamaQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedZaiQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedMiniMaxQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedKimiQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedGitHubQuotaJson: String? = null
-    @Deprecated("Migrated into cachedQuotaJsons")
-    var cachedCursorQuotaJson: String? = null
-
     override fun getState(): QuotaSettingsState = this
 
     override fun loadState(state: QuotaSettingsState) {
@@ -107,9 +56,9 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
         statusBarDisplayMode = QuotaDisplayMode.fromStorageValue(state.statusBarDisplayMode).name
         indicatorLocation = QuotaIndicatorLocation.fromStorageValue(state.indicatorLocation).name
         indicatorSource = state.indicatorSource
-        lastProviderUpdates = migrateTimestamps(state)
-        hiddenFromQuotaPopup = migrateHiddenProviders(state)
-        cachedQuotaJsons = migrateCachedJsons(state)
+        lastProviderUpdates = state.lastProviderUpdates.toMutableMap()
+        hiddenFromQuotaPopup = state.hiddenFromQuotaPopup.toMutableList()
+        cachedQuotaJsons = state.cachedQuotaJsons.toMutableMap()
         lastActiveSource = state.lastActiveSource
         openCodeWorkspaceId = state.openCodeWorkspaceId
         minimaxRegionPreference = MiniMaxRegionPreference.fromStorageValue(state.minimaxRegionPreference).name
@@ -132,57 +81,6 @@ class QuotaSettingsState : PersistentStateComponent<QuotaSettingsState> {
     /** Fresh install: nothing was ever persisted, so only record the current settings version. */
     override fun noStateLoaded() {
         settingsVersion = QuotaSettingsMigrations.CURRENT_VERSION
-    }
-
-    @Suppress("DEPRECATION")
-    private fun migrateTimestamps(state: QuotaSettingsState): MutableMap<String, Long> {
-        val result = state.lastProviderUpdates.toMutableMap()
-        fun migrate(type: QuotaProviderType, legacy: Long) {
-            if (legacy > 0 && type.id !in result) result[type.id] = legacy
-        }
-        migrate(QuotaProviderType.OPEN_AI, state.lastOpenAiUpdate)
-        migrate(QuotaProviderType.OPEN_CODE, state.lastOpenCodeUpdate)
-        migrate(QuotaProviderType.OLLAMA, state.lastOllamaUpdate)
-        migrate(QuotaProviderType.ZAI, state.lastZaiUpdate)
-        migrate(QuotaProviderType.MINIMAX, state.lastMiniMaxUpdate)
-        migrate(QuotaProviderType.KIMI, state.lastKimiUpdate)
-        migrate(QuotaProviderType.GITHUB, state.lastGitHubUpdate)
-        migrate(QuotaProviderType.CURSOR, state.lastCursorUpdate)
-        return result
-    }
-
-    @Suppress("DEPRECATION")
-    private fun migrateHiddenProviders(state: QuotaSettingsState): MutableList<String> {
-        val result = state.hiddenFromQuotaPopup.toMutableList()
-        fun migrate(type: QuotaProviderType, legacy: Boolean) {
-            if (legacy && type.id !in result) result.add(type.id)
-        }
-        migrate(QuotaProviderType.OPEN_AI, state.hideOpenAiFromQuotaPopup)
-        migrate(QuotaProviderType.OPEN_CODE, state.hideOpenCodeFromQuotaPopup)
-        migrate(QuotaProviderType.OLLAMA, state.hideOllamaFromQuotaPopup)
-        migrate(QuotaProviderType.ZAI, state.hideZaiFromQuotaPopup)
-        migrate(QuotaProviderType.MINIMAX, state.hideMiniMaxFromQuotaPopup)
-        migrate(QuotaProviderType.KIMI, state.hideKimiFromQuotaPopup)
-        migrate(QuotaProviderType.GITHUB, state.hideGitHubFromQuotaPopup)
-        migrate(QuotaProviderType.CURSOR, state.hideCursorFromQuotaPopup)
-        return result
-    }
-
-    @Suppress("DEPRECATION")
-    private fun migrateCachedJsons(state: QuotaSettingsState): MutableMap<String, String> {
-        val result = state.cachedQuotaJsons.toMutableMap()
-        fun migrate(type: QuotaProviderType, legacy: String?) {
-            if (!legacy.isNullOrBlank() && type.id !in result) result[type.id] = legacy
-        }
-        migrate(QuotaProviderType.OPEN_AI, state.cachedOpenAiQuotaJson)
-        migrate(QuotaProviderType.OPEN_CODE, state.cachedOpenCodeQuotaJson)
-        migrate(QuotaProviderType.OLLAMA, state.cachedOllamaQuotaJson)
-        migrate(QuotaProviderType.ZAI, state.cachedZaiQuotaJson)
-        migrate(QuotaProviderType.MINIMAX, state.cachedMiniMaxQuotaJson)
-        migrate(QuotaProviderType.KIMI, state.cachedKimiQuotaJson)
-        migrate(QuotaProviderType.GITHUB, state.cachedGitHubQuotaJson)
-        migrate(QuotaProviderType.CURSOR, state.cachedCursorQuotaJson)
-        return result
     }
 
     fun providerOrderList(): List<QuotaProviderType> {
