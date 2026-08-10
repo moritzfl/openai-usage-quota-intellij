@@ -99,7 +99,7 @@ open class OllamaQuotaClient(
         @JvmField
         val DEFAULT_ENDPOINT: URI = URI.create("https://ollama.com/api/usage")
 
-        fun parseQuota(usageJson: String): OllamaQuota {
+        fun parseQuota(usageJson: String, now: Instant = Clock.System.now()): OllamaQuota {
             // Each limit window is decoded on its own so one reshaped or unparsable block (for
             // example a changed session entry, per-model details, activity/cost extras, or unknown
             // attributes) only drops that block instead of hiding the whole quota.
@@ -111,8 +111,8 @@ open class OllamaQuotaClient(
             fun window(key: String): OllamaUsageWindow? =
                 JsonSupport.decodeSectionOrNull(limits?.get(key), OllamaLimitWindowDto.serializer())?.toWindow()
 
-            val sessionUsage = window("session")
-            val weeklyUsage = window("weekly")
+            val sessionUsage = window("session")?.withDefaultReset(OllamaResetSchedule.sessionResetsAt(now))
+            val weeklyUsage = window("weekly")?.withDefaultReset(OllamaResetSchedule.weeklyResetsAt(now))
             if (sessionUsage == null && weeklyUsage == null) {
                 throw OllamaQuotaException("Ollama usage response changed.", 200, usageJson)
             }
@@ -122,6 +122,9 @@ open class OllamaQuotaClient(
                 weeklyUsage = weeklyUsage,
             )
         }
+
+        private fun OllamaUsageWindow.withDefaultReset(defaultReset: Instant): OllamaUsageWindow =
+            if (resetsAt != null) this else copy(resetsAt = defaultReset)
 
         private fun OllamaLimitWindowDto.toWindow(): OllamaUsageWindow? {
             val usage = usage ?: return null

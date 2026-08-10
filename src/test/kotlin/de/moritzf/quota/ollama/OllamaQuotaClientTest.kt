@@ -38,13 +38,15 @@ class OllamaQuotaClientTest {
             }
         """.trimIndent()
 
-        val quota = OllamaQuotaClient.parseQuota(json)
+        val now = Instant.parse("2026-08-10T05:30:42Z")
+        val quota = OllamaQuotaClient.parseQuota(json, now)
 
         val session = assertNotNull(quota.sessionUsage)
         assertEquals(4.6, session.usagePercent, absoluteTolerance = 0.0001)
-        assertNull(session.resetsAt)
+        assertEquals(Instant.parse("2026-08-10T10:00:00Z"), session.resetsAt)
         val weekly = assertNotNull(quota.weeklyUsage)
         assertEquals(5.1, weekly.usagePercent, absoluteTolerance = 0.0001)
+        assertEquals(Instant.parse("2026-08-17T00:00:00Z"), weekly.resetsAt)
     }
 
     @Test
@@ -120,16 +122,18 @@ class OllamaQuotaClientTest {
 
     @Test
     fun parseQuotaReadsResetTimestampWhenPresent() {
+        val now = Instant.parse("2026-08-10T05:30:42Z")
         val quota = OllamaQuotaClient.parseQuota(
             """{"limits":{"session":{"usage":0.1,"resets_at":"2026-07-29T18:00:00Z"},"weekly":{"usage":0.2,"resets_at":"nonsense"}}}""",
+            now,
         )
 
         assertEquals(
             Instant.parse("2026-07-29T18:00:00Z"),
             assertNotNull(quota.sessionUsage).resetsAt,
         )
-        // An unparsable timestamp only drops the reset time, not the usage value.
-        assertNull(assertNotNull(quota.weeklyUsage).resetsAt)
+        // Unparsable timestamp falls back to the global weekly schedule.
+        assertEquals(Instant.parse("2026-08-17T00:00:00Z"), assertNotNull(quota.weeklyUsage).resetsAt)
         assertEquals(20.0, assertNotNull(quota.weeklyUsage).usagePercent, absoluteTolerance = 0.0001)
     }
 
