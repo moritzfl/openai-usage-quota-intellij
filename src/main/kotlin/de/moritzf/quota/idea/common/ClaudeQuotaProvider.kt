@@ -41,7 +41,9 @@ class ClaudeQuotaProvider(
         return try {
             client.fetchQuota(accessToken)
         } catch (exception: ClaudeQuotaException) {
-            if (exception.statusCode != 401 && exception.statusCode != 403) throw exception
+            val missingProfileScope = exception.statusCode == 403 &&
+                exception.rawBody?.contains("user:profile", ignoreCase = true) == true
+            if (missingProfileScope || (exception.statusCode != 401 && exception.statusCode != 403)) throw exception
             val refreshed = tokenRefresher(accessToken)?.takeIf { it.isNotBlank() && it != accessToken }
                 ?: throw exception
             client.fetchQuota(refreshed)

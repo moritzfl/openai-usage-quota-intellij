@@ -126,6 +126,80 @@ class ClaudeQuotaProviderTest {
         assertEquals("Claude usage request failed (HTTP 500).", provider.getLastError())
     }
 
+    @Test
+    fun refreshRetriesOnceAfterUnauthorizedResponse() {
+        val quota = ClaudeQuota(rawJson = "{\"ok\":true}")
+        var fetchCount = 0
+        var refreshCount = 0
+        val provider = ClaudeQuotaProvider(
+            client = FakeClaudeClient {
+                fetchCount++
+                if (fetchCount == 1) throw ClaudeQuotaException("expired", 401)
+                quota
+            },
+            tokenProvider = { "old-token" },
+            tokenRefresher = {
+                refreshCount++
+                "new-token"
+            },
+        )
+
+        provider.refresh()
+
+        assertSame(quota, provider.getLastQuota())
+        assertEquals(1, refreshCount)
+        assertEquals(2, fetchCount)
+    }
+
+    @Test
+    fun refreshRetriesOnceAfterGenericForbiddenResponse() {
+        val quota = ClaudeQuota(rawJson = "{\"ok\":true}")
+        var fetchCount = 0
+        var refreshCount = 0
+        val provider = ClaudeQuotaProvider(
+            client = FakeClaudeClient {
+                fetchCount++
+                if (fetchCount == 1) throw ClaudeQuotaException("expired", 403, "forbidden")
+                quota
+            },
+            tokenProvider = { "old-token" },
+            tokenRefresher = {
+                refreshCount++
+                "new-token"
+            },
+        )
+
+        provider.refresh()
+
+        assertSame(quota, provider.getLastQuota())
+        assertEquals(1, refreshCount)
+        assertEquals(2, fetchCount)
+    }
+
+    @Test
+    fun refreshDoesNotRotateTokenAfterForbiddenResponse() {
+        var refreshCount = 0
+        val provider = ClaudeQuotaProvider(
+            client = FakeClaudeClient {
+                throw ClaudeQuotaException(
+                    "Claude token is missing the user:profile scope required for usage.",
+                    403,
+                    "missing user:profile",
+                )
+            },
+            tokenProvider = { "token" },
+            tokenRefresher = {
+                refreshCount++
+                "new-token"
+            },
+        )
+
+        provider.refresh()
+
+        assertEquals(0, refreshCount)
+        assertEquals("Claude token is missing the user:profile scope required for usage.", provider.getLastError())
+    }
+
     private class FakeClaudeClient(private val fetch: () -> ClaudeQuota) : ClaudeQuotaClient() {
         override fun fetchQuota(accessToken: String?): ClaudeQuota = fetch()
     }

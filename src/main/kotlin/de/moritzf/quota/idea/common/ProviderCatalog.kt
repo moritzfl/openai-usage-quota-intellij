@@ -358,7 +358,7 @@ internal object ProviderCatalog {
     }
 
     private fun oauthAccessTokenPresent(type: QuotaProviderType): Boolean {
-        return !QuotaAuthService.getInstance().getAccessTokenBlocking(type).isNullOrBlank()
+        return QuotaAuthService.getInstance().hasCredentialsBlocking(type)
     }
 
     private fun descriptor(

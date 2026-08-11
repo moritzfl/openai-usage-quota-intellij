@@ -59,8 +59,9 @@ class SubscriptionUsageMcpToolset(
             val caps = descriptor.capabilities
             val searchType = descriptor.webSearchType
             val webSearchAvailable = searchType != null && descriptor.isWebSearchConfigured()
+            val quotaConfigured = descriptor.isQuotaConfigured()
             // Image/video share the same login probe as quota for the OAuth providers that offer them.
-            val mediaConfigured = descriptor.isQuotaConfigured()
+            val mediaConfigured = quotaConfigured
             val reason = if (searchType == null) {
                 "Web search is not offered for this provider."
             } else if (!webSearchAvailable) {
@@ -70,7 +71,7 @@ class SubscriptionUsageMcpToolset(
             }
             McpProviderToolStatus(
                 provider = descriptor.type.displayName,
-                quotaConfigured = descriptor.isQuotaConfigured(),
+                quotaConfigured = quotaConfigured,
                 webSearchAvailable = webSearchAvailable,
                 webSearchType = searchType,
                 imageGenerationAvailable = caps.imageGeneration && mediaConfigured,
