@@ -11,7 +11,7 @@ class OAuthTokenRequestException(
     val oauthError: String? = null,
 ) : IOException(message) {
     fun isTerminalAuthFailure(): Boolean {
-        return oauthError
+        return statusCode == 400 && oauthError
             ?.trim()
             ?.lowercase()
             ?.let(UNRECOVERABLE_AUTH_ERRORS::contains) == true

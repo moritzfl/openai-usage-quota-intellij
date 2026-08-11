@@ -6,6 +6,7 @@ import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.shared.JsonSupport
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 
@@ -46,6 +47,40 @@ class OAuthCredentialsStoreTest {
         superGrokStore.clear()
 
         assertNull(superGrokStore.load())
+    }
+
+    @Test
+    fun currentReadFailureDoesNotFallbackToOrMigrateLegacyCredentials() {
+        val currentService = OAuthCredentialsStore.serviceNameForProvider(QuotaProviderType.CLAUDE)
+        val legacyService = "LLM Subscription Usage OAuth"
+        var writes = 0
+        val store = OAuthCredentialsStore(
+            serviceName = currentService,
+            userName = "claude-oauth",
+            legacyServiceName = legacyService,
+            legacyUserName = "claude-oauth",
+            credentialReader = { attributes ->
+                if (attributes.serviceName == currentService) {
+                    throw IllegalStateException("Password Safe unavailable")
+                }
+                Credentials("claude-oauth", credentialsJson("legacy-token"))
+            },
+            credentialWriter = { _, _ -> writes++ },
+        )
+
+        assertFailsWith<IllegalStateException> { store.load() }
+        assertEquals(0, writes)
+    }
+
+    @Test
+    fun clearFailureIsReported() {
+        val store = OAuthCredentialsStore(
+            serviceName = OAuthCredentialsStore.serviceNameForProvider(QuotaProviderType.CLAUDE),
+            userName = "claude-oauth",
+            credentialWriter = { _, _ -> throw IllegalStateException("Password Safe unavailable") },
+        )
+
+        assertFailsWith<IllegalStateException> { store.clear() }
     }
 
     private fun storeFor(type: QuotaProviderType, passwordSafe: FakePasswordSafe): OAuthCredentialsStore {

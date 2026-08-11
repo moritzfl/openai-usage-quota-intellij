@@ -119,10 +119,16 @@ internal class ClaudeSettingsPanel(
         }
 
         logoutButton.addActionListener {
-            QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.CLAUDE)
-            QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.CLAUDE)
-            authCodeField.text = ""
-            authStatusMessage = AuthStatusMessage("Logged out of Claude", false, AuthStatusKind.DISCONNECTED)
+            val cleared = QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.CLAUDE)
+            if (cleared) {
+                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.CLAUDE)
+                authCodeField.text = ""
+            }
+            authStatusMessage = if (cleared) {
+                AuthStatusMessage("Logged out of Claude", false, AuthStatusKind.DISCONNECTED)
+            } else {
+                AuthStatusMessage("Could not remove Claude login from Password Safe", true, AuthStatusKind.CONNECTED)
+            }
             updateAuthUi()
         }
 

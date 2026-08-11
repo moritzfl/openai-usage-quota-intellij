@@ -19,6 +19,7 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
@@ -76,16 +77,19 @@ class OAuthTokenClientTest {
     }
 
     @Test
-    fun refreshRetriesServerErrors() = runBlocking {
+    fun refreshDoesNotRetryServerErrors() = runBlocking {
         val http = FakeHttpClient(
             responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
-            failuresBeforeSuccess = 2,
+            failuresBeforeSuccess = 1,
         )
 
-        val credentials = OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+        val failure = assertFailsWith<OAuthTokenRequestException> {
+            OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+        }
 
-        assertEquals(3, http.attempts)
-        assertEquals("new-access", credentials.accessToken)
+        assertEquals(1, http.attempts, "an ambiguous 5xx response must not replay a rotating token")
+        assertEquals(503, failure.statusCode)
+        assertFalse(failure.message.orEmpty().contains("upstream error"), "raw token responses must not enter logs")
     }
 
     @Test
@@ -103,7 +107,7 @@ class OAuthTokenClientTest {
     }
 
     @Test
-    fun refreshRetriesConnectFailureReportedAsCause() = runBlocking {
+    fun refreshRetriesPreSendFailureReportedAsCause() = runBlocking {
         val http = FakeHttpClient(
             responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
             failuresBeforeSuccess = 1,
@@ -114,6 +118,35 @@ class OAuthTokenClientTest {
 
         assertEquals(2, http.attempts)
         assertEquals("new-access", credentials.accessToken)
+    }
+
+    @Test
+    fun refreshRetriesConnectTimeout() = runBlocking {
+        val http = FakeHttpClient(
+            responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
+            failuresBeforeSuccess = 1,
+            failWith = { java.net.http.HttpConnectTimeoutException("connect timed out") },
+        )
+
+        val credentials = OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+
+        assertEquals(2, http.attempts)
+        assertEquals("new-access", credentials.accessToken)
+    }
+
+    @Test
+    fun refreshDoesNotRetryRequestTimeout() = runBlocking {
+        val http = FakeHttpClient(
+            responseBody = tokenResponse(accessToken = "new-access", refreshToken = "new-refresh", expiresIn = 3600),
+            failuresBeforeSuccess = 1,
+            failWith = { java.net.http.HttpTimeoutException("request timed out") },
+        )
+
+        assertFailsWith<java.net.http.HttpTimeoutException> {
+            OAuthTokenClient(http, config()).refreshCredentials(expiredCredentials())
+        }
+
+        assertEquals(1, http.attempts, "a request timeout may follow token rotation")
     }
 
     @Test

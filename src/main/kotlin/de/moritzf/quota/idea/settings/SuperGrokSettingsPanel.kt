@@ -89,9 +89,15 @@ internal class SuperGrokSettingsPanel(
         }
 
         logoutButton.addActionListener {
-            QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.SUPERGROK)
-            QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.SUPERGROK)
-            authStatusMessage = AuthStatusMessage("Logged out of xAI/Grok", false, AuthStatusKind.DISCONNECTED)
+            val cleared = QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.SUPERGROK)
+            if (cleared) {
+                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.SUPERGROK)
+            }
+            authStatusMessage = if (cleared) {
+                AuthStatusMessage("Logged out of xAI/Grok", false, AuthStatusKind.DISCONNECTED)
+            } else {
+                AuthStatusMessage("Could not remove xAI/Grok login from Password Safe", true, AuthStatusKind.CONNECTED)
+            }
             updateAuthUi()
         }
 

@@ -35,9 +35,7 @@ class OAuthCredentialsStore(
         }
 
         val legacy = legacyAttributes?.let { loadStoredCredentials(it, "legacy") } ?: return null
-        val legacyCredentials = legacy.credentials ?: return null
-        saveMigratedCredentials(legacyCredentials)
-        return legacyCredentials
+        return legacy.credentials
     }
 
     override fun save(credentials: OAuthCredentials) {
@@ -60,6 +58,7 @@ class OAuthCredentialsStore(
             credentialWriter(attributes, Credentials(userName, CLEARED_MARKER))
         } catch (exception: Exception) {
             LOG.warn("Failed to clear stored OAuth credentials", exception)
+            throw IllegalStateException("Could not clear OAuth credentials", exception)
         }
     }
 
@@ -68,7 +67,7 @@ class OAuthCredentialsStore(
             credentialReader(attributes)
         } catch (exception: Exception) {
             LOG.warn("Failed to load $source OAuth credentials", exception)
-            return StoredCredentials(present = false, credentials = null)
+            throw IllegalStateException("Could not load $source OAuth credentials", exception)
         } ?: return StoredCredentials(present = false, credentials = null)
         val json = stored.getPasswordAsString()
         if (json.isNullOrBlank() || json == CLEARED_MARKER) {
@@ -79,15 +78,7 @@ class OAuthCredentialsStore(
             StoredCredentials(present = true, credentials = JsonSupport.json.decodeFromString<OAuthCredentials>(json))
         } catch (exception: Exception) {
             LOG.warn("Failed to parse $source OAuth credentials", exception)
-            StoredCredentials(present = true, credentials = null)
-        }
-    }
-
-    private fun saveMigratedCredentials(credentials: OAuthCredentials) {
-        try {
-            credentialWriter(attributes, Credentials(userName, JsonSupport.json.encodeToString(credentials)))
-        } catch (exception: Exception) {
-            LOG.warn("Failed to migrate OAuth credentials", exception)
+            throw IllegalStateException("Could not parse $source OAuth credentials", exception)
         }
     }
 

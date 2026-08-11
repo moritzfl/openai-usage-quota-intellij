@@ -15,6 +15,7 @@ import de.moritzf.quota.idea.auth.OAuthTokenRequestException
 import de.moritzf.quota.idea.auth.OAuthTokenOperations
 import de.moritzf.quota.idea.common.CredentialStorage
 import de.moritzf.quota.idea.common.QuotaProviderType
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,8 +46,20 @@ class QuotaAuthService(
     private val credentialStoreFactory: (QuotaProviderType) -> OAuthCredentialStore = { type ->
         OAuthCredentialsStore.forProvider(type)
     },
+    private val browserOpener: (String) -> Unit = BrowserUtil::browse,
 ) : Disposable {
     private val providerStates = ConcurrentHashMap<QuotaProviderType, ProviderAuthState>()
+
+    private data class PendingCredentials(
+        val credentials: OAuthCredentials,
+        val expectedPersistedCredentials: OAuthCredentials,
+        val clearMarker: Long,
+    )
+
+    private data class RefreshFailure(
+        val credentials: OAuthCredentials,
+        val failedAtMs: Long,
+    )
 
     private fun stateFor(type: QuotaProviderType): ProviderAuthState {
         return providerStates.computeIfAbsent(type) { ProviderAuthState(type) }
@@ -65,6 +78,10 @@ class QuotaAuthService(
         val authInProgress = AtomicBoolean(false)
         val pendingFlow = AtomicReference<OAuthLoginFlow?>()
         val credentialClearCounter = AtomicLong(0)
+        val loginGeneration = AtomicLong(0)
+        val pendingCredentials = AtomicReference<PendingCredentials?>()
+        val credentialLoadFailed = AtomicBoolean(false)
+        val lastRefreshFailure = AtomicReference<RefreshFailure?>()
     }
 
     init {
@@ -78,15 +95,23 @@ class QuotaAuthService(
 
     fun startLoginFlow(type: QuotaProviderType, callback: (LoginResult) -> Unit, onAuthUrl: ((String) -> Unit)? = null) {
         val state = stateFor(type)
-        if (!state.authInProgress.compareAndSet(false, true)) {
+        val loginGeneration = synchronized(state.credentialsLock) {
+            if (!state.authInProgress.compareAndSet(false, true)) {
+                null
+            } else {
+                state.loginGeneration.incrementAndGet()
+            }
+        }
+        if (loginGeneration == null) {
             LOG.warn("Login requested for ${type.displayName} while another login is already in progress")
             callback(LoginResult.error("Login already in progress"))
             return
         }
 
         scope.launch {
+            var deliverResult = false
             val result = try {
-                runLoginFlow(state, onAuthUrl)
+                runLoginFlow(state, loginGeneration, onAuthUrl)
             } catch (exception: Exception) {
                 LOG.warn("Login flow failed for ${type.displayName}", exception)
                 var message = exception.message
@@ -95,9 +120,18 @@ class QuotaAuthService(
                 }
                 LoginResult.error(message ?: "Login failed")
             } finally {
-                state.authInProgress.set(false)
+                deliverResult = synchronized(state.credentialsLock) {
+                    if (state.loginGeneration.get() == loginGeneration) {
+                        state.authInProgress.compareAndSet(true, false)
+                        true
+                    } else {
+                        false
+                    }
+                }
             }
-            callback(result)
+            if (deliverResult) {
+                callback(result)
+            }
         }
     }
 
@@ -116,29 +150,44 @@ class QuotaAuthService(
 
     fun abortLogin(type: QuotaProviderType, reason: String?): Boolean {
         val state = stateFor(type)
-        val flow = state.pendingFlow.getAndSet(null) ?: return false
-        state.authInProgress.set(false)
+        val flow = synchronized(state.credentialsLock) {
+            if (!state.authInProgress.getAndSet(false)) {
+                return false
+            }
+            state.loginGeneration.incrementAndGet()
+            state.pendingFlow.getAndSet(null)
+        }
         val message = if (reason.isNullOrBlank()) "Login canceled" else reason
-        flow.cancel(message)
+        flow?.cancel(message)
         LOG.info("Login flow aborted for ${state.type.displayName}: $message")
         return true
     }
 
-    fun clearCredentials(type: QuotaProviderType) {
+    fun clearCredentials(type: QuotaProviderType): Boolean {
         val state = stateFor(type)
         abortLogin(type, "Logged out")
         synchronized(state.credentialsLock) {
+            try {
+                state.credentialStore.clear()
+            } catch (exception: Exception) {
+                LOG.warn("Failed to clear stored OAuth credentials for ${state.type.displayName}", exception)
+                return false
+            }
             state.credentialClearCounter.incrementAndGet()
+            state.pendingCredentials.set(null)
+            state.lastRefreshFailure.set(null)
+            state.credentialLoadFailed.set(false)
             state.cachedCredentials.set(null)
             state.cacheLoaded.set(true)
-            state.credentialStore.clear()
         }
         LOG.info("Cleared stored OAuth credentials for ${state.type.displayName}")
+        return true
     }
 
     fun isLoggedIn(type: QuotaProviderType): Boolean {
-        val credentials = cachedCredentialsOrScheduleLoad(stateFor(type))
-        return credentials?.accessToken?.isNotBlank() == true
+        val state = stateFor(type)
+        val credentials = cachedCredentialsOrScheduleLoad(state)
+        return credentials?.accessToken?.isNotBlank() == true || state.credentialLoadFailed.get()
     }
 
     fun getAccessTokenBlocking(type: QuotaProviderType = QuotaProviderType.OPEN_AI): String? {
@@ -148,6 +197,12 @@ class QuotaAuthService(
             credentials = refreshCredentialsBlocking(state) ?: return null
         }
         return credentials.accessToken
+    }
+
+    fun hasCredentialsBlocking(type: QuotaProviderType): Boolean {
+        val state = stateFor(type)
+        val credentials = getCredentialsBlocking(state)
+        return credentials?.accessToken?.isNotBlank() == true || state.credentialLoadFailed.get()
     }
 
     /**
@@ -163,29 +218,15 @@ class QuotaAuthService(
     ): String? {
         val state = stateFor(type)
         synchronized(state.refreshLock) {
+            val clearMarker = currentCredentialClearMarker(state)
             val latestCredentials = getCredentialsBlocking(state) ?: return null
             if (!staleAccessToken.isNullOrBlank() && latestCredentials.accessToken != staleAccessToken) {
                 // Another request already refreshed past the rejected token.
                 return latestCredentials.accessToken
             }
 
-            val clearMarker = currentCredentialClearMarker(state)
             logRefreshAttempt(state, latestCredentials, "upstream rejected the access token")
-            return try {
-                val refreshed = runBlocking {
-                    state.tokenOperations.refreshCredentials(latestCredentials)
-                }
-                persistCredentialsIfCurrent(state, clearMarker, refreshed, "force-refresh")?.accessToken
-            } catch (exception: OAuthTokenRequestException) {
-                LOG.warn("Forced token refresh failed for ${state.type.displayName}", exception)
-                if (exception.isTerminalAuthFailure()) {
-                    clearCredentialsIfUnchanged(state, latestCredentials)
-                }
-                null
-            } catch (exception: Exception) {
-                LOG.warn("Forced token refresh failed for ${state.type.displayName}", exception)
-                null
-            }
+            return refreshWithFailureBackoff(state, clearMarker, latestCredentials, "force-refresh")?.accessToken
         }
     }
 
@@ -210,10 +251,24 @@ class QuotaAuthService(
         }
     }
 
-    private suspend fun runLoginFlow(state: ProviderAuthState, onAuthUrl: ((String) -> Unit)? = null): LoginResult {
+    private suspend fun runLoginFlow(
+        state: ProviderAuthState,
+        loginGeneration: Long,
+        onAuthUrl: ((String) -> Unit)? = null,
+    ): LoginResult {
+        if (state.loginGeneration.get() != loginGeneration) {
+            return LoginResult.error("Login canceled")
+        }
         LOG.info("Starting OAuth login flow for ${state.type.displayName}")
         val flow = OAuthLoginFlow.start(state.config)
-        state.pendingFlow.set(flow)
+        val published = synchronized(state.credentialsLock) {
+            state.loginGeneration.get() == loginGeneration && state.pendingFlow.compareAndSet(null, flow)
+        }
+        if (!published) {
+            flow.cancel("Login canceled")
+            flow.stopServerNow()
+            return LoginResult.error("Login canceled")
+        }
         return try {
             if (flow.usesLocalCallbackServer) {
                 val callbackError = pingCallbackEndpoint(state.config)
@@ -228,7 +283,7 @@ class QuotaAuthService(
                 LOG.warn("Failed to publish authorization URL to UI", exception)
             }
 
-            BrowserUtil.browse(flow.authorizationUrl)
+            browserOpener(flow.authorizationUrl)
             val callback = flow.waitForCallback()
             LOG.info("OAuth callback received for ${state.type.displayName}; success=${callback.error == null}")
 
@@ -238,6 +293,9 @@ class QuotaAuthService(
             if (callback.code.isNullOrBlank()) {
                 return LoginResult.error("No authorization code received")
             }
+            if (state.loginGeneration.get() != loginGeneration) {
+                return LoginResult.error("Login canceled")
+            }
 
             val clearMarker = currentCredentialClearMarker(state)
             val credentials = state.tokenOperations.exchangeAuthorizationCode(
@@ -245,9 +303,17 @@ class QuotaAuthService(
                 flow.codeVerifier,
                 callback.state ?: flow.expectedState,
             )
-            if (persistCredentialsIfCurrent(state, clearMarker, credentials, "login") == null) {
+            if (persistCredentialsIfCurrent(
+                    state = state,
+                    clearMarker = clearMarker,
+                    credentials = credentials,
+                    operation = "login",
+                    loginGeneration = loginGeneration,
+                ) == null
+            ) {
                 return LoginResult.error("Login canceled")
             }
+            state.lastRefreshFailure.set(null)
             LoginResult.success()
         } finally {
             state.pendingFlow.compareAndSet(flow, null)
@@ -286,17 +352,101 @@ class QuotaAuthService(
     }
 
     private fun getCredentialsBlocking(state: ProviderAuthState): OAuthCredentials? {
+        state.pendingCredentials.get()?.let { pending ->
+            return resolvePendingCredentials(state, pending)
+        }
         val clearMarker = currentCredentialClearMarker(state)
-        val credentials = state.credentialStore.load()
+        val credentials = try {
+            state.credentialStore.load()
+        } catch (exception: Exception) {
+            LOG.warn("Failed to load OAuth credentials for ${state.type.displayName}; keeping cached state", exception)
+            return synchronized(state.credentialsLock) {
+                if (state.credentialClearCounter.get() != clearMarker) {
+                    null
+                } else {
+                    state.credentialLoadFailed.set(true)
+                    state.cachedCredentials.get()
+                }
+            }
+        }
         synchronized(state.credentialsLock) {
             state.cacheLoaded.set(true)
             if (state.credentialClearCounter.get() != clearMarker) {
                 state.cachedCredentials.set(null)
                 return null
             }
+            state.credentialLoadFailed.set(false)
             logExternalCredentialChange(state, credentials)
             state.cachedCredentials.set(credentials)
             return credentials
+        }
+    }
+
+    private fun resolvePendingCredentials(state: ProviderAuthState, pending: PendingCredentials): OAuthCredentials? {
+        val persisted = try {
+            state.credentialStore.load()
+        } catch (exception: Exception) {
+            LOG.warn(
+                "Failed to reload OAuth credentials for ${state.type.displayName};" +
+                    " keeping the rotated token in memory",
+                exception,
+            )
+            return synchronized(state.credentialsLock) {
+                if (state.pendingCredentials.get() === pending &&
+                    state.credentialClearCounter.get() == pending.clearMarker
+                ) {
+                    state.cachedCredentials.set(pending.credentials)
+                    pending.credentials
+                } else {
+                    state.pendingCredentials.get()?.credentials ?: state.cachedCredentials.get()
+                }
+            }
+        }
+        synchronized(state.credentialsLock) {
+            if (state.pendingCredentials.get() !== pending) {
+                return state.pendingCredentials.get()?.credentials ?: state.cachedCredentials.get()
+            }
+            if (state.credentialClearCounter.get() != pending.clearMarker) {
+                state.pendingCredentials.set(null)
+                state.cachedCredentials.set(null)
+                state.cacheLoaded.set(true)
+                return null
+            }
+            state.credentialLoadFailed.set(false)
+            when {
+                persisted != null && sameCredentials(persisted, pending.credentials) -> {
+                    state.pendingCredentials.set(null)
+                    state.cachedCredentials.set(persisted)
+                    state.cacheLoaded.set(true)
+                    return persisted
+                }
+                persisted != null && !sameCredentials(persisted, pending.expectedPersistedCredentials) -> {
+                    LOG.info("Discarded memory-only OAuth credentials for ${state.type.displayName} after stored credentials changed")
+                    state.pendingCredentials.set(null)
+                    state.cachedCredentials.set(persisted)
+                    state.cacheLoaded.set(true)
+                    return persisted
+                }
+                persisted == null -> {
+                    LOG.info("Discarded memory-only OAuth credentials for ${state.type.displayName} after stored credentials were cleared")
+                    state.pendingCredentials.set(null)
+                    state.cachedCredentials.set(null)
+                    state.cacheLoaded.set(true)
+                    return null
+                }
+            }
+            try {
+                state.credentialStore.save(pending.credentials)
+                state.pendingCredentials.set(null)
+            } catch (exception: Exception) {
+                LOG.warn(
+                    "Failed to persist memory-only OAuth credentials for ${state.type.displayName}; will retry later",
+                    exception,
+                )
+            }
+            state.cachedCredentials.set(pending.credentials)
+            state.cacheLoaded.set(true)
+            return pending.credentials
         }
     }
 
@@ -323,28 +473,143 @@ class QuotaAuthService(
 
     private fun refreshCredentialsBlocking(state: ProviderAuthState): OAuthCredentials? {
         synchronized(state.refreshLock) {
+            val clearMarker = currentCredentialClearMarker(state)
             val latestCredentials = getCredentialsBlocking(state) ?: return null
             if (!isExpired(latestCredentials)) {
                 return latestCredentials
             }
 
-            val clearMarker = currentCredentialClearMarker(state)
             logRefreshAttempt(state, latestCredentials, "access token expired")
-            return try {
-                val refreshed = runBlocking {
-                    state.tokenOperations.refreshCredentials(latestCredentials)
-                }
-                persistCredentialsIfCurrent(state, clearMarker, refreshed, "refresh")
-            } catch (exception: OAuthTokenRequestException) {
-                LOG.warn("Token refresh failed for ${state.type.displayName}", exception)
-                if (exception.isTerminalAuthFailure()) {
-                    clearCredentialsIfUnchanged(state, latestCredentials)
-                }
-                null
-            } catch (exception: Exception) {
-                LOG.warn("Token refresh failed for ${state.type.displayName}", exception)
-                null
+            return refreshWithFailureBackoff(state, clearMarker, latestCredentials, "refresh")
+        }
+    }
+
+    /**
+     * Refresh failures never delete stored credentials. A changed shared-store snapshot may be a
+     * token another IDE already rotated; adopt it and retry only when it is still expired.
+     */
+    private fun refreshWithFailureBackoff(
+        state: ProviderAuthState,
+        clearMarker: Long,
+        initialCredentials: OAuthCredentials,
+        operation: String,
+    ): OAuthCredentials? {
+        val now = System.currentTimeMillis()
+        val previousFailure = state.lastRefreshFailure.get()
+        if (previousFailure != null &&
+            sameCredentials(previousFailure.credentials, initialCredentials) &&
+            now - previousFailure.failedAtMs < REFRESH_FAILURE_BACKOFF_MS
+        ) {
+            LOG.info("Skipped repeated token $operation for ${state.type.displayName} after a recent failure")
+            return null
+        }
+        var attemptedCredentials = initialCredentials
+        val refreshed = refreshWithStoreRecovery(state, clearMarker, initialCredentials, operation) {
+            attemptedCredentials = it
+        }
+        if (refreshed == null) {
+            if (currentCredentialClearMarker(state) == clearMarker) {
+                state.lastRefreshFailure.set(
+                    RefreshFailure(attemptedCredentials, System.currentTimeMillis())
+                )
             }
+        } else {
+            state.lastRefreshFailure.set(null)
+        }
+        return refreshed
+    }
+
+    private fun refreshWithStoreRecovery(
+        state: ProviderAuthState,
+        clearMarker: Long,
+        initialCredentials: OAuthCredentials,
+        operation: String,
+        onAttempt: (OAuthCredentials) -> Unit,
+    ): OAuthCredentials? {
+        var credentials = initialCredentials
+        var attempt = 0
+        while (attempt < 2) {
+            attempt++
+            try {
+                onAttempt(credentials)
+                val refreshedCredentials = runBlocking {
+                    state.tokenOperations.refreshCredentials(credentials)
+                }
+                return persistCredentialsIfCurrent(
+                    state = state,
+                    clearMarker = clearMarker,
+                    credentials = refreshedCredentials,
+                    operation = operation,
+                    previousCredentials = credentials,
+                    keepInMemoryOnFailure = true,
+                )
+            } catch (exception: CancellationException) {
+                throw exception
+            } catch (exception: OAuthTokenRequestException) {
+                LOG.warn("Token $operation failed for ${state.type.displayName} (attempt $attempt)", exception)
+                if (!exception.isTerminalAuthFailure()) {
+                    return null
+                }
+                if (attempt == 1) {
+                    if (currentCredentialClearMarker(state) != clearMarker) {
+                        return null
+                    }
+                    val persisted = try {
+                        state.credentialStore.load()
+                    } catch (loadException: Exception) {
+                        state.credentialLoadFailed.set(true)
+                        LOG.warn("Failed to reload OAuth credentials for ${state.type.displayName} after invalid_grant", loadException)
+                        return null
+                    }
+                    state.credentialLoadFailed.set(false)
+                    if (persisted == null) {
+                        synchronized(state.credentialsLock) {
+                            if (state.credentialClearCounter.get() == clearMarker) {
+                                state.pendingCredentials.set(null)
+                                state.cachedCredentials.set(null)
+                                state.cacheLoaded.set(true)
+                            }
+                        }
+                        return null
+                    }
+                    if (currentCredentialClearMarker(state) != clearMarker) {
+                        return null
+                    }
+                    if (sameCredentials(persisted, credentials)) {
+                        return null
+                    }
+                    credentials = adoptCredentialsIfCurrent(state, clearMarker, persisted, operation)
+                        ?: return null
+                    if (!isExpired(credentials)) {
+                        return credentials
+                    }
+                    continue
+                }
+                return null
+            } catch (exception: Exception) {
+                LOG.warn("Token $operation failed for ${state.type.displayName} (attempt $attempt)", exception)
+                return null
+            }
+        }
+        return null
+    }
+
+    private fun adoptCredentialsIfCurrent(
+        state: ProviderAuthState,
+        clearMarker: Long,
+        credentials: OAuthCredentials,
+        operation: String,
+    ): OAuthCredentials? {
+        synchronized(state.credentialsLock) {
+            if (state.credentialClearCounter.get() != clearMarker) {
+                state.cachedCredentials.set(null)
+                state.cacheLoaded.set(true)
+                LOG.info("Discarded OAuth credentials for ${state.type.displayName} from $operation after logout")
+                return null
+            }
+            state.cachedCredentials.set(credentials)
+            state.cacheLoaded.set(true)
+            return credentials
         }
     }
 
@@ -367,6 +632,9 @@ class QuotaAuthService(
         clearMarker: Long,
         credentials: OAuthCredentials,
         operation: String,
+        previousCredentials: OAuthCredentials? = null,
+        keepInMemoryOnFailure: Boolean = false,
+        loginGeneration: Long? = null,
     ): OAuthCredentials? {
         synchronized(state.credentialsLock) {
             if (state.credentialClearCounter.get() != clearMarker) {
@@ -375,48 +643,43 @@ class QuotaAuthService(
                 LOG.info("Discarded OAuth credentials for ${state.type.displayName} from $operation after logout")
                 return null
             }
-            state.credentialStore.save(credentials)
+            if (loginGeneration != null && state.loginGeneration.get() != loginGeneration) {
+                LOG.info("Discarded OAuth credentials for ${state.type.displayName} from canceled login")
+                return null
+            }
+            try {
+                state.credentialStore.save(credentials)
+                state.pendingCredentials.set(null)
+            } catch (exception: Exception) {
+                if (!keepInMemoryOnFailure) {
+                    throw exception
+                }
+                val existingPending = state.pendingCredentials.get()
+                val expectedPersistedCredentials = if (existingPending != null &&
+                    sameCredentials(existingPending.credentials, previousCredentials)
+                ) {
+                    existingPending.expectedPersistedCredentials
+                } else {
+                    requireNotNull(previousCredentials)
+                }
+                state.pendingCredentials.set(
+                    PendingCredentials(
+                        credentials = credentials,
+                        expectedPersistedCredentials = expectedPersistedCredentials,
+                        clearMarker = clearMarker,
+                    )
+                )
+                LOG.warn(
+                    "Failed to persist OAuth credentials for ${state.type.displayName} after $operation;" +
+                        " keeping them authoritative in memory and retrying persistence later",
+                    exception,
+                )
+            }
+            state.credentialLoadFailed.set(false)
             state.cachedCredentials.set(credentials)
             state.cacheLoaded.set(true)
             return credentials
         }
-    }
-
-    /**
-     * Drops the stored login after the token endpoint rejected the refresh token.
-     *
-     * The persisted entry is re-read first because the IDE credential store is shared between all
-     * JetBrains IDEs on the machine: a second IDE can rotate the refresh token between our read and
-     * our refresh, and the rejection then only means "this copy is stale", not "the login is gone".
-     * Clearing on that would log the user out of a perfectly good session.
-     */
-    private fun clearCredentialsIfUnchanged(state: ProviderAuthState, expected: OAuthCredentials) {
-        val persisted = runCatching { state.credentialStore.load() }.getOrNull()
-        synchronized(state.credentialsLock) {
-            if (persisted != null && persisted.refreshToken != expected.refreshToken) {
-                LOG.info(
-                    "Kept OAuth credentials for ${state.type.displayName} after a rejected refresh:" +
-                        " stored refresh token changed to ${QuotaTokenUtil.fingerprint(persisted.refreshToken)}" +
-                        " while ${QuotaTokenUtil.fingerprint(expected.refreshToken)} was in flight," +
-                        " so another IDE process rotated it"
-                )
-                state.cachedCredentials.set(persisted)
-                state.cacheLoaded.set(true)
-                return
-            }
-            if (!sameCredentials(state.cachedCredentials.get(), expected)) {
-                LOG.info("Skipped clearing OAuth credentials for ${state.type.displayName} after refresh failure because credentials changed")
-                return
-            }
-            state.credentialClearCounter.incrementAndGet()
-            state.cachedCredentials.set(null)
-            state.cacheLoaded.set(true)
-            state.credentialStore.clear()
-        }
-        LOG.warn(
-            "Cleared stored OAuth credentials for ${state.type.displayName} after the token endpoint rejected" +
-                " refresh token ${QuotaTokenUtil.fingerprint(expected.refreshToken)}; a new login is required"
-        )
     }
 
     override fun dispose() {
@@ -427,6 +690,7 @@ class QuotaAuthService(
     companion object {
         private val LOG = Logger.getInstance(QuotaAuthService::class.java)
         private const val EXPIRY_SKEW_MS: Long = 5 * 60 * 1000L
+        private const val REFRESH_FAILURE_BACKOFF_MS: Long = 30 * 1000L
 
         @JvmStatic
         fun getInstance(): QuotaAuthService {

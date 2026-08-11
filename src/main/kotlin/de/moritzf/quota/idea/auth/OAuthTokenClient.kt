@@ -99,14 +99,9 @@ class OAuthTokenClient(
     }
 
     /**
-     * Retries a refresh that failed before the token endpoint could act on the request. Without this
-     * a single blip ends the refresh, and the provider reports the account as not logged in until
-     * the next scheduled update.
-     *
-     * The retry is deliberately narrow because providers such as Anthropic rotate the refresh token
-     * on every use: once the request reached the endpoint the old token may already be spent, so
-     * resending it would be answered with `invalid_grant` and look like a revoked login. Only
-     * failures that prove the request never got a response are retried.
+     * Retries only failures that prove the request never reached the token endpoint. Once a request
+     * may have been sent, neither a connection failure nor a 5xx response proves that a rotating
+     * refresh token is still usable.
      */
     private suspend fun postTokenWithRetry(parameters: Map<String, String>): HttpResponse<String> {
         for (attempt in 0 until MAX_REFRESH_ATTEMPTS) {
@@ -115,26 +110,18 @@ class OAuthTokenClient(
                 delay(RETRY_BASE_DELAY_MS shl (attempt - 1))
             }
             try {
-                val response = postToken(parameters)
-                if (response.statusCode() < 500 || lastAttempt) {
-                    return response
-                }
-                LOG.warn("Token refresh returned HTTP ${response.statusCode()}, retrying")
+                return postToken(parameters)
             } catch (exception: IOException) {
-                if (lastAttempt || !isConnectFailure(exception)) {
+                if (lastAttempt || !isPreSendFailure(exception)) {
                     throw exception
                 }
-                LOG.warn("Token refresh could not reach the token endpoint, retrying", exception)
+                LOG.warn("Token refresh could not connect to the token endpoint, retrying", exception)
             }
         }
         throw IOException("Token refresh failed")
     }
 
-    /**
-     * True when the failure happened while establishing the connection, so the token endpoint never
-     * saw the request and the refresh token is untouched.
-     */
-    private fun isConnectFailure(exception: IOException): Boolean {
+    private fun isPreSendFailure(exception: IOException): Boolean {
         var current: Throwable? = exception
         while (current != null) {
             if (current is HttpConnectTimeoutException ||
@@ -196,8 +183,7 @@ class OAuthTokenClient(
         val tokenResponse = runCatching { parseResponse(response.body()) }.getOrNull()
         val oauthError = tokenResponse?.error?.takeUnless { it.isBlank() }
         val description = tokenResponse?.errorDescription?.takeUnless { it.isBlank() }
-        val fallbackBody = response.body().takeUnless { it.isBlank() }
-        val detail = description ?: oauthError ?: fallbackBody
+        val detail = description ?: oauthError
         val message = buildString {
             append(prefix)
             append(": HTTP ")

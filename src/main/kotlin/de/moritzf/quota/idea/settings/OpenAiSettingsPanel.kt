@@ -102,12 +102,20 @@ internal class OpenAiSettingsPanel(
         }
 
         logoutButton.addActionListener {
-            QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.OPEN_AI)
-            QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.OPEN_AI, "Not logged in")
-            authStatusMessage = AuthStatusMessage("Logged out", false, AuthStatusKind.DISCONNECTED)
+            val cleared = QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.OPEN_AI)
+            if (cleared) {
+                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.OPEN_AI, "Not logged in")
+            }
+            authStatusMessage = if (cleared) {
+                AuthStatusMessage("Logged out", false, AuthStatusKind.DISCONNECTED)
+            } else {
+                AuthStatusMessage("Could not remove login from Password Safe", true, AuthStatusKind.CONNECTED)
+            }
             updateAuthUi()
             updateAccountFields()
-            onLogout?.invoke()
+            if (cleared) {
+                onLogout?.invoke()
+            }
         }
 
         val usageTrackingConfigPanel = panel {
