@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- Claude refresh failures no longer delete the stored login. The plugin adopts newer tokens shared by another IDE and keeps rotated tokens authoritative while retrying failed Password Safe writes.
+- Fixed Claude refresh retries so ambiguous connection drops and 5xx responses do not immediately resend a refresh token Anthropic may already have rotated. Only failures known to happen before the request is sent are retried.
 
 ## [1.7.7] - 2026-08-10
 - Ollama Cloud now shows a real countdown for session and weekly limits. When the usage API omits reset times, the plugin uses the global schedule (5-hour session grid and Monday 00:00 UTC weekly).
