@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.8] - 2026-08-11
 - Claude refresh failures no longer delete the stored login. The plugin adopts newer tokens shared by another IDE and keeps rotated tokens authoritative while retrying failed Password Safe writes.
 - Fixed Claude refresh retries so ambiguous connection drops and 5xx responses do not immediately resend a refresh token Anthropic may already have rotated. Only failures known to happen before the request is sent are retried.
 
