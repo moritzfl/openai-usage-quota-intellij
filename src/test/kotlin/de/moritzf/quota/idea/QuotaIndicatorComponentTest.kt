@@ -7,26 +7,20 @@ import de.moritzf.quota.cursor.CursorSpendLimit
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.github.GitHubSubscriptionState
 import de.moritzf.quota.github.GitHubUsageWindow
-import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorComponent
-import de.moritzf.quota.idea.ui.indicator.buildGitHubTooltipText
+import de.moritzf.quota.idea.common.QuotaProviderType
+import de.moritzf.quota.idea.ui.indicator.ProviderAuthState
+import de.moritzf.quota.idea.ui.indicator.buildIndicatorTooltip
 import de.moritzf.quota.idea.ui.indicator.gitHubBarDisplayText
 import de.moritzf.quota.idea.ui.indicator.openCodeBarDisplayText
 import de.moritzf.quota.idea.ui.indicator.ollamaBarDisplayText
-import de.moritzf.quota.idea.ui.indicator.buildOllamaTooltipText
-import de.moritzf.quota.idea.ui.indicator.buildOpenCodeTooltipText
 import de.moritzf.quota.idea.ui.indicator.indicatorBarDisplayText
 import de.moritzf.quota.idea.ui.indicator.indicatorDisplayPercent
-import de.moritzf.quota.idea.ui.indicator.indicatorQuotaState
-import de.moritzf.quota.idea.ui.indicator.QuotaUsageColors
-import de.moritzf.quota.idea.ui.indicator.buildQuotaTooltipText
 import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.ollama.OllamaUsageWindow
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.businessMemberAssignedCreditsDepleted
-import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.businessMemberIndividualSpendLimitReached
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.businessMemberWithAssignedCredits
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.plusWithRateLimitsAndZeroPurchasedCredits
-import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.proliteWithAdditionalRateLimits
 import de.moritzf.quota.openai.isCreditsDepleted
 import de.moritzf.quota.opencode.OpenCodeQuota
 import de.moritzf.quota.openai.UsageWindow
@@ -43,12 +37,12 @@ class QuotaIndicatorComponentTest {
     @Test
     fun indicatorBarDisplayTextFallsBackToSecondaryCodexWindow() {
         val quota = OpenAiCodexQuota(
-            secondary = UsageWindow(usedPercent = 42.0),
+            secondary = UsageWindow(usedPercent = 42.0, windowDuration = Duration.ofDays(7)),
         )
 
         assertEquals("42%", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(42, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertEquals("OpenAI usage quota: 42% used", buildQuotaTooltipText(quota, error = null, loggedIn = true))
+        assertEquals("OpenAI • 42% Weekly", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
@@ -59,7 +53,7 @@ class QuotaIndicatorComponentTest {
 
         assertEquals("17%", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(17, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertEquals("OpenAI code review quota: 17% used", buildQuotaTooltipText(quota, error = null, loggedIn = true))
+        assertEquals("OpenAI • 17% Review", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
@@ -104,7 +98,7 @@ class QuotaIndicatorComponentTest {
 
         assertEquals("17%", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(17, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertEquals("OpenAI code review quota: 17% used", buildQuotaTooltipText(quota, error = null, loggedIn = true))
+        assertEquals("OpenAI • 17% Review", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
@@ -113,29 +107,15 @@ class QuotaIndicatorComponentTest {
 
         assertEquals("available", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(-1, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertTrue(buildQuotaTooltipText(quota, error = null, loggedIn = true).contains("Assigned credits: Available"))
+        assertEquals("OpenAI • Self_serve_business_usage_based", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
     fun indicatorShowsDepletedForBusinessMemberAssignedCreditsDepletedFixture() {
         val quota = businessMemberAssignedCreditsDepleted()
-        val tooltip = buildQuotaTooltipText(quota, error = null, loggedIn = true)
-
         assertEquals("100%", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(100, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertTrue(tooltip.contains("Assigned credits:"))
-        assertTrue(tooltip.lowercase().contains("depleted"))
-    }
-
-    @Test
-    fun tooltipShowsSingleCreditUnitLineWhenIndividualSpendLimitReached() {
-        val quota = businessMemberIndividualSpendLimitReached()
-
-        val tooltip = buildQuotaTooltipText(quota, error = null, loggedIn = true)
-
-        assertTrue(tooltip.contains("Individual limit: 50 credits (reached)"))
-        assertFalse(tooltip.contains("Individual spend limit reached"))
-        assertFalse(tooltip.contains("$50"))
+        assertEquals("OpenAI • Self_serve_business_usage_based • 100%", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
@@ -146,17 +126,9 @@ class QuotaIndicatorComponentTest {
         assertTrue(text.startsWith("1%"))
         assertEquals(1, indicatorDisplayPercent(quota, error = null, loggedIn = true))
         assertFalse(quota.isCreditsDepleted())
-        assertFalse(buildQuotaTooltipText(quota, error = null, loggedIn = true).contains("Assigned credits"))
-    }
-
-    @Test
-    fun tooltipShowsSparkWindowsSeparately() {
-        val quota = proliteWithAdditionalRateLimits()
-
-        val tooltip = buildQuotaTooltipText(quota, error = null, loggedIn = true)
-
-        assertTrue(tooltip.contains("Codex Spark 5-hour: 0%"))
-        assertTrue(tooltip.contains("Codex Spark Weekly: 0%"))
+        val tooltip = tooltip(QuotaProviderType.OPEN_AI, quota)
+        assertTrue(tooltip.startsWith("OpenAI • Plus • 1%"))
+        assertFalse(tooltip.contains("Assigned credits"))
     }
 
     @Test
@@ -177,7 +149,7 @@ class QuotaIndicatorComponentTest {
 
         assertEquals("loading...", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(-1, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertEquals("OpenAI usage quota: loading", buildQuotaTooltipText(quota, error = null, loggedIn = true))
+        assertEquals("OpenAI", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
@@ -189,9 +161,9 @@ class QuotaIndicatorComponentTest {
             completions = GitHubUsageWindow(label = "Completions", unlimited = true),
         )
 
-        val tooltip = buildGitHubTooltipText(quota, error = null)
+        val tooltip = tooltip(QuotaProviderType.GITHUB, quota)
 
-        assertTrue(tooltip.contains("Premium requests: 27%"))
+        assertEquals("GitHub Copilot • Copilot Individual • 27% Premium requests", tooltip)
         assertFalse(tooltip.contains("Chat"))
         assertFalse(tooltip.contains("Completions"))
     }
@@ -204,7 +176,7 @@ class QuotaIndicatorComponentTest {
         )
 
         assertEquals("ended", gitHubBarDisplayText(quota, error = null))
-        assertEquals("Copilot Individual: subscription ended", buildGitHubTooltipText(quota, error = null))
+        assertEquals("GitHub Copilot • Copilot Individual", tooltip(QuotaProviderType.GITHUB, quota))
     }
 
     @Test
@@ -215,7 +187,7 @@ class QuotaIndicatorComponentTest {
         )
 
         assertEquals("inactive", gitHubBarDisplayText(quota, error = null))
-        assertEquals("Copilot Individual: no active subscription", buildGitHubTooltipText(quota, error = null))
+        assertEquals("GitHub Copilot • Copilot Individual", tooltip(QuotaProviderType.GITHUB, quota))
     }
 
     @Test
@@ -227,7 +199,7 @@ class QuotaIndicatorComponentTest {
 
         assertEquals("12%", de.moritzf.quota.idea.ui.indicator.cursorBarDisplayText(quota, error = null))
         assertEquals(12, de.moritzf.quota.idea.ui.indicator.cursorIndicatorState(quota)?.percent)
-        assertTrue(de.moritzf.quota.idea.ui.indicator.buildCursorTooltipText(quota, error = null).contains("Included: 12%"))
+        assertEquals("Cursor • 12% Included", tooltip(QuotaProviderType.CURSOR, quota))
     }
 
     @Test
@@ -281,10 +253,7 @@ class QuotaIndicatorComponentTest {
         )
 
         assertEquals("8% (5h)", ollamaBarDisplayText(quota, error = null))
-        assertEquals(
-            "Ollama quota\nSession: 8% (5h)\nWeekly: 6% (7d)",
-            buildOllamaTooltipText(quota, error = null),
-        )
+        assertEquals("Ollama • 8% Session", tooltip(QuotaProviderType.OLLAMA, quota))
     }
 
     @Test
@@ -295,10 +264,10 @@ class QuotaIndicatorComponentTest {
             weeklyUsage = OllamaUsageWindow(usagePercent = 5.7),
         )
 
-        val tooltip = buildOllamaTooltipText(quota, error = null)
-        assertTrue(tooltip.contains("Session: 8% •"))
-        assertTrue(tooltip.contains("Weekly: 6% (7d)"))
-        assertTrue(!tooltip.contains("unknown"))
+        val tooltip = tooltip(QuotaProviderType.OLLAMA, quota)
+        assertTrue(tooltip.startsWith("Ollama • 8% Session • Resets in "))
+        assertFalse(tooltip.contains("unknown"))
+        assertFalse(tooltip.contains("(7d)"))
     }
 
     @Test
@@ -320,7 +289,7 @@ class QuotaIndicatorComponentTest {
 
         val text = openCodeBarDisplayText(quota, error = null)
         assertEquals("\$10.00", text)
-        assertEquals("OpenCode Zen credits: Balance: \$10.00", buildOpenCodeTooltipText(quota, error = null))
+        assertEquals("OpenCode", tooltip(QuotaProviderType.OPEN_CODE, quota))
     }
 
     @Test
@@ -334,3 +303,10 @@ class QuotaIndicatorComponentTest {
         assertEquals("error", text)
     }
 }
+
+private fun tooltip(
+    type: QuotaProviderType,
+    quota: de.moritzf.quota.shared.ProviderQuota?,
+    error: String? = null,
+    authState: ProviderAuthState = ProviderAuthState.AUTHENTICATED,
+): String = buildIndicatorTooltip(type, quota, error, authState)

@@ -51,7 +51,9 @@ internal interface ProviderUi {
     /** Label used in the popup "Updated:" row. */
     val updatedAtLabel: String get() = type.displayName
 
-    fun tooltip(quota: ProviderQuota?, error: String?): String
+    fun tooltip(quota: ProviderQuota?, error: String?): String =
+        buildIndicatorTooltip(type, quota, error, authState())
+
     fun barText(quota: ProviderQuota?, error: String?): String
 
     /** Percent for the bar indicator, or -1 when unknown. */
@@ -81,9 +83,6 @@ internal object OpenAiUi : ProviderUi {
     override val icon: Icon get() = QuotaIcons.OPENAI
     override val updatedAtLabel = "Codex"
 
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildQuotaTooltipText(quota as? OpenAiCodexQuota, error)
-
     override fun barText(quota: ProviderQuota?, error: String?) =
         indicatorBarDisplayText(quota as? OpenAiCodexQuota, error, isLoggedIn())
 
@@ -112,9 +111,6 @@ internal object OpenCodeUi : ProviderUi {
     override val type = QuotaProviderType.OPEN_CODE
     override val icon: Icon get() = QuotaIcons.OPENCODE
 
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildOpenCodeTooltipText(quota as? OpenCodeQuota, error)
-
     override fun barText(quota: ProviderQuota?, error: String?) =
         openCodeBarDisplayText(quota as? OpenCodeQuota, error)
 
@@ -138,9 +134,6 @@ internal object OpenCodeUi : ProviderUi {
 internal object OllamaUi : ProviderUi {
     override val type = QuotaProviderType.OLLAMA
     override val icon: Icon get() = QuotaIcons.OLLAMA
-
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildOllamaTooltipText(quota as? OllamaQuota, error)
 
     override fun barText(quota: ProviderQuota?, error: String?) =
         ollamaBarDisplayText(quota as? OllamaQuota, error)
@@ -167,9 +160,6 @@ internal object ZaiUi : ProviderUi {
     override val type = QuotaProviderType.ZAI
     override val icon: Icon get() = QuotaIcons.ZAI
 
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildZaiTooltipText(quota as? ZaiQuota, error)
-
     override fun barText(quota: ProviderQuota?, error: String?) =
         zaiBarDisplayText(quota as? ZaiQuota, error)
 
@@ -194,9 +184,6 @@ internal object ZaiUi : ProviderUi {
 internal object MiniMaxUi : ProviderUi {
     override val type = QuotaProviderType.MINIMAX
     override val icon: Icon get() = QuotaIcons.MINIMAX
-
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildMiniMaxTooltipText(quota as? MiniMaxQuota, error)
 
     override fun barText(quota: ProviderQuota?, error: String?) =
         miniMaxBarDisplayText(quota as? MiniMaxQuota, error)
@@ -223,9 +210,6 @@ internal object KimiUi : ProviderUi {
     override val type = QuotaProviderType.KIMI
     override val icon: Icon get() = QuotaIcons.KIMI
 
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildKimiTooltipText(quota as? KimiQuota, error)
-
     override fun barText(quota: ProviderQuota?, error: String?) =
         kimiBarDisplayText(quota as? KimiQuota, error)
 
@@ -250,9 +234,6 @@ internal object KimiUi : ProviderUi {
 internal object GitHubUi : ProviderUi {
     override val type = QuotaProviderType.GITHUB
     override val icon: Icon get() = QuotaIcons.GITHUB
-
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildGitHubTooltipText(quota as? GitHubQuota, error)
 
     override fun barText(quota: ProviderQuota?, error: String?) =
         gitHubBarDisplayText(quota as? GitHubQuota, error)
@@ -279,9 +260,6 @@ internal object CursorUi : ProviderUi {
     override val type = QuotaProviderType.CURSOR
     override val icon: Icon get() = QuotaIcons.CURSOR
 
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildCursorTooltipText(quota as? CursorQuota, error)
-
     override fun barText(quota: ProviderQuota?, error: String?) =
         cursorBarDisplayText(quota as? CursorQuota, error)
 
@@ -307,9 +285,6 @@ internal object SuperGrokUi : ProviderUi {
     override val type = QuotaProviderType.SUPERGROK
     override val icon: Icon get() = QuotaIcons.SUPERGROK
 
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildSuperGrokTooltipText(quota as? SuperGrokQuota, error)
-
     override fun barText(quota: ProviderQuota?, error: String?) =
         superGrokBarDisplayText(quota as? SuperGrokQuota, error)
 
@@ -333,9 +308,6 @@ internal object SuperGrokUi : ProviderUi {
 internal object ClaudeUi : ProviderUi {
     override val type = QuotaProviderType.CLAUDE
     override val icon: Icon get() = QuotaIcons.CLAUDE
-
-    override fun tooltip(quota: ProviderQuota?, error: String?) =
-        buildClaudeTooltipText(quota as? ClaudeQuota, error)
 
     override fun barText(quota: ProviderQuota?, error: String?) =
         claudeBarDisplayText(quota as? ClaudeQuota, error)

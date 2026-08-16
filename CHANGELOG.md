@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- Status bar quota tooltip now uses the same short wording for every provider: subscription, plan when known, used percent with window kind, and time until reset.
 
 ## [1.7.8] - 2026-08-11
 - Claude refresh failures no longer delete the stored login. The plugin adopts newer tokens shared by another IDE and keeps rotated tokens authoritative while retrying failed Password Safe writes.

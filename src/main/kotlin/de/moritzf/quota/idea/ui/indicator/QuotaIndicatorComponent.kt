@@ -1,23 +1,17 @@
 package de.moritzf.quota.idea.ui.indicator
 
 import com.intellij.ui.components.JBLabel
-import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.settings.QuotaDisplayMode
 import de.moritzf.quota.idea.ui.QuotaUiUtil
-import de.moritzf.quota.idea.ui.popup.toDisplayLabel
 import com.intellij.util.IconUtil
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.openai.OpenAiCodexQuota
-import de.moritzf.quota.openai.OpenAiCredits
-import de.moritzf.quota.openai.OpenAiSpendControl
-import de.moritzf.quota.openai.hasSpendControlDetail
 import de.moritzf.quota.openai.isAssignedCreditsQuota
 import de.moritzf.quota.openai.isCreditsDepleted
 import de.moritzf.quota.opencode.OpenCodeQuota
 import de.moritzf.quota.opencode.OpenCodeUsageWindow
 import de.moritzf.quota.openai.UsageWindow
-import de.moritzf.quota.ollama.OllamaUsageWindow
 import de.moritzf.quota.zai.ZaiQuota
 import de.moritzf.quota.cursor.CursorQuota
 import de.moritzf.quota.minimax.MiniMaxQuota
@@ -267,53 +261,12 @@ internal class QuotaIndicatorComponent(
     }
 }
 
-internal fun buildOllamaTooltipText(quota: de.moritzf.quota.ollama.OllamaQuota?, error: String?): String {
-    if (error != null) return "Ollama quota: $error"
-    if (quota == null) return "Ollama quota: loading"
-    val parts = mutableListOf<String>()
-    // /api/usage currently omits resets_at; fall back to known window lengths (5h / 7d)
-    // instead of printing "unknown".
-    quota.sessionUsage?.let {
-        parts.add(
-            "Session: ${formatPercentWithOptionalTime(it.usagePercent.roundToInt(), it.resetsAt, QuotaPeriodDurations.ROLLING_5H)}",
-        )
-    }
-    quota.weeklyUsage?.let {
-        parts.add(
-            "Weekly: ${formatPercentWithOptionalTime(it.usagePercent.roundToInt(), it.resetsAt, QuotaPeriodDurations.WEEKLY)}",
-        )
-    }
-    if (parts.isEmpty()) return "Ollama quota (no usage data)"
-    return "Ollama quota\n${parts.joinToString("\n")}"
-}
-
 internal fun ollamaBarDisplayText(quota: de.moritzf.quota.ollama.OllamaQuota?, error: String?): String {
     if (error != null) return "error"
     if (quota == null) return "loading..."
 
     val state = ollamaIndicatorState(quota) ?: return "no data"
     return formatPercentWithOptionalTime(state.percent, state.resetsAt, state.period)
-}
-
-internal fun buildZaiTooltipText(quota: ZaiQuota?, error: String?): String {
-    if (error != null) return "Z.ai quota: $error"
-    if (quota == null) return "Z.ai quota: loading"
-    val parts = mutableListOf<String>()
-    quota.sessionUsage?.let { parts.add("Session: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    quota.weeklyUsage?.let { parts.add("Weekly: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    quota.webSearchUsage?.let { parts.add("Web searches: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    val plan = quota.plan.takeIf { it.isNotBlank() } ?: "Z.ai"
-    if (parts.isEmpty()) return "$plan quota: no usage data"
-    return "$plan quota:\n${parts.joinToString("\n")}"
-}
-
-internal fun buildMiniMaxTooltipText(quota: MiniMaxQuota?, error: String?): String {
-    if (error != null) return "MiniMax quota: $error"
-    if (quota == null) return "MiniMax quota: loading"
-    val usage = quota.sessionUsage
-    val plan = quota.plan.ifBlank { "MiniMax Coding Plan (${quota.region})" }
-    if (usage == null) return "$plan: no usage data"
-    return "$plan:\nSession: ${clampPercent(usage.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(usage.resetsAt) ?: "unknown"}"
 }
 
 internal fun miniMaxBarDisplayText(quota: MiniMaxQuota?, error: String?): String {
@@ -327,17 +280,6 @@ internal fun miniMaxBarDisplayText(quota: MiniMaxQuota?, error: String?): String
     return if (reset != null) "$text • $reset" else text
 }
 
-internal fun buildKimiTooltipText(quota: KimiQuota?, error: String?): String {
-    if (error != null) return "Kimi quota: $error"
-    if (quota == null) return "Kimi quota: loading"
-    val plan = quota.plan.ifBlank { "Kimi Code" }
-    val parts = mutableListOf<String>()
-    quota.sessionUsage?.let { parts.add("Session: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    quota.totalUsage?.let { parts.add("Overall: ${clampPercent(it.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}") }
-    if (parts.isEmpty()) return "$plan: no usage data"
-    return "$plan:\n${parts.joinToString("\n")}"
-}
-
 internal fun kimiBarDisplayText(quota: KimiQuota?, error: String?): String {
     if (error != null) return "error"
     if (quota == null) return "loading..."
@@ -347,38 +289,6 @@ internal fun kimiBarDisplayText(quota: KimiQuota?, error: String?): String {
     val reset = QuotaUiUtil.formatResetCompact(usage.resetsAt)
     val text = "$percent%"
     return if (reset != null) "$text • $reset" else text
-}
-
-internal fun buildCursorTooltipText(quota: CursorQuota?, error: String?): String {
-    if (error != null) return "Cursor quota: $error"
-    if (quota == null) return "Cursor quota: loading"
-    val plan = quota.planName.takeIf { it.isNotBlank() }
-        ?: quota.membershipType.takeIf { it.isNotBlank() }
-        ?: "Cursor"
-    val parts = mutableListOf<String>()
-    quota.requestUsage?.usagePercent()?.let {
-        parts.add("Requests: ${clampPercent(it.roundToInt())}%")
-    }
-    quota.planUsage?.let {
-        parts.add("Included: ${clampPercent(it.totalPercentUsed.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(it.billingCycleEnd) ?: "unknown"}")
-        if (quota.requestUsage == null && it.autoPercentUsed > 0.0) {
-            parts.add("Auto: ${clampPercent(it.autoPercentUsed.roundToInt())}%")
-        }
-        if (quota.requestUsage == null && it.apiPercentUsed > 0.0) {
-            parts.add("API: ${clampPercent(it.apiPercentUsed.roundToInt())}%")
-        }
-    }
-    quota.onDemandUsage?.let {
-        parts.add("On-demand: ${formatCursorUsdUsage(it.usedUsd, it.limitUsd)}")
-    }
-    quota.teamOnDemandUsage?.let {
-        parts.add("Team on-demand: ${formatCursorUsdUsage(it.usedUsd, it.limitUsd)}")
-    }
-    quota.spendLimit?.usagePercent()?.let {
-        parts.add("Team spend: ${clampPercent(it.roundToInt())}%")
-    }
-    if (parts.isEmpty()) return "$plan quota: no usage data"
-    return "$plan quota:\n${parts.joinToString("\n")}"
 }
 
 internal fun cursorBarDisplayText(quota: CursorQuota?, error: String?): String {
@@ -396,19 +306,6 @@ internal fun kimiDisplayWindow(quota: KimiQuota): de.moritzf.quota.kimi.KimiUsag
     return quota.sessionUsage ?: quota.totalUsage
 }
 
-internal fun buildGitHubTooltipText(quota: GitHubQuota?, error: String?): String {
-    if (error != null) return "GitHub Copilot quota: $error"
-    if (quota == null) return "GitHub Copilot quota: loading"
-    val plan = quota.plan.ifBlank { "GitHub Copilot" }
-    githubInactiveTooltip(quota.subscriptionState)?.let { return "$plan: $it" }
-    val parts = mutableListOf<String>()
-    quota.limitedWindows().forEach { window ->
-        parts.add("${window.label}: ${clampPercent(window.usagePercent.roundToInt())}% • ${QuotaUiUtil.formatResetCompact(window.resetsAt) ?: "unknown"}")
-    }
-    if (parts.isEmpty()) return "$plan: no usage data"
-    return "$plan:\n${parts.joinToString("\n")}"
-}
-
 internal fun gitHubBarDisplayText(quota: GitHubQuota?, error: String?): String {
     if (error != null) return "error"
     if (quota == null) return "loading..."
@@ -423,14 +320,6 @@ internal fun gitHubBarDisplayText(quota: GitHubQuota?, error: String?): String {
 
 internal fun gitHubDisplayWindow(quota: GitHubQuota): de.moritzf.quota.github.GitHubUsageWindow? {
     return quota.limitedWindows().firstOrNull()
-}
-
-private fun githubInactiveTooltip(state: GitHubSubscriptionState): String? {
-    return when (state) {
-        GitHubSubscriptionState.ACTIVE -> null
-        GitHubSubscriptionState.SUBSCRIPTION_ENDED -> "subscription ended"
-        GitHubSubscriptionState.NO_ACTIVE_SUBSCRIPTION -> "no active subscription"
-    }
 }
 
 private fun githubInactiveBarText(state: GitHubSubscriptionState): String? {
@@ -452,18 +341,6 @@ internal fun zaiBarDisplayText(quota: ZaiQuota?, error: String?): String {
     return if (reset != null) "$text • $reset" else text
 }
 
-internal fun buildSuperGrokTooltipText(quota: SuperGrokQuota?, error: String?): String {
-    if (error != null) return "SuperGrok quota: $error"
-    if (quota == null) return "SuperGrok quota: loading"
-    val window = quota.creditUsage ?: return "SuperGrok quota: no usage data"
-    val percent = clampPercent(window.usagePercent.roundToInt())
-    val reset = QuotaUiUtil.formatResetCompact(window.resetsAt) ?: "unknown"
-    val plan = quota.plan.takeIf { it.isNotBlank() } ?: "unknown plan"
-    val cap = quota.onDemandCap?.takeIf { it > 0 }?.let { " • PAYG cap $it" }.orEmpty()
-    val label = window.label.ifBlank { "credits" }
-    return "SuperGrok quota:\n$plan $label: $percent% used • $reset$cap"
-}
-
 internal fun superGrokBarDisplayText(quota: SuperGrokQuota?, error: String?): String {
     if (error != null) return "error"
     if (quota == null) return "loading..."
@@ -473,51 +350,6 @@ internal fun superGrokBarDisplayText(quota: SuperGrokQuota?, error: String?): St
     return if (reset != null) "$text • $reset" else text
 }
 
-internal fun buildClaudeTooltipText(quota: ClaudeQuota?, error: String?): String {
-    if (error != null) return "Claude quota: $error"
-    if (quota == null) return "Claude quota: loading"
-    val parts = mutableListOf<String>()
-    quota.fiveHourUsage?.let {
-        parts.add("5h: ${clampPercent(it.usagePercent.roundToInt())}% used • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}")
-    }
-    quota.sevenDayUsage?.let {
-        parts.add("Weekly: ${clampPercent(it.usagePercent.roundToInt())}% used • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}")
-    }
-    val model = quota.sevenDaySonnetUsage ?: quota.sevenDayOpusUsage
-    model?.let {
-        parts.add("${it.label.ifBlank { "Model" }}: ${clampPercent(it.usagePercent.roundToInt())}% used • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}")
-    }
-    quota.scopedLimits.forEach {
-        parts.add("${it.label.ifBlank { "Scoped" }}: ${clampPercent(it.usagePercent.roundToInt())}% used • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}")
-    }
-    quota.routinesUsage?.let {
-        parts.add("Routines: ${clampPercent(it.usagePercent.roundToInt())}% used • ${QuotaUiUtil.formatResetCompact(it.resetsAt) ?: "unknown"}")
-    }
-    quota.extraUsage?.takeIf { it.isEnabled }?.let { extra ->
-        val percent = extra.usagePercent?.roundToInt()?.let(::clampPercent)
-        val money = if (extra.usedMajor != null && extra.monthlyLimitMajor != null) {
-            String.format("%.2f / %.2f %s", extra.usedMajor, extra.monthlyLimitMajor, extra.currency ?: "USD")
-        } else {
-            null
-        }
-        parts.add(
-            buildString {
-                append("Extra usage")
-                if (percent != null) append(": $percent% used")
-                if (money != null) {
-                    if (percent != null) append(" • ") else append(": ")
-                    append(money)
-                }
-            },
-        )
-    }
-    return if (parts.isEmpty()) {
-        "Claude quota: no usage data"
-    } else {
-        "Claude quota:\n${parts.joinToString("\n")}"
-    }
-}
-
 internal fun claudeBarDisplayText(quota: ClaudeQuota?, error: String?): String {
     if (error != null) return "error"
     if (quota == null) return "loading..."
@@ -525,37 +357,6 @@ internal fun claudeBarDisplayText(quota: ClaudeQuota?, error: String?): String {
     val reset = QuotaUiUtil.formatResetCompact(state.resetsAt)
     val text = "${state.percent}%"
     return if (reset != null) "$text • $reset" else text
-}
-
-internal fun buildQuotaTooltipText(quota: OpenAiCodexQuota?, error: String?): String {
-    val authService = QuotaAuthService.getInstance()
-    return buildQuotaTooltipText(quota, error, authService.isLoggedIn(QuotaProviderType.OPEN_AI))
-}
-
-internal fun buildOpenCodeTooltipText(quota: OpenCodeQuota?, error: String?): String {
-    if (error != null) return "OpenCode quota: $error"
-    if (quota == null) return "OpenCode quota: loading"
-    val parts = mutableListOf<String>()
-    quota.rollingUsage?.let { parts.add("5h rolling: ${it.usagePercent}% used • ${QuotaUiUtil.formatCompactDuration(java.time.Duration.ofSeconds(it.resetInSec)) ?: "now"}") }
-    quota.weeklyUsage?.let { parts.add("Weekly: ${it.usagePercent}% used • ${QuotaUiUtil.formatCompactDuration(java.time.Duration.ofSeconds(it.resetInSec)) ?: "now"}") }
-    quota.monthlyUsage?.let { parts.add("Monthly: ${it.usagePercent}% used • ${QuotaUiUtil.formatCompactDuration(java.time.Duration.ofSeconds(it.resetInSec)) ?: "now"}") }
-    
-    val balance = quota.availableBalance?.let { "Balance: $${QuotaUiUtil.formatOpenCodeBalance(it)}" }
-
-    if (parts.isEmpty() && balance != null) {
-        return "OpenCode Zen credits: $balance"
-    }
-    
-    return buildString {
-        append("OpenCode quota")
-        if (balance != null) append(" ($balance)")
-        if (parts.isNotEmpty()) {
-            append(":\n")
-            append(parts.joinToString("\n"))
-        } else {
-            append(": no usage data")
-        }
-    }
 }
 
 internal fun openCodeBarDisplayText(quota: OpenCodeQuota?, error: String?): String {
@@ -571,122 +372,9 @@ internal fun openCodeBarDisplayText(quota: OpenCodeQuota?, error: String?): Stri
     return if (reset != null) "$text \u2022 $reset" else text
 }
 
-private fun formatOpenCodeResetTime(resetInSec: Long): String? {
+internal fun formatOpenCodeResetTime(resetInSec: Long): String? {
     if (resetInSec <= 0) return null
     return QuotaUiUtil.formatCompactDuration(java.time.Duration.ofSeconds(resetInSec))
-}
-
-internal fun buildQuotaTooltipText(quota: OpenAiCodexQuota?, error: String?, loggedIn: Boolean): String {
-    if (!loggedIn) return "OpenAI usage quota: not logged in"
-    if (error != null) return "OpenAI usage quota: $error"
-    if (quota == null) return "OpenAI usage quota: loading"
-
-    val plan = quota.planType?.toDisplayLabel() ?: "Codex"
-    val parts = mutableListOf<String>()
-
-    fun addWindow(window: UsageWindow?, label: String) {
-        if (window == null) return
-        val percent = clampPercent(window.usedPercent.roundToInt())
-        val reset = QuotaUiUtil.formatResetCompact(window.resetsAt) ?: "unknown"
-        parts.add("$label: $percent% • $reset")
-    }
-
-    addWindow(quota.primary, "Primary")
-    addWindow(quota.secondary, "Secondary")
-    quota.extraRateLimits.forEach { extra ->
-        addWindow(extra.window, extra.title)
-    }
-    
-    val hasCodexWindows = quota.primary != null || quota.secondary != null
-    val hasReviewWindows = quota.reviewPrimary != null || quota.reviewSecondary != null
-
-    if (hasReviewWindows) {
-        parts.add("Code Review:")
-        addWindow(quota.reviewPrimary, "Primary")
-        addWindow(quota.reviewSecondary, "Secondary")
-    }
-
-    if (quota.credits != null && (quota.isAssignedCreditsQuota() || quota.hasSpendControlDetail())) {
-        parts.add(describeAssignedCreditsForTooltip(quota.credits!!, quota.spendControl, quota.rateLimitReachedType))
-    } else if (quota.hasSpendControlDetail() && quota.spendControl != null) {
-        parts.add(describeSpendControlForTooltip(quota.spendControl!!))
-    }
-
-    val state = indicatorQuotaState(quota)
-    val display = state?.let { openAiIndicatorDisplayState(quota, it) }
-    if (parts.size == 1 && state != null && display != null && display.creditsBalanceLabel == null && !quota.isAssignedCreditsQuota()) {
-        val quotaName = when (state.kind) {
-            IndicatorQuotaKind.CODEX -> "OpenAI usage quota"
-            IndicatorQuotaKind.REVIEW -> "OpenAI code review quota"
-        }
-        return "$quotaName: ${display.percent}% used"
-    }
-
-    if (!hasCodexWindows && hasReviewWindows && quota.credits == null && state?.kind == IndicatorQuotaKind.REVIEW && display != null) {
-        return "OpenAI code review quota: ${display.percent}% used"
-    }
-
-    if (parts.isEmpty()) return "OpenAI usage quota: loading"
-    return "$plan quota:\n${parts.joinToString("\n")}"
-}
-
-private fun describeSpendControlForTooltip(spendControl: OpenAiSpendControl): String {
-    // Team/business spend_control uses Codex credit units, not USD.
-    val cap = spendControl.individualLimit?.takeIf { it > 0.0 }
-    val used = spendControl.used
-    return when {
-        spendControl.reached == true && cap != null ->
-            "Credit limit: cap reached (${formatOpenAiCreditAmount(cap)} credits)"
-        spendControl.reached == true -> "Credit limit: cap reached"
-        cap != null && used != null ->
-            "Credit limit: ${formatOpenAiCreditAmount(used)} / ${formatOpenAiCreditAmount(cap)} credits"
-        cap != null -> "Credit limit: ${formatOpenAiCreditAmount(cap)} credits"
-        else -> "Credit limit"
-    }
-}
-
-private fun formatOpenAiCreditAmount(value: Double): String {
-    return if (value >= 100.0 || value == value.toLong().toDouble()) {
-        value.toInt().toString()
-    } else {
-        String.format(java.util.Locale.US, "%.2f", value)
-    }
-}
-
-private fun describeAssignedCreditsForTooltip(
-    credits: OpenAiCredits,
-    spendControl: OpenAiSpendControl?,
-    rateLimitReachedType: String?,
-): String {
-    val status = when {
-        credits.unlimited == true -> "Unlimited"
-        rateLimitReachedType == "workspace_member_credits_depleted" -> "Assigned credits depleted"
-        credits.overageLimitReached == true -> "Overage limit reached"
-        spendControl?.reached == true && (
-            (spendControl.individualLimit ?: 0.0) > 0.0 ||
-                spendControl.usedPercent != null ||
-                spendControl.used != null
-            ) -> "Individual spend limit reached"
-        credits.hasCredits == false -> "Depleted"
-        !credits.balance.isNullOrBlank() -> "$${credits.balance} remaining"
-        credits.hasCredits == true -> "Available"
-        else -> "Unknown"
-    }
-    // Team/business spend_control uses Codex credit units, not USD.
-    val spendLimit = spendControl?.individualLimit?.takeIf { it > 0.0 }?.let { limit ->
-        val reached = if (spendControl.reached == true) " (reached)" else ""
-        "Individual limit: ${formatOpenAiCreditAmount(limit)} credits$reached"
-    }
-    // The individual-limit line already says the cap was reached; drop the duplicate status line.
-    if (spendLimit != null && status == "Individual spend limit reached") {
-        return spendLimit
-    }
-    return buildString {
-        append("Assigned credits: $status")
-        if (spendLimit != null) {
-            append("\n$spendLimit")
-        }
-    }
 }
 
 internal fun indicatorBarDisplayText(quota: OpenAiCodexQuota?, error: String?, loggedIn: Boolean): String {
@@ -715,7 +403,7 @@ internal fun indicatorDisplayPercent(quota: OpenAiCodexQuota?, error: String?, l
     return openAiIndicatorDisplayState(quota, state)?.percent ?: -1
 }
 
-private fun openAiIndicatorDisplayState(quota: OpenAiCodexQuota?, state: IndicatorQuotaState): IndicatorDisplayState? {
+internal fun openAiIndicatorDisplayState(quota: OpenAiCodexQuota?, state: IndicatorQuotaState): IndicatorDisplayState? {
     if (state.limitReached) {
         return IndicatorDisplayState(
             percent = 100,
@@ -785,22 +473,6 @@ internal fun cursorIndicatorState(quota: CursorQuota): CursorIndicatorState? {
         percent = clampPercent(percent.roundToInt()),
         resetsAt = resetsAt,
     )
-}
-
-private fun formatCursorUsdUsage(used: Double, limit: Double?): String {
-    if (limit == null || limit <= 0.0) {
-        return "$${formatCompactUsd(used)} used"
-    }
-    val percent = clampPercent(((used / limit) * 100.0).roundToInt())
-    return "$percent% ($${formatCompactUsd(used)} / $${formatCompactUsd(limit)})"
-}
-
-private fun formatCompactUsd(value: Double): String {
-    return if (value >= 100.0) {
-        value.roundToInt().toString()
-    } else {
-        String.format(Locale.US, "%.2f", value)
-    }
 }
 
 internal fun ollamaIndicatorState(quota: de.moritzf.quota.ollama.OllamaQuota): OllamaIndicatorState? {
