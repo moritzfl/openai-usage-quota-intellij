@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.7.9] - 2026-08-16
 - Status bar quota tooltip now uses the same short wording for every provider: subscription, plan when known, used percent with window kind, and time until reset.
 
 ## [1.7.8] - 2026-08-11
