@@ -14,6 +14,11 @@ import java.util.Base64
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 open class ZaiOcrClient(
     private val httpClient: HttpClient = defaultHttpClient(),
@@ -51,8 +56,24 @@ open class ZaiOcrClient(
         if (markdownOutput == null) {
             return McpJson.providerJsonOrRaw(responseBody)
         }
-        val written = writeMarkdown(responseBody, markdownOutput)
+        val written = writeMarkdown(responseBody, markdownOutput, includeImages) { url -> downloadBytes(url) }
         return JsonSupport.json.encodeToString(written)
+    }
+
+    private fun downloadBytes(url: String): ByteArray? {
+        return try {
+            val response = httpClient.send(
+                HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(60))
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray(),
+            )
+            response.takeIf { it.statusCode() in 200..299 }?.body()
+        } catch (_: Exception) {
+            null
+        }
     }
 
     private fun send(request: HttpRequest): HttpResponse<String> {
@@ -101,13 +122,18 @@ open class ZaiOcrClient(
             return localFile.resolveSibling("$stem.md")
         }
 
-        internal fun writeMarkdown(responseBody: String, outputFile: Path): ZaiOcrWriteResult {
+        internal fun writeMarkdown(
+            responseBody: String,
+            outputFile: Path,
+            includeImages: Boolean = false,
+            download: (String) -> ByteArray? = { null },
+        ): ZaiOcrWriteResult {
             val parsed = try {
                 JsonSupport.json.decodeFromString<ZaiLayoutParsingResponseDto>(responseBody)
             } catch (exception: Exception) {
                 throw ZaiQuotaException("Could not parse OCR response.", 200, responseBody, exception)
             }
-            val markdown = parsed.mdResults.trim()
+            var markdown = parsed.mdResults.trim()
             if (markdown.isEmpty()) {
                 throw ZaiQuotaException("Z.ai OCR returned no markdown.", 200, responseBody)
             }
@@ -115,11 +141,93 @@ open class ZaiOcrClient(
             if (parent != null) {
                 Files.createDirectories(parent)
             }
+            val imageDir = outputFile.parent ?: Path.of(".")
+            val imageFiles = mutableListOf<String>()
+            if (includeImages) {
+                collectImageContents(parsed.layoutDetails).forEachIndexed { index, content ->
+                    val bytes = decodeImage(content, download) ?: return@forEachIndexed
+                    val name = uniqueName(imageDir, suggestedName(content, index), imageFiles)
+                    val imagePath = imageDir.resolve(name)
+                    Files.write(imagePath, bytes)
+                    imageFiles += imagePath.toString()
+                    markdown = markdown.replace(content, name)
+                }
+            }
             Files.writeString(outputFile, markdown)
             return ZaiOcrWriteResult(
                 outputFile = outputFile.toString(),
+                imageFiles = imageFiles,
                 pages = parsed.dataInfo?.numPages ?: 0,
             )
+        }
+
+        internal fun imageFileName(id: String): String? {
+            val name = Path.of(id.trim()).fileName.toString()
+            return name.takeIf { it.isNotBlank() && it != "." && it != ".." }
+        }
+
+        internal fun collectImageContents(details: JsonElement?): List<String> {
+            val found = mutableListOf<String>()
+            fun walk(element: JsonElement?) {
+                when (element) {
+                    is JsonArray -> element.forEach(::walk)
+                    is JsonObject -> {
+                        val label = (element["label"] as? JsonPrimitive)?.contentOrNull
+                        val content = (element["content"] as? JsonPrimitive)?.contentOrNull?.trim()
+                        if (label == "image" && !content.isNullOrEmpty()) {
+                            found += content
+                        }
+                    }
+                    else -> Unit
+                }
+            }
+            walk(details)
+            return found
+        }
+
+        private fun decodeImage(content: String, download: (String) -> ByteArray?): ByteArray? {
+            if (content.startsWith("data:")) {
+                val encoded = content.substringAfter("base64,", "").trim()
+                if (encoded.isEmpty()) return null
+                return runCatching { Base64.getDecoder().decode(encoded) }.getOrNull()
+            }
+            if (content.startsWith("http://") || content.startsWith("https://")) {
+                return download(content)
+            }
+            return null
+        }
+
+        private fun suggestedName(content: String, index: Int): String {
+            if (content.startsWith("data:")) {
+                val mime = content.substringAfter("data:").substringBefore(";").substringBefore(",")
+                val ext = when (mime) {
+                    "image/jpeg" -> "jpg"
+                    "image/webp" -> "webp"
+                    "image/gif" -> "gif"
+                    else -> "png"
+                }
+                return "img-$index.$ext"
+            }
+            val path = runCatching { URI.create(content).path }.getOrNull().orEmpty()
+            val base = imageFileName(path.substringAfterLast('/').substringBefore('?'))
+            if (base != null && '.' in base) return base
+            return "img-$index.png"
+        }
+
+        private fun uniqueName(directory: Path, preferred: String, written: List<String>): String {
+            if (written.none { Path.of(it).fileName.toString() == preferred } && !Files.exists(directory.resolve(preferred))) {
+                return preferred
+            }
+            val stem = preferred.substringBeforeLast('.', preferred)
+            val ext = preferred.substringAfterLast('.', "png")
+            var n = 1
+            while (true) {
+                val candidate = "$stem-$n.$ext"
+                if (written.none { Path.of(it).fileName.toString() == candidate } && !Files.exists(directory.resolve(candidate))) {
+                    return candidate
+                }
+                n += 1
+            }
         }
 
         private fun mimeType(path: Path, bytes: ByteArray): String {
@@ -149,6 +257,7 @@ internal data class ZaiLayoutParsingRequestDto(
 @Serializable
 internal data class ZaiLayoutParsingResponseDto(
     @SerialName("md_results") val mdResults: String = "",
+    @SerialName("layout_details") val layoutDetails: JsonElement? = null,
     @SerialName("data_info") val dataInfo: ZaiOcrDataInfoDto? = null,
 )
 
@@ -160,5 +269,6 @@ internal data class ZaiOcrDataInfoDto(
 @Serializable
 internal data class ZaiOcrWriteResult(
     @SerialName("output_file") val outputFile: String,
+    @SerialName("image_files") val imageFiles: List<String> = emptyList(),
     val pages: Int,
 )

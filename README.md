@@ -43,7 +43,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 | Cursor | Session cookie | ✓ | — | — | — | — | — | — |
 | OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | — | — | ✓ |
 | Ollama Cloud | API key | ✓ | ✓ | — | — | — | — | ✓ |
-| Z.ai | API key | ✓ | ✓ | — | — | — | (✓) | ✓ |
+| Z.ai | API key | ✓ | ✓ | — | — | — | ✓ | ✓ |
 | MiniMax | API key | ✓ | ✓ | — | — | — | — | ✓ |
 | Mistral | Session cookie + API key | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 | Kimi | Device code | ✓ | ✓ | — | — | — | — | ✓ |
