@@ -34,21 +34,21 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 
 ## Supported providers
 
-| Provider | Sign-in | Quota | Web search | Images | Video | Proxy |
-|---|---|:-:|:-:|:-:|:-:|:-:|
-| OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ |
-| Claude (Anthropic) | Browser login | ✓ | — | — | — | — |
-| SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ |
-| GitHub Copilot | Device code | ✓ | — | — | — | ✓ |
-| Cursor | Session cookie | ✓ | — | — | — | — |
-| OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | ✓ |
-| Ollama Cloud | API key | ✓ | ✓ | — | — | ✓ |
-| Z.ai | API key | ✓ | ✓ | — | — | ✓ |
-| MiniMax | API key | ✓ | ✓ | — | — | ✓ |
-| Mistral | Session cookie + API key | ✓ | ✓ | ✓ | — | — |
-| Kimi | Device code | ✓ | ✓ | — | — | ✓ |
+| Provider | Sign-in | Quota | Web search | Images | Video | Voice | Proxy |
+|---|---|:-:|:-:|:-:|:-:|:-:|:-:|
+| OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ | ✓ |
+| Claude (Anthropic) | Browser login | ✓ | — | — | — | — | — |
+| SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| GitHub Copilot | Device code | ✓ | — | — | — | — | ✓ |
+| Cursor | Session cookie | ✓ | — | — | — | — | — |
+| OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | — | ✓ |
+| Ollama Cloud | API key | ✓ | ✓ | — | — | — | ✓ |
+| Z.ai | API key | ✓ | ✓ | — | — | — | ✓ |
+| MiniMax | API key | ✓ | ✓ | — | — | — | ✓ |
+| Mistral | Session cookie + API key | ✓ | ✓ | ✓ | — | ✓ | — |
+| Kimi | Device code | ✓ | ✓ | — | — | — | ✓ |
 
-*Web search, images, and video are MCP chat tools backed by your subscription. Proxy = available through the local OpenAI-compatible proxy.*
+*Web search, images, video, and voice are MCP chat tools backed by your subscription. Proxy = available through the local OpenAI-compatible proxy.*
 
 ## Installation
 
@@ -86,6 +86,9 @@ The plugin registers subscription-backed tools with IntelliJ's built-in MCP serv
 | `subscription_web_search` | Result-list web search via Kimi, Z.ai, MiniMax, or Ollama |
 | `subscription_document_to_markdown` | Convert a PDF/document to markdown via Mistral OCR, keeping extracted images next to the markdown |
 | `subscription_image_generation` | Image generation via OpenAI/Codex, SuperGrok/xAI Imagine, or Mistral, optionally saved to a file |
+| `subscription_speech_to_text` | Transcribe audio via OpenAI/Codex, SuperGrok/xAI, or Mistral |
+| `subscription_text_to_speech` | Generate speech audio via OpenAI/Codex, SuperGrok/xAI, or Mistral and write it to a file |
+| `subscription_list_voices` | List OpenAI/Codex, SuperGrok/xAI, or Mistral voices |
 | `supergrok_video_generation` | Video generation via SuperGrok/xAI Imagine |
 
 Individual tools can be enabled or disabled under `Settings` > `Tools` > `MCP Server` > `Exposed Tools`.

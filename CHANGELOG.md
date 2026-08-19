@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- Added Mistral. Monthly billing and Vibe usage come from an `admin.mistral.ai` session cookie (`ory_session_*` plus `csrftoken`); the API key supplies official per-minute token and request rate limits and the MCP tools (Conversations web search, image generation, OCR document-to-markdown). Per-minute token and request usage is shown as a percent only. OCR keeps extracted images by default and writes `<name>.md` plus sibling images beside a local source file.
+- Added Mistral. Monthly billing and Vibe usage come from an `admin.mistral.ai` session cookie (`ory_session_*` plus `csrftoken`); the API key supplies official per-minute token and request rate limits and the MCP tools (Conversations web search, image generation, OCR document-to-markdown, speech-to-text, text-to-speech, and voice listing). Per-minute token and request usage is shown as a percent only. OCR keeps extracted images by default and writes `<name>.md` plus sibling images beside a local source file. Speech-to-text and text-to-speech also work through OpenAI/Codex and SuperGrok/xAI with the existing logins.
 
 ## [1.7.9] - 2026-08-16
 - Status bar quota tooltip now uses the same short wording for every provider: subscription, plan when known, used percent with window kind, and time until reset.
