@@ -20,6 +20,7 @@ import de.moritzf.quota.minimax.MiniMaxQuotaException
 import de.moritzf.quota.minimax.MiniMaxRegion
 import de.moritzf.quota.minimax.MiniMaxRegionPreference
 import de.moritzf.quota.minimax.MiniMaxWebSearchClient
+import de.moritzf.quota.mistral.MistralAudioClient
 import de.moritzf.quota.mistral.MistralImageClient
 import de.moritzf.quota.mistral.MistralOcrClient
 import de.moritzf.quota.mistral.MistralQuotaException
@@ -29,6 +30,7 @@ import de.moritzf.quota.ollama.OllamaWebSearchClient
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import de.moritzf.quota.shared.McpProviderToolStatus
+import de.moritzf.quota.supergrok.SuperGrokAudioClient
 import de.moritzf.quota.supergrok.SuperGrokImagineClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
 import de.moritzf.quota.supergrok.SuperGrokWebSearchClient
@@ -48,9 +50,11 @@ class SubscriptionUsageMcpToolset(
     private val ollamaSearchClient: OllamaWebSearchClient = OllamaWebSearchClient.createDefault(),
     private val superGrokSearchClient: SuperGrokWebSearchClient = SuperGrokWebSearchClient.createDefault(),
     private val superGrokImagineClient: SuperGrokImagineClient = SuperGrokImagineClient.createDefault(),
+    private val superGrokAudioClient: SuperGrokAudioClient = SuperGrokAudioClient.createDefault(),
     private val mistralSearchClient: MistralWebSearchClient = MistralWebSearchClient.createDefault(),
     private val mistralImageClient: MistralImageClient = MistralImageClient.createDefault(),
     private val mistralOcrClient: MistralOcrClient = MistralOcrClient.createDefault(),
+    private val mistralAudioClient: MistralAudioClient = MistralAudioClient.createDefault(),
 ) : McpToolset {
     @McpTool(name = "subscription_quota")
     @McpDescription(description = "Returns the latest subscription quota response JSON for the selected provider.")
@@ -61,15 +65,13 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_tools_status")
-    @McpDescription(description = "Returns per-provider status showing whether subscription quota access is configured and whether web search, image generation, and video generation are available. Does not call provider APIs.")
+    @McpDescription(description = "Returns per-provider status showing whether subscription quota access is configured and whether web search, image generation, video generation, speech-to-text, and text-to-speech are available. Does not call provider APIs.")
     fun subscription_tools_status(): String {
         val statuses = ProviderCatalog.all.map { descriptor ->
             val caps = descriptor.capabilities
             val searchType = descriptor.webSearchType
             val webSearchAvailable = searchType != null && descriptor.isWebSearchConfigured()
             val quotaConfigured = descriptor.isQuotaConfigured()
-            // Image/video share the same login probe as quota for the OAuth providers that offer them.
-            val mediaConfigured = quotaConfigured
             val reason = if (searchType == null) {
                 "Web search is not offered for this provider."
             } else if (!webSearchAvailable) {
@@ -82,8 +84,10 @@ class SubscriptionUsageMcpToolset(
                 quotaConfigured = quotaConfigured,
                 webSearchAvailable = webSearchAvailable,
                 webSearchType = searchType,
-                imageGenerationAvailable = caps.imageGeneration && mediaConfigured,
-                videoGenerationAvailable = caps.videoGeneration && mediaConfigured,
+                imageGenerationAvailable = caps.imageGeneration && descriptor.isImageGenerationConfigured(),
+                videoGenerationAvailable = caps.videoGeneration && quotaConfigured,
+                speechToTextAvailable = caps.speechToText && descriptor.isVoiceConfigured(),
+                textToSpeechAvailable = caps.textToSpeech && descriptor.isVoiceConfigured(),
                 reason = reason,
             )
         }
@@ -178,6 +182,75 @@ class SubscriptionUsageMcpToolset(
         return mistralDocumentToMarkdown(documentUrl, localFile, outputFile, includeImages, model)
     }
 
+    @McpTool(name = "subscription_speech_to_text")
+    @McpDescription(description = "Transcribes audio with a subscription-backed provider. Pass a public audioUrl or a localFile path. Returns the provider transcription JSON.")
+    fun subscription_speech_to_text(
+        @McpDescription(description = "Provider to use. Supported providers are derived from the SpeechToTextProvider enum.") provider: SpeechToTextProvider = SpeechToTextProvider.OPEN_AI,
+        @McpDescription(description = "Public audio URL. Leave blank when localFile is set.") audioUrl: String? = null,
+        @McpDescription(description = "Optional project-relative or absolute local audio path.") localFile: String? = null,
+        @McpDescription(description = "Optional language hint such as en.") language: String? = null,
+        @McpDescription(description = "When true, request speaker diarization if the provider supports it.") diarize: Boolean = false,
+        @McpDescription(description = "Transcription model id. Leave blank for the provider default.") model: String = "",
+    ): String {
+        return when (provider) {
+            SpeechToTextProvider.OPEN_AI ->
+                codexResult(codexClient.transcribe(audioUrl, resolveOptionalPath(localFile), language, diarize, model))
+            SpeechToTextProvider.SUPERGROK ->
+                superGrokSpeechToText(audioUrl, localFile, language, diarize)
+            SpeechToTextProvider.MISTRAL ->
+                mistralSpeechToText(audioUrl, localFile, language, diarize, model.ifBlank { MistralAudioClient.DEFAULT_TRANSCRIBE_MODEL })
+        }
+    }
+
+    @McpTool(name = "subscription_text_to_speech")
+    @McpDescription(description = "Generates speech audio with a subscription-backed provider and writes it to disk. Pass targetFile or a project is used as speech.mp3. Optional voiceId or refAudioFile selects the voice.")
+    fun subscription_text_to_speech(
+        @McpDescription(description = "Text to speak.") text: String,
+        @McpDescription(description = "Provider to use. Supported providers are derived from the TextToSpeechProvider enum.") provider: TextToSpeechProvider = TextToSpeechProvider.OPEN_AI,
+        @McpDescription(description = "Optional relative project path for the audio file (for example out/speech.mp3). Defaults to speech.mp3 in the project.") targetFile: String? = null,
+        @McpDescription(description = "Optional saved voice id. When blank, the first preset voice is used unless refAudioFile is set.") voiceId: String? = null,
+        @McpDescription(description = "Optional local reference audio for one-off voice cloning.") refAudioFile: String? = null,
+        @McpDescription(description = "Speech model id. Leave blank for the provider default.") model: String = "",
+        @McpDescription(description = "Audio format: mp3, wav, flac, opus, or pcm.") responseFormat: String = "mp3",
+    ): String {
+        return when (provider) {
+            TextToSpeechProvider.OPEN_AI ->
+                codexResult(
+                    codexClient.synthesize(
+                        text,
+                        targetFile,
+                        projectBaseDirectory(),
+                        voiceId,
+                        model,
+                        responseFormat,
+                    ),
+                )
+            TextToSpeechProvider.SUPERGROK ->
+                superGrokTextToSpeech(text, targetFile, voiceId, language = null, responseFormat)
+            TextToSpeechProvider.MISTRAL ->
+                mistralTextToSpeech(
+                    text,
+                    targetFile,
+                    voiceId,
+                    refAudioFile,
+                    model.ifBlank { MistralAudioClient.DEFAULT_SPEECH_MODEL },
+                    responseFormat,
+                )
+        }
+    }
+
+    @McpTool(name = "subscription_list_voices")
+    @McpDescription(description = "Lists preset and saved voices for a subscription-backed text-to-speech provider.")
+    fun subscription_list_voices(
+        @McpDescription(description = "Provider to use. Supported providers are derived from the TextToSpeechProvider enum.") provider: TextToSpeechProvider = TextToSpeechProvider.OPEN_AI,
+    ): String {
+        return when (provider) {
+            TextToSpeechProvider.OPEN_AI -> codexResult(codexClient.listVoices())
+            TextToSpeechProvider.SUPERGROK -> superGrokListVoices()
+            TextToSpeechProvider.MISTRAL -> mistralListVoices()
+        }
+    }
+
     @McpTool(name = "supergrok_video_generation")
     @McpDescription(description = "Generates a video through SuperGrok/xAI Imagine using the existing SuperGrok login. By default waits/polls until completion and returns the final provider JSON.")
     fun supergrok_video_generation(
@@ -221,6 +294,43 @@ class SubscriptionUsageMcpToolset(
     ): String {
         return withSuperGrokAuth("Grok web search failed.") { accessToken ->
             superGrokSearchClient.webSearch(accessToken, query, model, allowedDomains, blockedDomains, maxOutputTokens)
+        }
+    }
+
+    private fun superGrokSpeechToText(
+        audioUrl: String?,
+        localFile: String?,
+        language: String?,
+        diarize: Boolean,
+    ): String {
+        return withSuperGrokAuth("Grok speech-to-text failed.") { accessToken ->
+            superGrokAudioClient.transcribe(accessToken, audioUrl, resolveOptionalPath(localFile), language, diarize)
+        }
+    }
+
+    private fun superGrokTextToSpeech(
+        text: String,
+        targetFile: String?,
+        voiceId: String?,
+        language: String?,
+        responseFormat: String,
+    ): String {
+        return withSuperGrokAuth("Grok text-to-speech failed.") { accessToken ->
+            superGrokAudioClient.synthesize(
+                accessToken,
+                text,
+                targetFile,
+                projectBaseDirectory(),
+                voiceId,
+                language,
+                responseFormat,
+            )
+        }
+    }
+
+    private fun superGrokListVoices(): String {
+        return withSuperGrokAuth("Grok voice list failed.") { accessToken ->
+            superGrokAudioClient.listVoices(accessToken)
         }
     }
 
@@ -389,6 +499,77 @@ class SubscriptionUsageMcpToolset(
         }
     }
 
+    private fun mistralSpeechToText(
+        audioUrl: String?,
+        localFile: String?,
+        language: String?,
+        diarize: Boolean,
+        model: String,
+    ): String {
+        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        return try {
+            mistralAudioClient.transcribe(
+                apiKey = apiKey,
+                audioUrl = audioUrl,
+                localFile = resolveOptionalPath(localFile),
+                language = language,
+                diarize = diarize,
+                model = model,
+            )
+        } catch (exception: MistralQuotaException) {
+            errorResult(exception.message ?: "Mistral speech-to-text failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Mistral speech-to-text failed.")
+        }
+    }
+
+    private fun mistralTextToSpeech(
+        text: String,
+        targetFile: String?,
+        voiceId: String?,
+        refAudioFile: String?,
+        model: String,
+        responseFormat: String,
+    ): String {
+        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        return try {
+            mistralAudioClient.synthesize(
+                apiKey = apiKey,
+                text = text,
+                targetFile = targetFile,
+                baseDirectory = projectBaseDirectory(),
+                voiceId = voiceId,
+                refAudioFile = resolveOptionalPath(refAudioFile),
+                model = model,
+                responseFormat = responseFormat,
+            )
+        } catch (exception: MistralQuotaException) {
+            errorResult(exception.message ?: "Mistral text-to-speech failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Mistral text-to-speech failed.")
+        }
+    }
+
+    private fun mistralListVoices(): String {
+        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        return try {
+            mistralAudioClient.listVoices(apiKey)
+        } catch (exception: MistralQuotaException) {
+            errorResult(exception.message ?: "Mistral voice list failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Mistral voice list failed.")
+        }
+    }
+
     private fun resolveOptionalPath(value: String?): Path? {
         val trimmed = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
         val path = Path.of(trimmed)
@@ -423,15 +604,6 @@ class SubscriptionUsageMcpToolset(
             MiniMaxRegionPreference.CN -> listOf(MiniMaxRegion.CN)
             MiniMaxRegionPreference.AUTO -> listOf(MiniMaxRegion.GLOBAL, MiniMaxRegion.CN)
         }
-    }
-
-    private fun isWebSearchConfigured(provider: QuotaProviderType): Boolean {
-        return ProviderCatalog.get(provider).isWebSearchConfigured()
-    }
-
-    private fun isImageGenerationConfigured(provider: QuotaProviderType): Boolean {
-        val descriptor = ProviderCatalog.get(provider)
-        return descriptor.capabilities.imageGeneration && descriptor.isQuotaConfigured()
     }
 
     private fun searchError(message: String): String {

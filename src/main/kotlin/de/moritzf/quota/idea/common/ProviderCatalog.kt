@@ -62,6 +62,8 @@ internal data class ProviderCapabilities(
     val webSearch: WebSearchCapability = WebSearchCapability.NONE,
     val imageGeneration: Boolean = false,
     val videoGeneration: Boolean = false,
+    val speechToText: Boolean = false,
+    val textToSpeech: Boolean = false,
     val subscriptionProxy: Boolean = false,
     val oauth: Boolean = false,
 )
@@ -81,6 +83,8 @@ internal data class ProviderDescriptor(
     /** Blocking credential check for MCP status / background work. */
     val isQuotaConfigured: () -> Boolean,
     val isWebSearchConfigured: () -> Boolean = { false },
+    val isImageGenerationConfigured: () -> Boolean = { false },
+    val isVoiceConfigured: () -> Boolean = { false },
     /**
      * Proxy-credential check. [onCredentialsLoaded] is invoked when PasswordSafe finishes an async load
      * (settings UI refresh). Null for blocking-only callers.
@@ -190,6 +194,8 @@ internal object ProviderCatalog {
             capabilities = ProviderCapabilities(
                 webSearch = WebSearchCapability.ANSWER,
                 imageGeneration = true,
+                speechToText = true,
+                textToSpeech = true,
             ),
             quotaFactory = ::MistralQuotaProvider,
             snapshotCodec = EnvelopeQuotaCodec(MistralQuota.serializer()),
@@ -198,6 +204,8 @@ internal object ProviderCatalog {
             ui = MistralUi,
             isQuotaConfigured = { !MistralSessionCookieStore.getInstance().loadBlocking().isNullOrBlank() },
             isWebSearchConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isImageGenerationConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isVoiceConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             webSearchMissingReason = "Mistral API key missing. Add a Mistral API key in settings.",
         ),
         descriptor(
@@ -225,6 +233,8 @@ internal object ProviderCatalog {
             capabilities = ProviderCapabilities(
                 webSearch = WebSearchCapability.ANSWER,
                 imageGeneration = true,
+                speechToText = true,
+                textToSpeech = true,
                 subscriptionProxy = true,
                 oauth = true,
             ),
@@ -268,6 +278,8 @@ internal object ProviderCatalog {
                 webSearch = WebSearchCapability.ANSWER,
                 imageGeneration = true,
                 videoGeneration = true,
+                speechToText = true,
+                textToSpeech = true,
                 subscriptionProxy = true,
                 oauth = true,
             ),
@@ -392,6 +404,8 @@ internal object ProviderCatalog {
         ui: ProviderUi,
         isQuotaConfigured: () -> Boolean,
         isWebSearchConfigured: () -> Boolean = { false },
+        isImageGenerationConfigured: (() -> Boolean)? = null,
+        isVoiceConfigured: (() -> Boolean)? = null,
         isProxyConfigured: (onCredentialsLoaded: (() -> Unit)?) -> Boolean = { _ -> false },
         webSearchMissingReason: String? = null,
         ideProxyFactory: ((IdeProxyBuildContext) -> SubscriptionProxyProvider)? = null,
@@ -406,6 +420,10 @@ internal object ProviderCatalog {
             ui = ui,
             isQuotaConfigured = isQuotaConfigured,
             isWebSearchConfigured = isWebSearchConfigured,
+            isImageGenerationConfigured = isImageGenerationConfigured
+                ?: { capabilities.imageGeneration && isQuotaConfigured() },
+            isVoiceConfigured = isVoiceConfigured
+                ?: { (capabilities.speechToText || capabilities.textToSpeech) && isQuotaConfigured() },
             isProxyConfigured = isProxyConfigured,
             webSearchMissingReason = webSearchMissingReason,
             ideProxyFactory = ideProxyFactory,

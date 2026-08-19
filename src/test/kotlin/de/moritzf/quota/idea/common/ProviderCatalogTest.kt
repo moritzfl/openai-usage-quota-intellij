@@ -2,6 +2,8 @@ package de.moritzf.quota.idea.common
 
 import de.moritzf.quota.idea.mcp.ImageGenerationProvider
 import de.moritzf.quota.idea.mcp.ListSearchProvider
+import de.moritzf.quota.idea.mcp.SpeechToTextProvider
+import de.moritzf.quota.idea.mcp.TextToSpeechProvider
 import de.moritzf.quota.idea.mcp.UsageQuotaMcpRegistry
 import de.moritzf.quota.idea.settings.ProviderSettingsRegistry
 import de.moritzf.quota.idea.settings.QuotaSettingsState
@@ -49,6 +51,14 @@ class ProviderCatalogTest {
         assertEquals(
             setOf(QuotaProviderType.SUPERGROK),
             ProviderCatalog.all.filter { it.capabilities.videoGeneration }.map { it.type }.toSet(),
+        )
+        assertEquals(
+            ProviderCatalog.all.filter { it.capabilities.speechToText }.map { it.type }.toSet(),
+            SpeechToTextProvider.entries.map { it.providerType }.toSet(),
+        )
+        assertEquals(
+            ProviderCatalog.all.filter { it.capabilities.textToSpeech }.map { it.type }.toSet(),
+            TextToSpeechProvider.entries.map { it.providerType }.toSet(),
         )
         assertEquals(
             ProviderCatalog.all.filter { it.capabilities.webSearch == WebSearchCapability.ANSWER }.map { it.type }.toSet(),

@@ -45,6 +45,8 @@ internal data class McpProviderToolStatus(
     @SerialName("web_search_type") val webSearchType: String? = null,
     @SerialName("image_generation_available") val imageGenerationAvailable: Boolean,
     @SerialName("video_generation_available") val videoGenerationAvailable: Boolean,
+    @SerialName("speech_to_text_available") val speechToTextAvailable: Boolean = false,
+    @SerialName("text_to_speech_available") val textToSpeechAvailable: Boolean = false,
     val reason: String? = null,
 )
 

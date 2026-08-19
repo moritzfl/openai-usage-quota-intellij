@@ -115,6 +115,41 @@ class SubscriptionUsageMcpToolsetTest {
     }
 
     @Test
+    fun subscriptionSpeechToolsUseProviderEnums() {
+        val stt = SubscriptionUsageMcpToolset::class.java.declaredMethods
+            .single { it.getAnnotation(McpTool::class.java)?.name == "subscription_speech_to_text" }
+        val tts = SubscriptionUsageMcpToolset::class.java.declaredMethods
+            .single { it.getAnnotation(McpTool::class.java)?.name == "subscription_text_to_speech" }
+        val voices = SubscriptionUsageMcpToolset::class.java.declaredMethods
+            .single { it.getAnnotation(McpTool::class.java)?.name == "subscription_list_voices" }
+
+        assertEquals(
+            listOf(
+                SpeechToTextProvider::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                Boolean::class.java,
+                String::class.java,
+            ),
+            stt.parameterTypes.toList(),
+        )
+        assertEquals(
+            listOf(
+                String::class.java,
+                TextToSpeechProvider::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                String::class.java,
+            ),
+            tts.parameterTypes.toList(),
+        )
+        assertEquals(listOf(TextToSpeechProvider::class.java), voices.parameterTypes.toList())
+    }
+
+    @Test
     fun subscriptionDocumentToMarkdownUsesMistralOcrPaths() {
         val tools = SubscriptionUsageMcpToolset::class.java.declaredMethods
             .filter { it.getAnnotation(McpTool::class.java)?.name == "subscription_document_to_markdown" }

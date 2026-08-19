@@ -38,7 +38,7 @@
 - Register each provider once in `ProviderCatalog` (`ProviderDescriptor`: quota factory, snapshot codec, settings/UI factories, MCP quota export, capability flags, credential probes).
 - `QuotaProviderRegistry`, `ProviderSettingsRegistry`, `ProviderUiRegistry`, and `UsageQuotaMcpRegistry` are facades over the catalog — do not add parallel per-provider maps.
 - Keep `QuotaProviderType` as the stable id (settings storage, MCP `subscription_quota` param). Add a type entry when adding a provider.
-- Capability flags drive proxy-supported lists and MCP status. Keep MCP param enums (`ListSearchProvider`, `ImageGenerationProvider`) in sync with capabilities (`ProviderCatalogTest` enforces this).
+- Capability flags drive proxy-supported lists and MCP status. Keep MCP param enums (`ListSearchProvider`, `ImageGenerationProvider`, `SpeechToTextProvider`, `TextToSpeechProvider`) in sync with capabilities (`ProviderCatalogTest` enforces this).
 - New provider checklist: `QuotaProviderType` (+ `QuotaIndicatorSource` if shown in the status bar), one `ProviderCatalog` entry (including `ideProxyFactory` when `subscriptionProxy`), icon/`QuotaIcons`, MCP enum + tool dispatch arm if needed, standalone env wiring if proxy CLI, tests, `plugin.xml` + `README` table, changelog.
 
 ## Proxy Providers
