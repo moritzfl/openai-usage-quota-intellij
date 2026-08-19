@@ -176,6 +176,8 @@ internal object ProviderCatalog {
             type = QuotaProviderType.MINIMAX,
             capabilities = ProviderCapabilities(
                 webSearch = WebSearchCapability.LIST,
+                imageGeneration = true,
+                textToSpeech = true,
                 subscriptionProxy = true,
             ),
             quotaFactory = ::MiniMaxQuotaProvider,
@@ -310,6 +312,8 @@ internal object ProviderCatalog {
             capabilities = ProviderCapabilities(
                 webSearch = WebSearchCapability.LIST,
                 imageGeneration = true,
+                videoGeneration = true,
+                speechToText = true,
                 documentToMarkdown = true,
                 subscriptionProxy = true,
             ),

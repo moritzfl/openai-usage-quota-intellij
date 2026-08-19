@@ -22,18 +22,26 @@ enum class ImageGenerationProvider(val providerType: QuotaProviderType) {
     SUPERGROK(QuotaProviderType.SUPERGROK),
     MISTRAL(QuotaProviderType.MISTRAL),
     ZAI(QuotaProviderType.ZAI),
+    MINIMAX(QuotaProviderType.MINIMAX),
 }
 
 enum class SpeechToTextProvider(val providerType: QuotaProviderType) {
     OPEN_AI(QuotaProviderType.OPEN_AI),
     SUPERGROK(QuotaProviderType.SUPERGROK),
     MISTRAL(QuotaProviderType.MISTRAL),
+    ZAI(QuotaProviderType.ZAI),
 }
 
 enum class TextToSpeechProvider(val providerType: QuotaProviderType) {
     OPEN_AI(QuotaProviderType.OPEN_AI),
     SUPERGROK(QuotaProviderType.SUPERGROK),
     MISTRAL(QuotaProviderType.MISTRAL),
+    MINIMAX(QuotaProviderType.MINIMAX),
+}
+
+enum class VideoGenerationProvider(val providerType: QuotaProviderType) {
+    SUPERGROK(QuotaProviderType.SUPERGROK),
+    ZAI(QuotaProviderType.ZAI),
 }
 
 enum class DocumentToMarkdownProvider(val providerType: QuotaProviderType) {

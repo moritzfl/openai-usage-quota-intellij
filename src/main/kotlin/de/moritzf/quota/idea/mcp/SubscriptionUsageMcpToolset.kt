@@ -16,6 +16,8 @@ import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.KimiQuotaException
 import de.moritzf.quota.kimi.KimiWebSearchClient
+import de.moritzf.quota.minimax.MiniMaxAudioClient
+import de.moritzf.quota.minimax.MiniMaxImageClient
 import de.moritzf.quota.minimax.MiniMaxQuotaException
 import de.moritzf.quota.minimax.MiniMaxRegion
 import de.moritzf.quota.minimax.MiniMaxRegionPreference
@@ -35,9 +37,11 @@ import de.moritzf.quota.supergrok.SuperGrokDocumentClient
 import de.moritzf.quota.supergrok.SuperGrokImagineClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
 import de.moritzf.quota.supergrok.SuperGrokWebSearchClient
+import de.moritzf.quota.zai.ZaiAudioClient
 import de.moritzf.quota.zai.ZaiImageClient
 import de.moritzf.quota.zai.ZaiOcrClient
 import de.moritzf.quota.zai.ZaiQuotaException
+import de.moritzf.quota.zai.ZaiVideoClient
 import de.moritzf.quota.zai.ZaiWebSearchClient
 import java.nio.file.Path
 import kotlinx.serialization.json.JsonObject
@@ -50,6 +54,8 @@ class SubscriptionUsageMcpToolset(
     private val kimiSearchClient: KimiWebSearchClient = KimiWebSearchClient.createDefault(),
     private val zaiSearchClient: ZaiWebSearchClient = ZaiWebSearchClient.createDefault(),
     private val miniMaxSearchClient: MiniMaxWebSearchClient = MiniMaxWebSearchClient.createDefault(),
+    private val miniMaxImageClient: MiniMaxImageClient = MiniMaxImageClient.createDefault(),
+    private val miniMaxAudioClient: MiniMaxAudioClient = MiniMaxAudioClient.createDefault(),
     private val ollamaSearchClient: OllamaWebSearchClient = OllamaWebSearchClient.createDefault(),
     private val superGrokSearchClient: SuperGrokWebSearchClient = SuperGrokWebSearchClient.createDefault(),
     private val superGrokImagineClient: SuperGrokImagineClient = SuperGrokImagineClient.createDefault(),
@@ -61,6 +67,8 @@ class SubscriptionUsageMcpToolset(
     private val mistralAudioClient: MistralAudioClient = MistralAudioClient.createDefault(),
     private val zaiOcrClient: ZaiOcrClient = ZaiOcrClient.createDefault(),
     private val zaiImageClient: ZaiImageClient = ZaiImageClient.createDefault(),
+    private val zaiAudioClient: ZaiAudioClient = ZaiAudioClient.createDefault(),
+    private val zaiVideoClient: ZaiVideoClient = ZaiVideoClient.createDefault(),
 ) : McpToolset {
     @McpTool(name = "subscription_quota")
     @McpDescription(description = "Returns the latest subscription quota response JSON for the selected provider.")
@@ -166,6 +174,8 @@ class SubscriptionUsageMcpToolset(
                 mistralImageGeneration(prompt, targetFile)
             ImageGenerationProvider.ZAI ->
                 zaiImageGeneration(prompt, targetFile)
+            ImageGenerationProvider.MINIMAX ->
+                miniMaxImageGeneration(prompt, targetFile)
         }
     }
 
@@ -242,6 +252,8 @@ class SubscriptionUsageMcpToolset(
                 superGrokSpeechToText(audioUrl, localFile, language, diarize)
             SpeechToTextProvider.MISTRAL ->
                 mistralSpeechToText(audioUrl, localFile, language, diarize, model.ifBlank { MistralAudioClient.DEFAULT_TRANSCRIBE_MODEL })
+            SpeechToTextProvider.ZAI ->
+                zaiSpeechToText(localFile, model.ifBlank { ZaiAudioClient.DEFAULT_MODEL })
         }
     }
 
@@ -279,6 +291,14 @@ class SubscriptionUsageMcpToolset(
                     model.ifBlank { MistralAudioClient.DEFAULT_SPEECH_MODEL },
                     responseFormat,
                 )
+            TextToSpeechProvider.MINIMAX ->
+                miniMaxTextToSpeech(
+                    text,
+                    targetFile,
+                    voiceId,
+                    model.ifBlank { MiniMaxAudioClient.DEFAULT_SPEECH_MODEL },
+                    responseFormat,
+                )
         }
     }
 
@@ -291,6 +311,39 @@ class SubscriptionUsageMcpToolset(
             TextToSpeechProvider.OPEN_AI -> codexResult(codexClient.listVoices())
             TextToSpeechProvider.SUPERGROK -> superGrokListVoices()
             TextToSpeechProvider.MISTRAL -> mistralListVoices()
+            TextToSpeechProvider.MINIMAX -> miniMaxListVoices()
+        }
+    }
+
+    @McpTool(name = "subscription_video_generation")
+    @McpDescription(description = "Generates a video through a subscription-backed provider. SuperGrok uses Imagine; Z.ai uses CogVideoX. By default waits/polls until completion and returns the final provider JSON.")
+    fun subscription_video_generation(
+        @McpDescription(description = "Video prompt.") prompt: String,
+        @McpDescription(description = "Provider to use. Supported providers are derived from the VideoGenerationProvider enum.") provider: VideoGenerationProvider = VideoGenerationProvider.SUPERGROK,
+        @McpDescription(description = "Video model id. Leave blank for the provider default.") model: String = "",
+        @McpDescription(description = "Requested video duration in seconds when the provider supports it.") duration: Int = SuperGrokImagineClient.DEFAULT_VIDEO_DURATION_SECONDS,
+        @McpDescription(description = "Optional public image URL used as the starting frame.") imageUrl: String? = null,
+        @McpDescription(description = "When true, poll until the video finishes or times out. When false, return the initial request id immediately.") waitForCompletion: Boolean = true,
+        @McpDescription(description = "Maximum seconds to wait when waitForCompletion is true.") pollTimeoutSeconds: Int = SuperGrokImagineClient.DEFAULT_VIDEO_POLL_TIMEOUT_SECONDS,
+    ): String {
+        return when (provider) {
+            VideoGenerationProvider.SUPERGROK ->
+                superGrokVideoGeneration(
+                    prompt,
+                    model.ifBlank { SuperGrokImagineClient.DEFAULT_VIDEO_MODEL },
+                    duration,
+                    imageUrl,
+                    waitForCompletion,
+                    pollTimeoutSeconds,
+                )
+            VideoGenerationProvider.ZAI ->
+                zaiVideoGeneration(
+                    prompt,
+                    model.ifBlank { ZaiVideoClient.DEFAULT_MODEL },
+                    imageUrl,
+                    waitForCompletion,
+                    pollTimeoutSeconds,
+                )
         }
     }
 
@@ -516,6 +569,91 @@ class SubscriptionUsageMcpToolset(
         } catch (exception: Exception) {
             searchError(exception.message ?: "Mistral web search failed.")
         }
+    }
+
+    private fun miniMaxImageGeneration(prompt: String, targetFile: String?): String {
+        return withMiniMaxKey("MiniMax image generation failed.") { apiKey, region ->
+            miniMaxImageClient.generateImage(apiKey, region, prompt, targetFile, projectBaseDirectory())
+        }
+    }
+
+    private fun miniMaxTextToSpeech(
+        text: String,
+        targetFile: String?,
+        voiceId: String?,
+        model: String,
+        responseFormat: String,
+    ): String {
+        return withMiniMaxKey("MiniMax text-to-speech failed.") { apiKey, region ->
+            miniMaxAudioClient.synthesize(
+                apiKey,
+                region,
+                text,
+                targetFile,
+                projectBaseDirectory(),
+                voiceId,
+                model,
+                responseFormat,
+            )
+        }
+    }
+
+    private fun miniMaxListVoices(): String {
+        return withMiniMaxKey("MiniMax voice list failed.") { apiKey, region ->
+            miniMaxAudioClient.listVoices(apiKey, region)
+        }
+    }
+
+    private fun zaiSpeechToText(localFile: String?, model: String): String {
+        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
+        }
+        return try {
+            zaiAudioClient.transcribe(apiKey, localFile = resolveOptionalPath(localFile), model = model)
+        } catch (exception: ZaiQuotaException) {
+            errorResult(exception.message ?: "Z.ai speech-to-text failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Z.ai speech-to-text failed.")
+        }
+    }
+
+    private fun zaiVideoGeneration(
+        prompt: String,
+        model: String,
+        imageUrl: String?,
+        waitForCompletion: Boolean,
+        pollTimeoutSeconds: Int,
+    ): String {
+        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
+        }
+        return try {
+            zaiVideoClient.generateVideo(apiKey, prompt, model, imageUrl, waitForCompletion, pollTimeoutSeconds)
+        } catch (exception: ZaiQuotaException) {
+            errorResult(exception.message ?: "Z.ai video generation failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Z.ai video generation failed.")
+        }
+    }
+
+    private fun withMiniMaxKey(failureLabel: String, block: (String, MiniMaxRegion) -> String): String {
+        val apiKey = MiniMaxApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("MiniMax API key missing. Add a MiniMax API key in settings.")
+        }
+        var lastException: Exception? = null
+        for (region in miniMaxSearchRegions()) {
+            try {
+                return block(apiKey, region)
+            } catch (exception: MiniMaxQuotaException) {
+                lastException = exception
+            } catch (exception: Exception) {
+                lastException = exception
+            }
+        }
+        return errorResult(lastException?.message ?: failureLabel)
     }
 
     private fun zaiImageGeneration(prompt: String, targetFile: String?): String {
