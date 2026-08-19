@@ -115,6 +115,24 @@ class SubscriptionUsageMcpToolsetTest {
     }
 
     @Test
+    fun subscriptionDocumentToMarkdownUsesMistralOcrPaths() {
+        val tools = SubscriptionUsageMcpToolset::class.java.declaredMethods
+            .filter { it.getAnnotation(McpTool::class.java)?.name == "subscription_document_to_markdown" }
+
+        assertEquals(listOf("subscription_document_to_markdown"), tools.map { it.getAnnotation(McpTool::class.java).name })
+        assertEquals(
+            listOf(
+                String::class.java,
+                String::class.java,
+                String::class.java,
+                Boolean::class.java,
+                String::class.java,
+            ),
+            tools.single().parameterTypes.toList(),
+        )
+    }
+
+    @Test
     fun subscriptionWebSearchUsesSingleToolWithProviderEnumParameter() {
         val searchTools = SubscriptionUsageMcpToolset::class.java.declaredMethods
             .filter { it.getAnnotation(McpTool::class.java)?.name?.startsWith("subscription_web_search") == true }

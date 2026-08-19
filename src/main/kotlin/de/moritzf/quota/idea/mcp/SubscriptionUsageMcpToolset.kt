@@ -167,12 +167,12 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_document_to_markdown")
-    @McpDescription(description = "Converts a document to markdown with Mistral OCR. Pass a public documentUrl or a localFile path. Without outputFile the provider OCR JSON is returned. With outputFile the markdown is written and optional extracted images are saved next to it using the API image names.")
+    @McpDescription(description = "Converts a document to markdown with Mistral OCR. Pass a public documentUrl or a localFile path. Extracted images stay in the OCR response and are written next to the markdown using the API image names. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
     fun subscription_document_to_markdown(
         @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
         @McpDescription(description = "Optional project-relative or absolute local file path.") localFile: String? = null,
-        @McpDescription(description = "Optional markdown output path. Leave blank to return provider OCR JSON.") outputFile: String? = null,
-        @McpDescription(description = "When writing outputFile, also write extracted images next to the markdown using the OCR placeholder names.") includeImages: Boolean = true,
+        @McpDescription(description = "Optional markdown output path. Defaults to <localFile>.md beside the source when includeImages is true.") outputFile: String? = null,
+        @McpDescription(description = "Keep extracted images. Requests image bytes from OCR and writes them next to the markdown using the API placeholder names.") includeImages: Boolean = true,
         @McpDescription(description = "OCR model id.") model: String = MistralOcrClient.DEFAULT_MODEL,
     ): String {
         return mistralDocumentToMarkdown(documentUrl, localFile, outputFile, includeImages, model)

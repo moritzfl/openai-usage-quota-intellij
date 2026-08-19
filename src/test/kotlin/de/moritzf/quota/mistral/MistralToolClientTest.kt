@@ -1,6 +1,7 @@
 package de.moritzf.quota.mistral
 
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -62,5 +63,46 @@ class MistralToolClientTest {
         assertEquals(listOf(dir.resolve("img-0.jpeg").toString()), result.imageFiles)
         assertEquals("Hello ![img-0.jpeg](img-0.jpeg)", Files.readString(markdownFile))
         assertTrue(Files.size(dir.resolve("img-0.jpeg")) > 0)
+    }
+
+    @Test
+    fun writeMarkdownAcceptsDataUriAndIgnoresPathTraversalIds() {
+        val dir = Files.createTempDirectory("mistral-ocr-uri")
+        val markdownFile = dir.resolve("doc.md")
+        val png = Base64.getEncoder().encodeToString(byteArrayOf(9, 8, 7))
+        val body = """
+            {
+              "pages": [
+                {
+                  "markdown": "A ![img-0.jpeg](img-0.jpeg)",
+                  "images": [
+                    {"id": "../img-0.jpeg", "image_base64": "data:image/jpeg;base64,$png"},
+                    {"id": "..", "image_base64": "$png"}
+                  ]
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val result = MistralOcrClient.writeMarkdown(body, markdownFile, includeImages = true)
+
+        assertEquals(listOf(dir.resolve("img-0.jpeg").toString()), result.imageFiles)
+        assertEquals(byteArrayOf(9, 8, 7).toList(), Files.readAllBytes(dir.resolve("img-0.jpeg")).toList())
+    }
+
+    @Test
+    fun imageFileNameKeepsApiBasename() {
+        assertEquals("img-0.jpeg", MistralOcrClient.imageFileName("img-0.jpeg"))
+        assertEquals("img-0.jpeg", MistralOcrClient.imageFileName("../img-0.jpeg"))
+        assertEquals(null, MistralOcrClient.imageFileName(".."))
+        assertEquals(null, MistralOcrClient.imageFileName("  "))
+    }
+
+    @Test
+    fun defaultMarkdownOutputSitsBesideLocalFileWhenImagesStay() {
+        val pdf = Path.of("/tmp/ticket.pdf")
+        assertEquals(Path.of("/tmp/ticket.md"), MistralOcrClient.defaultMarkdownOutput(pdf, includeImages = true))
+        assertEquals(null, MistralOcrClient.defaultMarkdownOutput(pdf, includeImages = false))
+        assertEquals(null, MistralOcrClient.defaultMarkdownOutput(null, includeImages = true))
     }
 }
