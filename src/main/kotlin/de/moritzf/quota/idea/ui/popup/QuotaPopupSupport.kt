@@ -240,37 +240,14 @@ private class QuotaPopupContentPanel(
             return emptyList()
         }
 
-        val loadedItems = rawItems.filter { it.fetchedAt != null }
-        if (loadedItems.isEmpty()) {
-            return listOf(
+        return groupUpdatedAtItems(
+            rawItems.map { item ->
                 UpdatedAtItem(
-                    icons = rawItems.map { it.icon },
-                    text = "loading...",
+                    icons = listOf(item.icon),
+                    text = QuotaUiUtil.formatInstant(item.fetchedAt) ?: "loading...",
                 )
-            )
-        }
-        if (loadedItems.size == rawItems.size && loadedItems.areWithinOneMinute()) {
-            val newest = loadedItems.maxBy { it.fetchedAt!!.toEpochMilliseconds() }.fetchedAt
-            return listOf(
-                UpdatedAtItem(
-                    icons = loadedItems.map { it.icon },
-                    text = QuotaUiUtil.formatInstant(newest) ?: "loading...",
-                )
-            )
-        }
-
-        return rawItems.map { item ->
-            UpdatedAtItem(
-                icons = listOf(item.icon),
-                text = QuotaUiUtil.formatInstant(item.fetchedAt) ?: "loading...",
-            )
-        }
-    }
-
-    private fun List<UpdatedAtRawItem>.areWithinOneMinute(): Boolean {
-        val times = mapNotNull { it.fetchedAt?.toEpochMilliseconds() }
-        if (times.isEmpty()) return false
-        return times.max() - times.min() <= 60_000L
+            },
+        )
     }
 }
 

@@ -252,6 +252,12 @@ internal data class UpdatedAtItem(
     val text: String,
 )
 
+internal fun groupUpdatedAtItems(items: List<UpdatedAtItem>): List<UpdatedAtItem> {
+    return items.groupBy { it.text }.map { (text, group) ->
+        UpdatedAtItem(icons = group.flatMap { it.icons }, text = text)
+    }
+}
+
 internal data class UpdatedAtIcon(
     val label: String,
     val icon: Icon,
