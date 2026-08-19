@@ -2,13 +2,15 @@
 
 ## [Unreleased]
 
-- SuperGrok can convert a PDF or image to markdown through the existing Grok login (markdown only, no extracted images).
-- Z.ai speech-to-text (GLM-ASR) and CogVideoX video generation use the existing API key.
-- MiniMax image generation and text-to-speech use the existing Token Plan / coding API key.
-- Added Mistral. Monthly billing and Vibe usage come from an `admin.mistral.ai` session cookie (`ory_session_*` plus `csrftoken`); the API key supplies official per-minute token and request rate limits, the MCP tools (Conversations web search, image generation, OCR document-to-markdown, speech-to-text, text-to-speech, and voice listing), and the local OpenAI-compatible proxy. Per-minute token and request usage is shown as a percent only, without a reset countdown. OCR keeps extracted images by default and writes `<name>.md` plus sibling images beside a local source file. The last quota response and MCP quota JSON wrap session usage and API-key rate limits together.
-- Speech-to-text and text-to-speech MCP tools also work through OpenAI/Codex and SuperGrok/xAI with the existing logins.
-- Document-to-markdown also works through Z.ai GLM-OCR (including extracted images) and OpenAI/Codex (markdown only).
-- Z.ai GLM-Image generation is available through the existing image-generation MCP tool.
+## [1.8.0] - 2026-08-19
+- Added Mistral. Paste an `admin.mistral.ai` session cookie (`ory_session_*` plus `csrftoken`) for monthly billing and Vibe usage, and a Mistral API key for per-minute token and request limits, MCP tools, and the local proxy. Per-minute usage is shown as a percent only (no reset countdown). Settings and MCP quota JSON show session usage and API-key rate limits together.
+- More subscription MCP tools, using the logins and keys you already have:
+  - Web search — Mistral Conversations, plus the existing OpenAI/Codex, SuperGrok, Kimi, Z.ai, MiniMax, and Ollama tools.
+  - Images — OpenAI/Codex, SuperGrok, Mistral, Z.ai, and MiniMax.
+  - Video — SuperGrok and Z.ai.
+  - Voice — speech-to-text and text-to-speech on OpenAI/Codex, SuperGrok, and Mistral; speech-to-text on Z.ai; text-to-speech on MiniMax.
+  - Documents — convert a PDF or image to markdown. Mistral and Z.ai also write extracted images next to the markdown; OpenAI/Codex and SuperGrok return markdown only.
+- Mistral can be exposed through the local OpenAI-compatible proxy.
 - The quota popup groups providers that share the same update time instead of repeating “just now” for each icon.
 
 ## [1.7.9] - 2026-08-16
