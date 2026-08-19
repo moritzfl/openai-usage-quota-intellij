@@ -8,6 +8,7 @@ import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.openai.proxy.OpenAiProxyServer
 import de.moritzf.quota.openai.proxy.QuotaCodexCredentialsProvider
+import de.moritzf.quota.shared.DocumentMarkdown
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import kotlinx.serialization.json.JsonArray
@@ -97,6 +98,20 @@ class CodexMcpClient(
 
         return postResponses(imageGenerationRequest(trimmedPrompt)) { body ->
             parseImageGenerationToFileResponse(body, outputTarget.path!!, outputTarget.format!!)
+        }
+    }
+
+    fun documentToMarkdown(
+        documentUrl: String? = null,
+        localFile: Path? = null,
+        outputFile: Path? = null,
+        model: String = RESPONSES_MODEL,
+    ): CodexMcpResponse {
+        val fileContent = documentInput(documentUrl, localFile)
+            ?: return CodexMcpResponse(errorJson("Provide documentUrl or a local file path."), true)
+        val markdownOutput = outputFile ?: DocumentMarkdown.defaultOutput(localFile)
+        return postResponses(documentRequest(fileContent, model)) { body ->
+            parseDocumentResponse(body, markdownOutput)
         }
     }
 
@@ -298,6 +313,85 @@ class CodexMcpClient(
             }
             put("store", false)
             put("stream", true)
+        }
+    }
+
+    private fun documentRequest(fileContent: JsonObject, model: String): JsonObject {
+        return buildJsonObject {
+            put("model", model.trim().ifBlank { RESPONSES_MODEL })
+            put("instructions", DOCUMENT_INSTRUCTIONS)
+            putJsonArray("input") {
+                add(buildJsonObject {
+                    put("type", "message")
+                    put("role", "user")
+                    putJsonArray("content") {
+                        add(fileContent)
+                        add(buildJsonObject {
+                            put("type", "input_text")
+                            put("text", DOCUMENT_PROMPT)
+                        })
+                    }
+                })
+            }
+            put("store", false)
+            put("stream", true)
+        }
+    }
+
+    private fun documentInput(documentUrl: String?, localFile: Path?): JsonObject? {
+        val url = documentUrl?.trim().orEmpty()
+        if (url.isNotEmpty()) {
+            return if (isImageName(url)) {
+                buildJsonObject {
+                    put("type", "input_image")
+                    put("image_url", url)
+                }
+            } else {
+                buildJsonObject {
+                    put("type", "input_file")
+                    put("file_url", url)
+                }
+            }
+        }
+        val path = localFile ?: return null
+        if (!Files.isRegularFile(path)) {
+            return null
+        }
+        val bytes = Files.readAllBytes(path)
+        val mime = mimeType(path, bytes)
+        val dataUrl = "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
+        return if (mime.startsWith("image/")) {
+            buildJsonObject {
+                put("type", "input_image")
+                put("image_url", dataUrl)
+            }
+        } else {
+            buildJsonObject {
+                put("type", "input_file")
+                put("filename", path.fileName.toString())
+                put("file_data", dataUrl)
+            }
+        }
+    }
+
+    private fun parseDocumentResponse(body: String, outputFile: Path?): CodexMcpResponse {
+        val output = StringBuilder()
+        var outputTextDone: String? = null
+        for (event in responsesDataEvents(body)) {
+            failedMessage(event)?.let { return CodexMcpResponse(errorJson(it), true) }
+            when (event.string("type")) {
+                "response.output_text.delta" -> output.append(event.string("delta").orEmpty())
+                "response.output_text.done" -> outputTextDone = event.string("text")
+            }
+        }
+        val text = outputTextDone?.takeIf { it.isNotBlank() } ?: output.toString()
+        if (text.isBlank()) {
+            return CodexMcpResponse(errorJson("Codex document conversion returned no output."), true)
+        }
+        return try {
+            CodexMcpResponse(DocumentMarkdown.resultJson(text, outputFile), false)
+        } catch (exception: Exception) {
+            CodexMcpResponse(errorJson(exception.message ?: "Could not write markdown."), true)
         }
     }
 
@@ -626,6 +720,29 @@ class CodexMcpClient(
         private const val SEARCH_INSTRUCTIONS = "You are a concise assistant. Use web search when needed."
         private const val IMAGE_GENERATION_INSTRUCTIONS =
             "Use the image_generation tool to satisfy image requests. Return no extra commentary."
+        private const val DOCUMENT_INSTRUCTIONS =
+            "Convert the attached document to markdown. Preserve headings, lists, tables, and code. Return only markdown."
+        private const val DOCUMENT_PROMPT = "Convert this document to markdown. Return only the markdown."
+        private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp")
+
+        internal fun isImageName(value: String): Boolean {
+            val name = value.substringAfterLast('/').substringBefore('?').lowercase(Locale.ROOT)
+            return name.substringAfterLast('.', "") in IMAGE_EXTENSIONS
+        }
+
+        internal fun mimeType(path: Path, bytes: ByteArray): String {
+            if (bytes.size >= 5 && bytes.decodeToString(0, 5) == "%PDF-") return "application/pdf"
+            if (bytes.size >= 8 && bytes[0] == 0x89.toByte()) return "image/png"
+            if (bytes.size >= 3 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()) return "image/jpeg"
+            return when (path.fileName.toString().substringAfterLast('.', "").lowercase(Locale.ROOT)) {
+                "pdf" -> "application/pdf"
+                "png" -> "image/png"
+                "jpg", "jpeg" -> "image/jpeg"
+                "gif" -> "image/gif"
+                "webp" -> "image/webp"
+                else -> "application/octet-stream"
+            }
+        }
         private val SEARCH_CONTEXT_SIZES = setOf("low", "medium", "high")
         private val DOMAIN_PATTERN = Regex("^[a-z0-9.-]+$")
         private val SUPPORTED_IMAGE_FORMATS = ImageIO.getWriterFormatNames()

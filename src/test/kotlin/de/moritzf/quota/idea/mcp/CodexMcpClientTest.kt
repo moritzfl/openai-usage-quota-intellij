@@ -68,6 +68,33 @@ class CodexMcpClientTest {
     }
 
     @Test
+    fun postsDocumentConversionToCodexResponsesAndWritesMarkdown() {
+        TestUpstream(
+            responseBody = sse(
+                """{"type":"response.output_text.done","text":"# Converted"}""",
+                """{"type":"response.completed","response":{"id":"resp_doc"}}""",
+            ),
+        ).use { upstream ->
+            val client = newClient(upstream.baseUri)
+            val dir = Files.createTempDirectory("codex-doc")
+            val pdf = dir.resolve("doc.pdf")
+            Files.write(pdf, "%PDF-1.4".toByteArray())
+
+            val response = client.documentToMarkdown(localFile = pdf)
+
+            assertFalse(response.isError)
+            val request = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            assertEquals("/backend-api/codex/responses", request.path)
+            val body = parseObject(request.body)
+            val content = body["input"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
+            assertEquals("input_file", content[0].jsonObject["type"]!!.jsonPrimitive.content)
+            assertEquals("doc.pdf", content[0].jsonObject["filename"]!!.jsonPrimitive.content)
+            assertTrue(content[0].jsonObject["file_data"]!!.jsonPrimitive.content.startsWith("data:application/pdf;base64,"))
+            assertEquals("# Converted", Files.readString(dir.resolve("doc.md")))
+        }
+    }
+
+    @Test
     fun postsConfigurableWebSearchOptionsAndReturnsSourceMetadata() {
         TestUpstream(
             responseBody = sse(
