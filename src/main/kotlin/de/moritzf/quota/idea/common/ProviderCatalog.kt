@@ -290,6 +290,7 @@ internal object ProviderCatalog {
                 videoGeneration = true,
                 speechToText = true,
                 textToSpeech = true,
+                documentToMarkdown = true,
                 subscriptionProxy = true,
                 oauth = true,
             ),

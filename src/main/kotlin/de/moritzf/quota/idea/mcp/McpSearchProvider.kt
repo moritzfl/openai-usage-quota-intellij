@@ -40,4 +40,5 @@ enum class DocumentToMarkdownProvider(val providerType: QuotaProviderType) {
     MISTRAL(QuotaProviderType.MISTRAL),
     ZAI(QuotaProviderType.ZAI),
     OPEN_AI(QuotaProviderType.OPEN_AI),
+    SUPERGROK(QuotaProviderType.SUPERGROK),
 }

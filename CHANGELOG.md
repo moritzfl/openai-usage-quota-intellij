@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 
+- SuperGrok can convert a PDF or image to markdown through the existing Grok login (markdown only, no extracted images).
 - Added Mistral. Monthly billing and Vibe usage come from an `admin.mistral.ai` session cookie (`ory_session_*` plus `csrftoken`); the API key supplies official per-minute token and request rate limits, the MCP tools (Conversations web search, image generation, OCR document-to-markdown, speech-to-text, text-to-speech, and voice listing), and the local OpenAI-compatible proxy. Per-minute token and request usage is shown as a percent only, without a reset countdown. OCR keeps extracted images by default and writes `<name>.md` plus sibling images beside a local source file. The last quota response and MCP quota JSON wrap session usage and API-key rate limits together.
 - Speech-to-text and text-to-speech MCP tools also work through OpenAI/Codex and SuperGrok/xAI with the existing logins.
 - Document-to-markdown also works through Z.ai GLM-OCR (including extracted images) and OpenAI/Codex (markdown only).

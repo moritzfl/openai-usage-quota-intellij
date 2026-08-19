@@ -38,7 +38,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ | (✓) | ✓ |
 | Claude (Anthropic) | Browser login | ✓ | — | — | — | — | — | — |
-| SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
+| SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ | (✓) | ✓ |
 | GitHub Copilot | Device code | ✓ | — | — | — | — | — | ✓ |
 | Cursor | Session cookie | ✓ | — | — | — | — | — | — |
 | OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | — | — | ✓ |
@@ -54,6 +54,8 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 - **Voice** — MCP tools for speech-to-text and text-to-speech.
 - **Docs** — MCP tool that converts a PDF or image to markdown. ✓ also extracts images from the document; (✓) is markdown only.
 - **Proxy** — available through the local OpenAI-compatible proxy (for use of subscriptions in tools like Jetbrains AI Chat and other tools that require authentication by endpoint and API key).
+
+Claude is quota-only. Anthropic does not allow using a Claude subscription outside their own apps, so this plugin only shows usage and does not wrap Claude search, media, documents, or a proxy.
 
 ## Installation
 
@@ -89,7 +91,7 @@ The plugin registers subscription-backed tools with IntelliJ's built-in MCP serv
 | `supergrok_web_search` | Web search answered by Grok (model selection, domain filters) |
 | `mistral_web_search` | Answer-style web search via Mistral Conversations |
 | `subscription_web_search` | Result-list web search via Kimi, Z.ai, MiniMax, or Ollama |
-| `subscription_document_to_markdown` | Convert a PDF/image to markdown via Mistral OCR, Z.ai GLM-OCR, or OpenAI/Codex |
+| `subscription_document_to_markdown` | Convert a PDF/image to markdown via Mistral OCR, Z.ai GLM-OCR, OpenAI/Codex, or SuperGrok |
 | `subscription_image_generation` | Image generation via OpenAI/Codex, SuperGrok/xAI Imagine, Mistral, or Z.ai GLM-Image, optionally saved to a file |
 | `subscription_speech_to_text` | Transcribe audio via OpenAI/Codex, SuperGrok/xAI, or Mistral |
 | `subscription_text_to_speech` | Generate speech audio via OpenAI/Codex, SuperGrok/xAI, or Mistral and write it to a file |

@@ -31,6 +31,7 @@ import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import de.moritzf.quota.shared.McpProviderToolStatus
 import de.moritzf.quota.supergrok.SuperGrokAudioClient
+import de.moritzf.quota.supergrok.SuperGrokDocumentClient
 import de.moritzf.quota.supergrok.SuperGrokImagineClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
 import de.moritzf.quota.supergrok.SuperGrokWebSearchClient
@@ -53,6 +54,7 @@ class SubscriptionUsageMcpToolset(
     private val superGrokSearchClient: SuperGrokWebSearchClient = SuperGrokWebSearchClient.createDefault(),
     private val superGrokImagineClient: SuperGrokImagineClient = SuperGrokImagineClient.createDefault(),
     private val superGrokAudioClient: SuperGrokAudioClient = SuperGrokAudioClient.createDefault(),
+    private val superGrokDocumentClient: SuperGrokDocumentClient = SuperGrokDocumentClient.createDefault(),
     private val mistralSearchClient: MistralWebSearchClient = MistralWebSearchClient.createDefault(),
     private val mistralImageClient: MistralImageClient = MistralImageClient.createDefault(),
     private val mistralOcrClient: MistralOcrClient = MistralOcrClient.createDefault(),
@@ -178,7 +180,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_document_to_markdown")
-    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex converts the document through the chat API and does not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
+    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex and SuperGrok convert the document through their chat APIs and do not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
     fun subscription_document_to_markdown(
         @McpDescription(description = "Provider to use. Supported providers are derived from the DocumentToMarkdownProvider enum.") provider: DocumentToMarkdownProvider = DocumentToMarkdownProvider.MISTRAL,
         @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
@@ -212,6 +214,13 @@ class SubscriptionUsageMcpToolset(
                         resolveOptionalPath(outputFile),
                         model,
                     ),
+                )
+            DocumentToMarkdownProvider.SUPERGROK ->
+                superGrokDocumentToMarkdown(
+                    documentUrl,
+                    localFile,
+                    outputFile,
+                    model.ifBlank { SuperGrokDocumentClient.DEFAULT_MODEL },
                 )
         }
     }
@@ -365,6 +374,23 @@ class SubscriptionUsageMcpToolset(
     private fun superGrokListVoices(): String {
         return withSuperGrokAuth("Grok voice list failed.") { accessToken ->
             superGrokAudioClient.listVoices(accessToken)
+        }
+    }
+
+    private fun superGrokDocumentToMarkdown(
+        documentUrl: String?,
+        localFile: String?,
+        outputFile: String?,
+        model: String,
+    ): String {
+        return withSuperGrokAuth("Grok document conversion failed.") { accessToken ->
+            superGrokDocumentClient.convertDocument(
+                accessToken = accessToken,
+                documentUrl = documentUrl,
+                localFile = resolveOptionalPath(localFile),
+                outputFile = resolveOptionalPath(outputFile),
+                model = model,
+            )
         }
     }
 
