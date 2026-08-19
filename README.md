@@ -26,7 +26,7 @@
 Track and use your LLM subscriptions directly in IntelliJ IDEA.
 
 - **See your quota** for ChatGPT, Claude, Grok, Copilot & more in the status bar and a detail popup.
-- **Use your subscriptions from IDE chat** via MCP tools: quota lookup, web search, image and video generation, document-to-markdown.
+- **Use your subscriptions from IDE chat** via MCP tools: quota lookup, web search, image and video generation, voice, and document-to-markdown.
 - **Reuse your subscriptions in other tools** through a local OpenAI-compatible proxy (for example as a custom LLM provider for JetBrains Junie).
 - **Keep AI client configs in sync** with IntelliJ's MCP server URL, which changes port between restarts.
 
@@ -37,7 +37,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 | Provider | Sign-in | Quota | Web search | Images | Video | Voice | Docs | Proxy |
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ | (✓) | ✓ |
-| Claude (Anthropic) | Browser login | ✓ | ✓ | — | — | — | (✓) | — |
+| Claude (Anthropic) | Browser login | ✓ | — | — | — | — | — | — |
 | SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
 | GitHub Copilot | Device code | ✓ | — | — | — | — | — | ✓ |
 | Cursor | Session cookie | ✓ | — | — | — | — | — | — |
@@ -88,9 +88,8 @@ The plugin registers subscription-backed tools with IntelliJ's built-in MCP serv
 | `codex_web_search` | Web search answered by OpenAI/Codex (context size, live access, domain filters) |
 | `supergrok_web_search` | Web search answered by Grok (model selection, domain filters) |
 | `mistral_web_search` | Answer-style web search via Mistral Conversations |
-| `claude_web_search` | Answer-style web search via Claude |
 | `subscription_web_search` | Result-list web search via Kimi, Z.ai, MiniMax, or Ollama |
-| `subscription_document_to_markdown` | Convert a PDF/image to markdown via Mistral OCR, Z.ai GLM-OCR, OpenAI/Codex, or Claude |
+| `subscription_document_to_markdown` | Convert a PDF/image to markdown via Mistral OCR, Z.ai GLM-OCR, or OpenAI/Codex |
 | `subscription_image_generation` | Image generation via OpenAI/Codex, SuperGrok/xAI Imagine, Mistral, or Z.ai GLM-Image, optionally saved to a file |
 | `subscription_speech_to_text` | Transcribe audio via OpenAI/Codex, SuperGrok/xAI, or Mistral |
 | `subscription_text_to_speech` | Generate speech audio via OpenAI/Codex, SuperGrok/xAI, or Mistral and write it to a file |
