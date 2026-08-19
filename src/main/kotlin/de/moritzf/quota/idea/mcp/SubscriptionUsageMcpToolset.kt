@@ -4,6 +4,8 @@ import com.intellij.mcpserver.McpToolset
 import com.intellij.mcpserver.annotations.McpDescription
 import com.intellij.mcpserver.annotations.McpTool
 import com.intellij.openapi.project.ProjectManager
+import de.moritzf.quota.claude.ClaudeDocumentClient
+import de.moritzf.quota.claude.ClaudeQuotaException
 import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.ProviderCatalog
 import de.moritzf.quota.idea.common.QuotaProviderType
@@ -34,6 +36,7 @@ import de.moritzf.quota.supergrok.SuperGrokAudioClient
 import de.moritzf.quota.supergrok.SuperGrokImagineClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
 import de.moritzf.quota.supergrok.SuperGrokWebSearchClient
+import de.moritzf.quota.zai.ZaiOcrClient
 import de.moritzf.quota.zai.ZaiQuotaException
 import de.moritzf.quota.zai.ZaiWebSearchClient
 import java.nio.file.Path
@@ -55,6 +58,8 @@ class SubscriptionUsageMcpToolset(
     private val mistralImageClient: MistralImageClient = MistralImageClient.createDefault(),
     private val mistralOcrClient: MistralOcrClient = MistralOcrClient.createDefault(),
     private val mistralAudioClient: MistralAudioClient = MistralAudioClient.createDefault(),
+    private val zaiOcrClient: ZaiOcrClient = ZaiOcrClient.createDefault(),
+    private val claudeDocumentClient: ClaudeDocumentClient = ClaudeDocumentClient.createDefault(),
 ) : McpToolset {
     @McpTool(name = "subscription_quota")
     @McpDescription(description = "Returns the latest subscription quota response JSON for the selected provider.")
@@ -88,6 +93,7 @@ class SubscriptionUsageMcpToolset(
                 videoGenerationAvailable = caps.videoGeneration && quotaConfigured,
                 speechToTextAvailable = caps.speechToText && descriptor.isVoiceConfigured(),
                 textToSpeechAvailable = caps.textToSpeech && descriptor.isVoiceConfigured(),
+                documentToMarkdownAvailable = caps.documentToMarkdown && descriptor.isDocumentConfigured(),
                 reason = reason,
             )
         }
@@ -171,15 +177,49 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_document_to_markdown")
-    @McpDescription(description = "Converts a document to markdown with Mistral OCR. Pass a public documentUrl or a localFile path. Extracted images stay in the OCR response and are written next to the markdown using the API image names. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
+    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex and Claude convert the document through their chat APIs and do not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
     fun subscription_document_to_markdown(
+        @McpDescription(description = "Provider to use. Supported providers are derived from the DocumentToMarkdownProvider enum.") provider: DocumentToMarkdownProvider = DocumentToMarkdownProvider.MISTRAL,
         @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
         @McpDescription(description = "Optional project-relative or absolute local file path.") localFile: String? = null,
-        @McpDescription(description = "Optional markdown output path. Defaults to <localFile>.md beside the source when includeImages is true.") outputFile: String? = null,
-        @McpDescription(description = "Keep extracted images. Requests image bytes from OCR and writes them next to the markdown using the API placeholder names.") includeImages: Boolean = true,
-        @McpDescription(description = "OCR model id.") model: String = MistralOcrClient.DEFAULT_MODEL,
+        @McpDescription(description = "Optional markdown output path. Defaults to <localFile>.md beside the source.") outputFile: String? = null,
+        @McpDescription(description = "Keep extracted images when the provider returns them.") includeImages: Boolean = true,
+        @McpDescription(description = "OCR model id. Leave blank for the provider default.") model: String = "",
     ): String {
-        return mistralDocumentToMarkdown(documentUrl, localFile, outputFile, includeImages, model)
+        return when (provider) {
+            DocumentToMarkdownProvider.MISTRAL ->
+                mistralDocumentToMarkdown(
+                    documentUrl,
+                    localFile,
+                    outputFile,
+                    includeImages,
+                    model.ifBlank { MistralOcrClient.DEFAULT_MODEL },
+                )
+            DocumentToMarkdownProvider.ZAI ->
+                zaiDocumentToMarkdown(
+                    documentUrl,
+                    localFile,
+                    outputFile,
+                    includeImages,
+                    model.ifBlank { ZaiOcrClient.DEFAULT_MODEL },
+                )
+            DocumentToMarkdownProvider.OPEN_AI ->
+                codexResult(
+                    codexClient.documentToMarkdown(
+                        documentUrl,
+                        resolveOptionalPath(localFile),
+                        resolveOptionalPath(outputFile),
+                        model,
+                    ),
+                )
+            DocumentToMarkdownProvider.CLAUDE ->
+                claudeDocumentToMarkdown(
+                    documentUrl,
+                    localFile,
+                    outputFile,
+                    model.ifBlank { ClaudeDocumentClient.DEFAULT_MODEL },
+                )
+        }
     }
 
     @McpTool(name = "subscription_speech_to_text")
@@ -496,6 +536,77 @@ class SubscriptionUsageMcpToolset(
             errorResult(exception.message ?: "Mistral OCR failed.")
         } catch (exception: Exception) {
             errorResult(exception.message ?: "Mistral OCR failed.")
+        }
+    }
+
+    private fun zaiDocumentToMarkdown(
+        documentUrl: String?,
+        localFile: String?,
+        outputFile: String?,
+        includeImages: Boolean,
+        model: String,
+    ): String {
+        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
+        }
+        return try {
+            zaiOcrClient.convertDocument(
+                apiKey = apiKey,
+                documentUrl = documentUrl,
+                localFile = resolveOptionalPath(localFile),
+                outputFile = resolveOptionalPath(outputFile),
+                includeImages = includeImages,
+                model = model,
+            )
+        } catch (exception: ZaiQuotaException) {
+            errorResult(exception.message ?: "Z.ai OCR failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Z.ai OCR failed.")
+        }
+    }
+
+    private fun claudeDocumentToMarkdown(
+        documentUrl: String?,
+        localFile: String?,
+        outputFile: String?,
+        model: String,
+    ): String {
+        return withClaudeAuth("Claude document conversion failed.") { accessToken ->
+            claudeDocumentClient.convertDocument(
+                accessToken = accessToken,
+                documentUrl = documentUrl,
+                localFile = resolveOptionalPath(localFile),
+                outputFile = resolveOptionalPath(outputFile),
+                model = model,
+            )
+        }
+    }
+
+    private fun withClaudeAuth(failureLabel: String, block: (String) -> String): String {
+        val authService = QuotaAuthService.getInstance()
+        val token = authService.getAccessTokenBlocking(QuotaProviderType.CLAUDE)
+        if (token.isNullOrBlank()) {
+            return errorResult("Claude login required. Log in from Claude settings.")
+        }
+        return try {
+            block(token)
+        } catch (exception: ClaudeQuotaException) {
+            if (exception.statusCode == 401 || exception.statusCode == 403) {
+                val refreshed = authService.forceRefreshBlocking(QuotaProviderType.CLAUDE, token)
+                if (!refreshed.isNullOrBlank()) {
+                    return try {
+                        block(refreshed)
+                    } catch (retryException: ClaudeQuotaException) {
+                        errorResult(retryException.message ?: failureLabel)
+                    } catch (retryException: Exception) {
+                        errorResult(retryException.message ?: failureLabel)
+                    }
+                }
+            }
+            errorResult(exception.message ?: failureLabel)
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: failureLabel)
         }
     }
 

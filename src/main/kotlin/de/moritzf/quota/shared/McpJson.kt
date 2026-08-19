@@ -47,6 +47,7 @@ internal data class McpProviderToolStatus(
     @SerialName("video_generation_available") val videoGenerationAvailable: Boolean,
     @SerialName("speech_to_text_available") val speechToTextAvailable: Boolean = false,
     @SerialName("text_to_speech_available") val textToSpeechAvailable: Boolean = false,
+    @SerialName("document_to_markdown_available") val documentToMarkdownAvailable: Boolean = false,
     val reason: String? = null,
 )
 

@@ -34,3 +34,10 @@ enum class TextToSpeechProvider(val providerType: QuotaProviderType) {
     SUPERGROK(QuotaProviderType.SUPERGROK),
     MISTRAL(QuotaProviderType.MISTRAL),
 }
+
+enum class DocumentToMarkdownProvider(val providerType: QuotaProviderType) {
+    MISTRAL(QuotaProviderType.MISTRAL),
+    ZAI(QuotaProviderType.ZAI),
+    OPEN_AI(QuotaProviderType.OPEN_AI),
+    CLAUDE(QuotaProviderType.CLAUDE),
+}

@@ -3,6 +3,7 @@ package de.moritzf.quota.idea.common
 import de.moritzf.quota.idea.mcp.ImageGenerationProvider
 import de.moritzf.quota.idea.mcp.ListSearchProvider
 import de.moritzf.quota.idea.mcp.SpeechToTextProvider
+import de.moritzf.quota.idea.mcp.DocumentToMarkdownProvider
 import de.moritzf.quota.idea.mcp.TextToSpeechProvider
 import de.moritzf.quota.idea.mcp.UsageQuotaMcpRegistry
 import de.moritzf.quota.idea.settings.ProviderSettingsRegistry
@@ -59,6 +60,10 @@ class ProviderCatalogTest {
         assertEquals(
             ProviderCatalog.all.filter { it.capabilities.textToSpeech }.map { it.type }.toSet(),
             TextToSpeechProvider.entries.map { it.providerType }.toSet(),
+        )
+        assertEquals(
+            ProviderCatalog.all.filter { it.capabilities.documentToMarkdown }.map { it.type }.toSet(),
+            DocumentToMarkdownProvider.entries.map { it.providerType }.toSet(),
         )
         assertEquals(
             ProviderCatalog.all.filter { it.capabilities.webSearch == WebSearchCapability.ANSWER }.map { it.type }.toSet(),

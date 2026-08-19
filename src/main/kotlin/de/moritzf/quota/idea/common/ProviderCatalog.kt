@@ -64,6 +64,7 @@ internal data class ProviderCapabilities(
     val videoGeneration: Boolean = false,
     val speechToText: Boolean = false,
     val textToSpeech: Boolean = false,
+    val documentToMarkdown: Boolean = false,
     val subscriptionProxy: Boolean = false,
     val oauth: Boolean = false,
 )
@@ -85,6 +86,7 @@ internal data class ProviderDescriptor(
     val isWebSearchConfigured: () -> Boolean = { false },
     val isImageGenerationConfigured: () -> Boolean = { false },
     val isVoiceConfigured: () -> Boolean = { false },
+    val isDocumentConfigured: () -> Boolean = { false },
     /**
      * Proxy-credential check. [onCredentialsLoaded] is invoked when PasswordSafe finishes an async load
      * (settings UI refresh). Null for blocking-only callers.
@@ -109,7 +111,10 @@ internal object ProviderCatalog {
     val all: List<ProviderDescriptor> = listOf(
         descriptor(
             type = QuotaProviderType.CLAUDE,
-            capabilities = ProviderCapabilities(oauth = true),
+            capabilities = ProviderCapabilities(
+                documentToMarkdown = true,
+                oauth = true,
+            ),
             quotaFactory = ::ClaudeQuotaProvider,
             snapshotCodec = EnvelopeQuotaCodec(ClaudeQuota.serializer()),
             mcpEmpty = "No Claude usage response available",
@@ -196,6 +201,7 @@ internal object ProviderCatalog {
                 imageGeneration = true,
                 speechToText = true,
                 textToSpeech = true,
+                documentToMarkdown = true,
                 subscriptionProxy = true,
             ),
             quotaFactory = ::MistralQuotaProvider,
@@ -207,6 +213,7 @@ internal object ProviderCatalog {
             isWebSearchConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isImageGenerationConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isVoiceConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isDocumentConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isProxyConfigured = { onLoaded ->
                 !MistralApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
             },
@@ -240,6 +247,7 @@ internal object ProviderCatalog {
                 imageGeneration = true,
                 speechToText = true,
                 textToSpeech = true,
+                documentToMarkdown = true,
                 subscriptionProxy = true,
                 oauth = true,
             ),
@@ -303,6 +311,7 @@ internal object ProviderCatalog {
             type = QuotaProviderType.ZAI,
             capabilities = ProviderCapabilities(
                 webSearch = WebSearchCapability.LIST,
+                documentToMarkdown = true,
                 subscriptionProxy = true,
             ),
             quotaFactory = ::ZaiQuotaProvider,
@@ -411,6 +420,7 @@ internal object ProviderCatalog {
         isWebSearchConfigured: () -> Boolean = { false },
         isImageGenerationConfigured: (() -> Boolean)? = null,
         isVoiceConfigured: (() -> Boolean)? = null,
+        isDocumentConfigured: (() -> Boolean)? = null,
         isProxyConfigured: (onCredentialsLoaded: (() -> Unit)?) -> Boolean = { _ -> false },
         webSearchMissingReason: String? = null,
         ideProxyFactory: ((IdeProxyBuildContext) -> SubscriptionProxyProvider)? = null,
@@ -429,6 +439,8 @@ internal object ProviderCatalog {
                 ?: { capabilities.imageGeneration && isQuotaConfigured() },
             isVoiceConfigured = isVoiceConfigured
                 ?: { (capabilities.speechToText || capabilities.textToSpeech) && isQuotaConfigured() },
+            isDocumentConfigured = isDocumentConfigured
+                ?: { capabilities.documentToMarkdown && isQuotaConfigured() },
             isProxyConfigured = isProxyConfigured,
             webSearchMissingReason = webSearchMissingReason,
             ideProxyFactory = ideProxyFactory,

@@ -157,6 +157,7 @@ class SubscriptionUsageMcpToolsetTest {
         assertEquals(listOf("subscription_document_to_markdown"), tools.map { it.getAnnotation(McpTool::class.java).name })
         assertEquals(
             listOf(
+                DocumentToMarkdownProvider::class.java,
                 String::class.java,
                 String::class.java,
                 String::class.java,
