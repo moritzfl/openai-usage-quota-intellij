@@ -9,7 +9,6 @@ import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.idea.auth.AuthService
@@ -28,7 +27,6 @@ internal class GitHubSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     val enterpriseHostField = JBTextField().apply {
         emptyText.text = "github.com or github.example.com"
         columns = 36
@@ -121,7 +119,7 @@ internal class GitHubSettingsPanel(
         }
 
         addToTop(panel {
-            row { cell(hideFromPopupCheckBox) }
+            row { cell(popupVisibilityToggle) }
             row("Enterprise host:") { cell(enterpriseHostField).resizableColumn().align(AlignX.FILL) }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
@@ -136,10 +134,7 @@ internal class GitHubSettingsPanel(
             }
             separator()
         })
-        addToCenter(BorderLayoutPanel().apply {
-            addToTop(JBLabel("Last quota response:"))
-            addToCenter(createResponseViewerPanel(responseViewer))
-        })
+        addToCenter(createResponseSection(responseViewer))
     }
 
     override fun updateFields() {

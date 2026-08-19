@@ -9,6 +9,7 @@ import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.ui.JBColor
+import com.intellij.ui.OnePixelSplitter
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBCheckBox
 import com.intellij.ui.dsl.builder.Align
@@ -17,6 +18,7 @@ import com.intellij.ui.dsl.builder.AlignY
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.messages.MessageBusConnection
+import com.intellij.util.ui.JBFont
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import com.intellij.util.ui.components.BorderLayoutPanel
@@ -31,6 +33,7 @@ import de.moritzf.quota.idea.mcp.McpServerUrlResolver
 import de.moritzf.quota.idea.openai.OpenAiProxyService
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.indicator.*
+import de.moritzf.quota.idea.ui.settings.ProviderListStatus
 import de.moritzf.quota.idea.ui.settings.ProviderReorderPanel
 import de.moritzf.quota.minimax.MiniMaxRegionPreference
 import de.moritzf.quota.shared.ProviderQuota
@@ -39,7 +42,6 @@ import java.awt.Dimension
 import javax.swing.Icon
 import javax.swing.JComponent
 import javax.swing.JPanel
-import javax.swing.JSeparator
 import javax.swing.SwingConstants
 import javax.swing.Timer
 import javax.swing.UIManager
@@ -63,6 +65,10 @@ class QuotaSettingsConfigurable : Configurable {
     private var providerReorderPanel: ProviderReorderPanel? = null
     private var serviceCards: JPanel? = null
     private var serviceCardLayout: CardLayout? = null
+    private var detailHeaderPanel: JComponent? = null
+    private var detailHeaderIcon: JBLabel? = null
+    private var detailHeaderName: JBLabel? = null
+    private var detailHeaderReason: JBLabel? = null
     private var mcpSyncCheckBox: JBCheckBox? = null
     private var mcpServerStatusLabel: JBLabel? = null
     private var mcpServerStatusTimer: Timer? = null
@@ -103,24 +109,30 @@ class QuotaSettingsConfigurable : Configurable {
         }
 
         serviceCardLayout = CardLayout()
-        serviceCards = JPanel(serviceCardLayout).apply {
+        serviceCards = object : JPanel(serviceCardLayout) {
+            override fun getPreferredSize(): Dimension {
+                val size = super.getPreferredSize()
+                return Dimension(JBUI.scale(DETAIL_PREF_WIDTH), size.height)
+            }
+
+            override fun getMinimumSize(): Dimension {
+                return Dimension(JBUI.scale(200), JBUI.scale(80))
+            }
+        }.apply {
             isOpaque = false
         }
 
         providerReorderPanel = ProviderReorderPanel(
             QuotaSettingsState.getInstance().providerOrderList(),
             onOrderChanged = { },
-            onProviderSelected = { type ->
-                serviceCardLayout?.show(serviceCards, type.id)
-                serviceCards?.revalidate()
-                serviceCards?.repaint()
-            }
+            onProviderSelected = { type -> showProviderDetail(type) },
         )
 
         rebuildServiceCards()
 
         panel = buildSettingsPanel()
         rootComponent = panel
+        showProviderDetail(providerReorderPanel?.getSelectedProvider())
 
         connection = ApplicationManager.getApplication().messageBus.connect()
         connection!!.subscribe(QuotaUsageListener.TOPIC, object : QuotaUsageListener {
@@ -130,6 +142,11 @@ class QuotaSettingsConfigurable : Configurable {
                 ApplicationManager.getApplication().invokeLater({
                     providerPanel.updateResponseArea()
                     providerPanel.updateStatus()
+                    providerReorderPanel?.refreshStatuses()
+                    val selected = providerReorderPanel?.getSelectedProvider()
+                    if (selected == type) {
+                        updateDetailHeaderReason(selected)
+                    }
                 }, ModalityState.stateForComponent(currentPanel))
             }
         })
@@ -166,6 +183,10 @@ class QuotaSettingsConfigurable : Configurable {
         providerReorderPanel = null
         serviceCards = null
         serviceCardLayout = null
+        detailHeaderPanel = null
+        detailHeaderIcon = null
+        detailHeaderName = null
+        detailHeaderReason = null
         updatingDisplayModeChoices = false
         providerPanelsByType.clear()
         mcpSyncCheckBox = null
@@ -238,10 +259,79 @@ class QuotaSettingsConfigurable : Configurable {
         providerPanelsByType.forEach { (type, panel) ->
             cards.add(panel, type.id)
         }
+        cards.add(createEmptyDetail(), EMPTY_CARD_ID)
         val selectedProvider = providerReorderPanel?.getSelectedProvider()
             ?: QuotaSettingsState.getInstance().providerOrderList().firstOrNull()
             ?: QuotaProviderRegistry.defaultProviderOrder().first()
         serviceCardLayout?.show(cards, selectedProvider.id)
+    }
+
+    private fun showProviderDetail(type: QuotaProviderType?) {
+        if (type == null) {
+            detailHeaderPanel?.isVisible = false
+            serviceCardLayout?.show(serviceCards, EMPTY_CARD_ID)
+        } else {
+            detailHeaderPanel?.isVisible = true
+            val iconLabel = detailHeaderIcon
+            if (iconLabel != null) {
+                iconLabel.icon = ProviderReorderPanel.scaleToSize(
+                    ProviderUiRegistry.forType(type).icon,
+                    JBUI.scale(DETAIL_HEADER_ICON_SIZE),
+                    iconLabel,
+                )
+            }
+            detailHeaderName?.text = type.displayName
+            updateDetailHeaderReason(type)
+            serviceCardLayout?.show(serviceCards, type.id)
+        }
+        detailHeaderPanel?.revalidate()
+        serviceCards?.revalidate()
+        serviceCards?.repaint()
+    }
+
+    private fun updateDetailHeaderReason(type: QuotaProviderType) {
+        val reason = detailHeaderReason ?: return
+        val snapshot = ProviderReorderPanel.statusSnapshot(type)
+        if (snapshot.status == ProviderListStatus.WARNING || snapshot.status == ProviderListStatus.ERROR) {
+            reason.text = "<html>${QuotaUiUtil.escapeHtml(snapshot.explanation)}</html>"
+            reason.foreground = ProviderReorderPanel.statusColor(snapshot.status)
+            reason.isVisible = true
+        } else {
+            reason.isVisible = false
+        }
+    }
+
+    private fun createDetailHeader(): JComponent {
+        val icon = JBLabel()
+        val name = JBLabel().apply {
+            font = JBFont.h3().asBold()
+        }
+        val reason = JBLabel().apply {
+            font = JBFont.small()
+            isVisible = false
+        }
+        detailHeaderIcon = icon
+        detailHeaderName = name
+        detailHeaderReason = reason
+        val titles = BorderLayoutPanel().apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyLeft(8)
+            addToTop(name)
+            addToCenter(reason)
+        }
+        return BorderLayoutPanel().apply {
+            isOpaque = false
+            border = JBUI.Borders.emptyBottom(10)
+            addToLeft(icon)
+            addToCenter(titles)
+        }.also { detailHeaderPanel = it }
+    }
+
+    private fun createEmptyDetail(): JComponent {
+        return JBLabel("Select a provider on the left to configure").apply {
+            horizontalAlignment = SwingConstants.CENTER
+            foreground = JBColor.GRAY
+        }
     }
 
     private fun buildSettingsPanel(): DialogPanel {
@@ -279,8 +369,8 @@ class QuotaSettingsConfigurable : Configurable {
                 val locationChanged = selectedLocation != state.location()
                 val displayModeChanged = sanitizedDisplayMode != state.displayMode()
                 val sourceChanged = selectedSource != state.source()
-                val popupVisibilityChanged = hideFromPopupCheckBoxes().any { (type, checkBox) ->
-                    checkBox.isSelected != state.isHiddenFromPopup(type)
+                val popupVisibilityChanged = popupVisibilityToggles().any { (type, toggle) ->
+                    toggle.isHidden != state.isHiddenFromPopup(type)
                 }
                 val miniMaxRegionChanged = miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference != state.miniMaxRegionPreference()
                 val providerOrderChanged = providerReorderPanel?.getOrder()?.joinToString(",") { it.id } != state.providerOrder
@@ -304,8 +394,8 @@ class QuotaSettingsConfigurable : Configurable {
                 if (sourceChanged) {
                     state.setSource(selectedSource)
                 }
-                hideFromPopupCheckBoxes().forEach { (type, checkBox) ->
-                    state.setHiddenFromPopup(type, checkBox.isSelected)
+                popupVisibilityToggles().forEach { (type, toggle) ->
+                    state.setHiddenFromPopup(type, toggle.isHidden)
                 }
                 state.minimaxRegionPreference = (miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference ?: MiniMaxRegionPreference.AUTO).name
                 if (providerOrderChanged) {
@@ -341,8 +431,8 @@ class QuotaSettingsConfigurable : Configurable {
                 updateDisplayModeChoices(QuotaSettingsState.getInstance().displayMode())
                 updateDisplayModePreview()
                 indicatorSourceComboBox?.selectedItem = QuotaSettingsState.getInstance().source()
-                hideFromPopupCheckBoxes().forEach { (type, checkBox) ->
-                    checkBox.isSelected = QuotaSettingsState.getInstance().isHiddenFromPopup(type)
+                popupVisibilityToggles().forEach { (type, toggle) ->
+                    toggle.isHidden = QuotaSettingsState.getInstance().isHiddenFromPopup(type)
                 }
                 gitHubPanel().enterpriseHostField.text = QuotaSettingsState.getInstance().githubEnterpriseHost
                 miniMaxPanel().regionComboBox.selectedItem = QuotaSettingsState.getInstance().miniMaxRegionPreference()
@@ -353,6 +443,7 @@ class QuotaSettingsConfigurable : Configurable {
                     providerPanel.updateFields()
                     providerPanel.updateResponseArea()
                 }
+                providerReorderPanel?.refreshStatuses()
                 proxySettingsPanel?.updateFields()
             }
 
@@ -364,7 +455,7 @@ class QuotaSettingsConfigurable : Configurable {
                 selectedLocation != state.location() ||
                     QuotaDisplayMode.sanitizeFor(selectedLocation, selectedDisplayMode) != state.displayMode() ||
                     selectedSource != state.source() ||
-                    hideFromPopupCheckBoxes().any { (type, checkBox) -> checkBox.isSelected != state.isHiddenFromPopup(type) } ||
+                    popupVisibilityToggles().any { (type, toggle) -> toggle.isHidden != state.isHiddenFromPopup(type) } ||
                     miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference != state.miniMaxRegionPreference() ||
                     providerReorderPanel?.getOrder()?.joinToString(",") { it.id } != state.providerOrder ||
                     mcpSyncCheckBox?.isSelected != state.syncIntellijMcpServerUrl ||
@@ -382,6 +473,18 @@ class QuotaSettingsConfigurable : Configurable {
     }
 
     private fun buildSubscriptionUsageTab(): JComponent {
+        val detail = BorderLayoutPanel().apply {
+            background = UIUtil.getPanelBackground()
+            isOpaque = true
+            border = JBUI.Borders.empty(4, 12, 0, 0)
+            addToTop(createDetailHeader())
+            addToCenter(serviceCards!!)
+        }
+        val splitter = OnePixelSplitter(false, 0.32f, 0.22f, 0.5f).apply {
+            firstComponent = providerReorderPanel
+            secondComponent = detail
+            setHonorComponentsMinimumSize(false)
+        }
         return BorderLayoutPanel().apply {
             background = UIUtil.getPanelBackground()
             isOpaque = true
@@ -402,15 +505,8 @@ class QuotaSettingsConfigurable : Configurable {
             addToCenter(BorderLayoutPanel().apply {
                 background = UIUtil.getPanelBackground()
                 isOpaque = true
-                border = JBUI.Borders.emptyTop(16)
-                addToTop(JSeparator())
-                addToCenter(BorderLayoutPanel().apply {
-                    background = UIUtil.getPanelBackground()
-                    isOpaque = true
-                    addToTop(providerReorderPanel!!)
-                    addToCenter(serviceCards!!)
-                })
-                addToBottom(JSeparator())
+                border = JBUI.Borders.emptyTop(12)
+                addToCenter(splitter)
             })
         }
     }
@@ -441,7 +537,7 @@ class QuotaSettingsConfigurable : Configurable {
 
     private fun mcpSyncDescriptionLabel(): JBLabel {
         return JBLabel(
-            "<html><body width='720'>IntelliJ's integrated MCP server can change its port from time to time. " +
+            "<html><body width='520'>IntelliJ's integrated MCP server can change its port from time to time. " +
                 "When sync is enabled, this plugin writes the current server URL to the selected agent " +
                 "configuration files on startup and after settings changes, so those agents keep pointing " +
                 "at the correct IntelliJ MCP server.</body></html>",
@@ -454,8 +550,8 @@ class QuotaSettingsConfigurable : Configurable {
 
     private fun gitHubPanel(): GitHubSettingsPanel = providerPanelsByType.getValue(QuotaProviderType.GITHUB) as GitHubSettingsPanel
 
-    private fun hideFromPopupCheckBoxes(): Map<QuotaProviderType, JBCheckBox> {
-        return providerPanelsByType.mapValues { (_, panel) -> panel.hideFromPopupCheckBox }
+    private fun popupVisibilityToggles(): Map<QuotaProviderType, PopupVisibilityToggle> {
+        return providerPanelsByType.mapValues { (_, panel) -> panel.popupVisibilityToggle }
     }
 
     private fun normalizeTargets(targets: List<McpServerSyncTarget>): List<McpServerSyncTarget> {
@@ -464,6 +560,9 @@ class QuotaSettingsConfigurable : Configurable {
 
     companion object {
         private const val MCP_SERVER_STATUS_REFRESH_MILLIS = 5_000
+        private const val EMPTY_CARD_ID = "empty"
+        private const val DETAIL_HEADER_ICON_SIZE = 20
+        private const val DETAIL_PREF_WIDTH = 420
     }
 
     private class DisplayModePreviewComponent : BorderLayoutPanel() {

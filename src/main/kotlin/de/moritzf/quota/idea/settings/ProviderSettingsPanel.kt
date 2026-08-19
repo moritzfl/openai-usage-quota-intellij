@@ -1,20 +1,31 @@
 package de.moritzf.quota.idea.settings
 
-import com.intellij.ui.components.JBCheckBox
+import com.intellij.icons.AllIcons
+import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
+import java.awt.Cursor
 import java.awt.Dimension
 import java.awt.Font
+import java.awt.Toolkit
+import java.awt.datatransfer.StringSelection
+import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.ScrollPaneConstants
+import javax.swing.Timer
 
 /**
  * Common surface the settings dialog uses to drive a provider's panel.
  */
 internal abstract class ProviderSettingsPanel : BorderLayoutPanel() {
-    abstract val hideFromPopupCheckBox: JBCheckBox
+    val popupVisibilityToggle = PopupVisibilityToggle()
+
+    override fun getPreferredSize(): Dimension {
+        val size = super.getPreferredSize()
+        return Dimension(size.width.coerceAtMost(JBUI.scale(420)), size.height)
+    }
     abstract fun updateFields()
     abstract fun updateStatus()
     abstract fun updateResponseArea()
@@ -36,12 +47,48 @@ internal abstract class ProviderSettingsPanel : BorderLayoutPanel() {
      * push every settings tab to the same tall minimum.
      */
     protected fun createResponseViewerPanel(viewer: JBTextArea): JComponent {
-        return JBScrollPane(viewer).apply {
-            preferredSize = Dimension(1, JBUI.scale(140))
-            minimumSize = Dimension(1, JBUI.scale(80))
+        return object : JBScrollPane(viewer) {
+            override fun getPreferredSize(): Dimension = Dimension(JBUI.scale(1), JBUI.scale(140))
+            override fun getMinimumSize(): Dimension = Dimension(JBUI.scale(1), JBUI.scale(80))
+        }.apply {
             border = JBUI.Borders.emptyTop(4)
             horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
             verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+        }
+    }
+
+    protected fun createResponseSection(
+        viewer: JBTextArea,
+        title: String = "Last quota response",
+    ): JComponent {
+        val copyButton = JButton(AllIcons.Actions.Copy).apply {
+            isOpaque = false
+            isBorderPainted = false
+            isContentAreaFilled = false
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+            toolTipText = "Copy last quota response"
+            addActionListener {
+                Toolkit.getDefaultToolkit().systemClipboard.setContents(StringSelection(viewer.text), null)
+                icon = AllIcons.Actions.Checked
+                toolTipText = "Copied"
+                Timer(1_500) {
+                    icon = AllIcons.Actions.Copy
+                    toolTipText = "Copy last quota response"
+                }.apply {
+                    isRepeats = false
+                    start()
+                }
+            }
+        }
+        val headerRow = BorderLayoutPanel().apply {
+            isOpaque = false
+            addToLeft(JBLabel(title))
+            addToRight(copyButton)
+        }
+        return BorderLayoutPanel().apply {
+            isOpaque = false
+            addToTop(headerRow)
+            addToCenter(createResponseViewerPanel(viewer))
         }
     }
 }

@@ -26,7 +26,6 @@ import javax.swing.JComponent
 internal class OpenAiSettingsPanel(
     private val modalityComponentProvider: () -> JComponent? = { null },
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val statusLabel = JBLabel().apply { isVisible = false }
     private val loginButton = createActionLink("Log In")
     private val cancelLoginButton = createActionLink("Cancel Login")
@@ -120,7 +119,7 @@ internal class OpenAiSettingsPanel(
 
         val usageTrackingConfigPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
@@ -147,12 +146,7 @@ internal class OpenAiSettingsPanel(
         val usageTrackingPanel = BorderLayoutPanel().apply {
             isOpaque = false
             addToTop(usageTrackingConfigPanel)
-            addToCenter(
-                BorderLayoutPanel().apply {
-                    addToTop(JBLabel("Last quota response:"))
-                    addToCenter(createResponseViewerPanel(codexResponseViewer))
-                },
-            )
+            addToCenter(createResponseSection(codexResponseViewer))
         }
 
         addToCenter(usageTrackingPanel)

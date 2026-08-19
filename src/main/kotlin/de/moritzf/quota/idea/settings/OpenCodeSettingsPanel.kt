@@ -9,7 +9,6 @@ import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
@@ -28,7 +27,6 @@ internal class OpenCodeSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val openCodeCookieField = JBPasswordField().apply {
         columns = 40
         toolTipText = "Session cookie from opencode.ai (extract from browser DevTools)"
@@ -61,13 +59,13 @@ internal class OpenCodeSettingsPanel(
 
         val openCodeConfigPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(openCodeStatusLabel)
             }
             row {
-                label("Extract from opencode.ai → DevTools → Storage → Cookies → \"auth\" cookie value. Valid for 1 year.")
+                text("Extract from opencode.ai → DevTools → Storage → Cookies → \"auth\" cookie value. Valid for 1 year.")
             }
             row("Session cookie:") {
                 cell(openCodeCookieField)
@@ -98,7 +96,7 @@ internal class OpenCodeSettingsPanel(
                 }
             }
             row {
-                label("Optional: add an OpenCode API key to expose OpenCode Zen through the local proxy. Quota fetching still uses the session cookie above.")
+                text("Optional: add an OpenCode API key to expose OpenCode Zen through the local proxy. Quota fetching still uses the session cookie above.")
             }
             row("API key:") {
                 cell(apiKeyField)
@@ -126,12 +124,7 @@ internal class OpenCodeSettingsPanel(
         }
 
         addToTop(openCodeConfigPanel)
-        addToCenter(
-            BorderLayoutPanel().apply {
-                addToTop(JBLabel("Last quota response:"))
-                addToCenter(createResponseViewerPanel(openCodeJsonViewer))
-            },
-        )
+        addToCenter(createResponseSection(openCodeJsonViewer))
     }
 
     override fun updateFields() {

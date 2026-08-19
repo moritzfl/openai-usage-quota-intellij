@@ -1,6 +1,7 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+- Settings → Subscription Usage now uses a vertical provider list with search, status dots, and a detail pane, so more providers no longer widen the window. Drag or Alt+Up/Down still sets popup and indicator order. Last quota response can be copied. An eye toggle shows whether a provider is in the quota popup. Logged-out providers stay gray; a yellow dot means configured but the last refresh failed, with the reason shown next to the name.
 
 ## [1.8.0] - 2026-08-19
 - Added Mistral. Paste an `admin.mistral.ai` session cookie (`ory_session_*` plus `csrftoken`) for monthly billing and Vibe usage, and a Mistral API key for per-minute token and request limits, MCP tools, and the local proxy. Per-minute usage is shown as a percent only (no reset countdown). Settings and MCP quota JSON show session usage and API-key rate limits together.

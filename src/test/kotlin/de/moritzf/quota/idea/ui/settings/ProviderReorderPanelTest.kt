@@ -3,26 +3,21 @@ package de.moritzf.quota.idea.ui.settings
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.settings.ProviderSettingsRegistry
 import de.moritzf.quota.idea.ui.indicator.ProviderUiRegistry
-import java.awt.event.MouseEvent
-import javax.swing.JComponent
-import javax.swing.JPanel
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class ProviderReorderPanelTest {
     @Test
-    fun showsEveryProviderIcon() {
+    fun showsEveryProvider() {
         val panel = ProviderReorderPanel(
             initialOrder = QuotaProviderType.defaultProviderOrder(),
             onOrderChanged = {},
             onProviderSelected = {},
         )
 
-        val providerIds = panel.findProviderIds()
-
-        assertEquals(ProviderUiRegistry.all.keys.map { it.id }.toSet(), providerIds)
-        assertTrue(QuotaProviderType.SUPERGROK.id in providerIds)
+        assertEquals(ProviderUiRegistry.all.keys.map { it.id }.toSet(), panel.getOrder().map { it.id }.toSet())
+        assertTrue(QuotaProviderType.SUPERGROK in panel.getOrder())
     }
 
     @Test
@@ -59,76 +54,69 @@ class ProviderReorderPanelTest {
     }
 
     @Test
-    fun selectedProviderBackgroundIsOpaque() {
+    fun filterNarrowsVisibleProviders() {
         val panel = ProviderReorderPanel(
             initialOrder = QuotaProviderType.defaultProviderOrder(),
             onOrderChanged = {},
             onProviderSelected = {},
         )
 
-        val selectedComponent = panel.findProviderComponents()
-            .first { it.getClientProperty("providerId") == panel.getSelectedProvider().id }
+        panel.setFilterText("grok")
 
-        assertTrue(selectedComponent.isOpaque)
-        assertEquals(255, selectedComponent.background.alpha)
+        assertEquals(listOf(QuotaProviderType.SUPERGROK), panel.visibleProviders())
+        assertEquals(QuotaProviderType.defaultProviderOrder(), panel.getOrder())
     }
 
     @Test
-    fun hoveredProviderBackgroundIsOpaque() {
+    fun filterHidesSelectionFromDetailCallback() {
+        var selected: QuotaProviderType? = QuotaProviderType.CLAUDE
         val panel = ProviderReorderPanel(
             initialOrder = QuotaProviderType.defaultProviderOrder(),
             onOrderChanged = {},
+            onProviderSelected = { selected = it },
+        )
+
+        panel.setFilterText("kimi")
+
+        assertEquals(null, selected)
+        assertEquals(QuotaProviderType.defaultProviderOrder().first(), panel.getSelectedProvider())
+    }
+
+    @Test
+    fun moveSelectedReordersAndKeepsSelection() {
+        val changes = mutableListOf<List<QuotaProviderType>>()
+        val panel = ProviderReorderPanel(
+            initialOrder = QuotaProviderType.defaultProviderOrder(),
+            onOrderChanged = { changes += it },
             onProviderSelected = {},
         )
-        val hoveredComponent = panel.findProviderComponents()
-            .first { it.getClientProperty("providerId") != panel.getSelectedProvider().id }
+        val first = panel.getSelectedProvider()
 
-        val event = MouseEvent(
-            hoveredComponent,
-            MouseEvent.MOUSE_ENTERED,
-            System.currentTimeMillis(),
-            0,
-            1,
-            1,
-            0,
-            false,
+        panel.moveSelected(1)
+
+        assertEquals(first, panel.getOrder()[1])
+        assertEquals(first, panel.getSelectedProvider())
+        assertEquals(first, changes.single()[1])
+    }
+
+    @Test
+    fun moveSelectedIsNoOpWhileFiltered() {
+        val changes = mutableListOf<List<QuotaProviderType>>()
+        val original = QuotaProviderType.defaultProviderOrder()
+        val panel = ProviderReorderPanel(
+            initialOrder = original,
+            onOrderChanged = { changes += it },
+            onProviderSelected = {},
         )
-        hoveredComponent.mouseListeners.forEach { it.mouseEntered(event) }
 
-        assertTrue(hoveredComponent.isOpaque)
-        assertEquals(255, hoveredComponent.background.alpha)
+        panel.setFilterText("open")
+        panel.moveSelected(1)
+
+        assertEquals(original, panel.getOrder())
+        assertTrue(changes.isEmpty())
     }
 
     private fun List<QuotaProviderType>.withFirst(type: QuotaProviderType): List<QuotaProviderType> {
         return listOf(type) + filterNot { it == type }
-    }
-
-    private fun JPanel.findProviderIds(): Set<String> {
-        val result = mutableSetOf<String>()
-        fun collect(component: java.awt.Component) {
-            val providerId = (component as? JComponent)?.getClientProperty("providerId") as? String
-            if (providerId != null) {
-                result += providerId
-            }
-            if (component is java.awt.Container) {
-                component.components.forEach(::collect)
-            }
-        }
-        collect(this)
-        return result
-    }
-
-    private fun JPanel.findProviderComponents(): List<JComponent> {
-        val result = mutableListOf<JComponent>()
-        fun collect(component: java.awt.Component) {
-            if ((component as? JComponent)?.getClientProperty("providerId") != null) {
-                result += component
-            }
-            if (component is java.awt.Container) {
-                component.components.forEach(::collect)
-            }
-        }
-        collect(this)
-        return result
     }
 }

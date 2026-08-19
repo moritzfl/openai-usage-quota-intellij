@@ -7,7 +7,6 @@ import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.mistral.MistralApiKeyStore
@@ -22,7 +21,6 @@ internal class MistralSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val sessionNameField = JBTextField().apply {
         columns = 40
         emptyText.text = "ory_session_…"
@@ -45,10 +43,10 @@ internal class MistralSettingsPanel(
 
     init {
         addToTop(panel {
-            row { cell(hideFromPopupCheckBox) }
+            row { cell(popupVisibilityToggle) }
             row { cell(statusLabel) }
             row {
-                label("Quota cookies from admin.mistral.ai / console.mistral.ai → DevTools → Application → Cookies. Copy each name/value.")
+                text("Quota cookies from admin.mistral.ai / console.mistral.ai → DevTools → Application → Cookies. Copy each name/value.")
             }
             row("ory_session name:") { cell(sessionNameField).resizableColumn().align(AlignX.FILL) }
             row("ory_session value:") { cell(sessionValueField).resizableColumn().align(AlignX.FILL) }
@@ -60,10 +58,7 @@ internal class MistralSettingsPanel(
             }
             separator()
         })
-        addToCenter(BorderLayoutPanel().apply {
-            addToTop(JBLabel("Last quota response (session + API key):"))
-            addToCenter(createResponseViewerPanel(responseViewer))
-        })
+        addToCenter(createResponseSection(responseViewer, "Last quota response (session + API key)"))
     }
 
     override fun updateFields() {

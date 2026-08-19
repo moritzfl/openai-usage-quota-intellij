@@ -7,7 +7,6 @@ import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.kimi.KimiQuota
 import de.moritzf.quota.idea.auth.AuthService
@@ -25,7 +24,6 @@ internal class KimiSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val statusLabel = JBLabel().apply { isVisible = false }
     private val loginButton = createActionLink("Log In")
     private val cancelLoginButton = createActionLink("Cancel Login")
@@ -105,7 +103,7 @@ internal class KimiSettingsPanel(
         }
 
         addToTop(panel {
-            row { cell(hideFromPopupCheckBox) }
+            row { cell(popupVisibilityToggle) }
             row { cell(statusLabel).gap(RightGap.SMALL); cell(copyUrlButton) }
             row { cell(userCodeLabel) }
             row {
@@ -115,10 +113,7 @@ internal class KimiSettingsPanel(
             }
             separator()
         })
-        addToCenter(BorderLayoutPanel().apply {
-            addToTop(JBLabel("Last quota response:"))
-            addToCenter(createResponseViewerPanel(responseViewer))
-        })
+        addToCenter(createResponseSection(responseViewer))
     }
 
     override fun updateFields() {

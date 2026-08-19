@@ -7,7 +7,6 @@ import com.intellij.ui.components.ActionLink
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
@@ -26,7 +25,6 @@ internal class SuperGrokSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val statusLabel = JBLabel().apply { isVisible = false }
     private val loginButton = createActionLink("Log In with xAI/Grok")
     private val cancelLoginButton = createActionLink("Cancel Login")
@@ -103,7 +101,7 @@ internal class SuperGrokSettingsPanel(
 
         val configPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
@@ -115,18 +113,13 @@ internal class SuperGrokSettingsPanel(
                 cell(logoutButton)
             }
             row {
-                label("Uses plugin-managed xAI OAuth with the Grok CLI billing API. No local Grok CLI auth file is required.")
+                text("Uses plugin-managed xAI OAuth with the Grok CLI billing API. No local Grok CLI auth file is required.")
             }
             separator()
         }
 
         addToTop(configPanel)
-        addToCenter(
-            BorderLayoutPanel().apply {
-                addToTop(JBLabel("Last quota response:"))
-                addToCenter(createResponseViewerPanel(jsonViewer))
-            },
-        )
+        addToCenter(createResponseSection(jsonViewer))
     }
 
     override fun updateFields() {

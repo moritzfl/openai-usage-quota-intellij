@@ -6,7 +6,6 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.zai.ZaiQuota
 import de.moritzf.quota.idea.common.QuotaUsageService
@@ -24,7 +23,6 @@ internal class ZaiSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val apiKeyField = JBPasswordField().apply {
         columns = 40
         toolTipText = "Z.ai API key from the Z.ai console"
@@ -37,7 +35,7 @@ internal class ZaiSettingsPanel(
     init {
         val configPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(zaiStatusLabel)
@@ -65,12 +63,7 @@ internal class ZaiSettingsPanel(
         }
 
         addToTop(configPanel)
-        addToCenter(
-            BorderLayoutPanel().apply {
-                addToTop(JBLabel("Last quota response:"))
-                addToCenter(createResponseViewerPanel(zaiJsonViewer))
-            },
-        )
+        addToCenter(createResponseSection(zaiJsonViewer))
     }
 
     override fun updateFields() {

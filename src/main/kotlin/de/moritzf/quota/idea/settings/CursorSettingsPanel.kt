@@ -6,7 +6,6 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.cursor.CursorAuth
 import de.moritzf.quota.cursor.CursorQuotaClient
 import de.moritzf.quota.cursor.CursorSessionTokenParser
@@ -26,7 +25,6 @@ internal class CursorSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val sessionCookieField = JBPasswordField().apply {
         columns = 40
         toolTipText = "WorkosCursorSessionToken from cursor.com browser cookies"
@@ -39,13 +37,13 @@ internal class CursorSettingsPanel(
     init {
         val cursorConfigPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(cursorStatusLabel)
             }
             row {
-                label(
+                text(
                     "Paste the WorkosCursorSessionToken cookie from cursor.com (DevTools → Application → Cookies).",
                 )
             }
@@ -79,12 +77,7 @@ internal class CursorSettingsPanel(
         }
 
         addToTop(cursorConfigPanel)
-        addToCenter(
-            BorderLayoutPanel().apply {
-                addToTop(JBLabel("Last quota response:"))
-                addToCenter(createResponseViewerPanel(cursorJsonViewer))
-            },
-        )
+        addToCenter(createResponseSection(cursorJsonViewer))
     }
 
     override fun updateFields() {

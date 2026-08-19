@@ -9,7 +9,6 @@ import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.RightGap
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.claude.ClaudeQuota
 import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
@@ -36,7 +35,6 @@ internal class ClaudeSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val statusLabel = JBLabel().apply { isVisible = false }
     private val loginButton = createActionLink("Log In with Claude")
     private val cancelLoginButton = createActionLink("Cancel Login")
@@ -134,7 +132,7 @@ internal class ClaudeSettingsPanel(
 
         val configPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
@@ -146,7 +144,7 @@ internal class ClaudeSettingsPanel(
                 cell(logoutButton)
             }
             row {
-                label("Claude has no device-code login. Click Log In, finish the browser flow, then paste the authorization code from the Claude page (full URL or code#state).")
+                text("Claude has no device-code login. Click Log In, finish the browser flow, then paste the authorization code from the Claude page (full URL or code#state).")
             }
             row("Authorization code:") {
                 cell(authCodeField)
@@ -159,12 +157,7 @@ internal class ClaudeSettingsPanel(
         }
 
         addToTop(configPanel)
-        addToCenter(
-            BorderLayoutPanel().apply {
-                addToTop(JBLabel("Last quota response:"))
-                addToCenter(createResponseViewerPanel(jsonViewer))
-            },
-        )
+        addToCenter(createResponseSection(jsonViewer))
     }
 
     private fun submitAuthCode() {

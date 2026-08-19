@@ -7,7 +7,6 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.minimax.MiniMaxQuota
 import de.moritzf.quota.idea.common.QuotaUsageService
@@ -21,7 +20,6 @@ internal class MiniMaxSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     val regionComboBox = ComboBox(MiniMaxRegionPreference.entries.toTypedArray())
     private val apiKeyField = JBPasswordField().apply { columns = 40 }
     private val statusLabel = JBLabel().apply { isVisible = false }
@@ -29,7 +27,7 @@ internal class MiniMaxSettingsPanel(
 
     init {
         addToTop(panel {
-            row { cell(hideFromPopupCheckBox) }
+            row { cell(popupVisibilityToggle) }
             row { cell(statusLabel) }
             row("Region:") { cell(regionComboBox) }
             row("API key:") { cell(apiKeyField).resizableColumn().align(AlignX.FILL) }
@@ -39,10 +37,7 @@ internal class MiniMaxSettingsPanel(
             }
             separator()
         })
-        addToCenter(BorderLayoutPanel().apply {
-            addToTop(JBLabel("Last quota response:"))
-            addToCenter(createResponseViewerPanel(responseViewer))
-        })
+        addToCenter(createResponseSection(responseViewer))
     }
 
     override fun updateFields() {

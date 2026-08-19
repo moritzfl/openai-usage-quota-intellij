@@ -79,7 +79,7 @@ internal class SubscriptionProxySettingsPanel(
     private val providerStatusLabel = JBLabel().apply { isVisible = false }
     private val logsStatusLabel = JBLabel().apply { isVisible = false }
     private val proxyDescriptionLabel = JBLabel(
-        "<html><body width='720'>Use the copied base URL and API key to configure this proxy in JetBrains AI Assistant " +
+        "<html><body width='520'>Use the copied base URL and API key to configure this proxy in JetBrains AI Assistant " +
             "under Providers and API keys, or in Junie CLI as a LiteLLM proxy.</body></html>",
     ).apply {
         foreground = JBColor.GRAY

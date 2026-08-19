@@ -132,7 +132,7 @@ The proxy implementation was derived from the initial proxy design of [AIProxyOa
 
 The plugin calls each provider's usage API with your credentials and displays the result in a normalized format. Nothing is sent anywhere except to the providers you configured.
 
-Each provider's settings page shows the raw `Last quota response` exactly as it arrived from the API — useful for transparency, debugging, and bug reports.
+Each provider's settings page is in a list on the left (drag to reorder, filter to search). The detail pane shows the raw `Last quota response` exactly as it arrived from the API — useful for transparency, debugging, and bug reports.
 
 ![Settings](docs/quota-settings.png)
 

@@ -6,7 +6,6 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
-import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
@@ -25,7 +24,6 @@ internal class OllamaSettingsPanel(
     private val modalityComponentProvider: () -> JComponent?,
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
-    override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
     private val apiKeyField = JBPasswordField().apply {
         columns = 40
         toolTipText = "Ollama API key from ollama.com/settings/keys"
@@ -37,13 +35,13 @@ internal class OllamaSettingsPanel(
     init {
         val ollamaConfigPanel = panel {
             row {
-                cell(hideFromPopupCheckBox)
+                cell(popupVisibilityToggle)
             }
             row {
                 cell(ollamaStatusLabel)
             }
             row {
-                label("Create an API key at ollama.com/settings/keys. Used for quota, MCP web search, and the local proxy.")
+                text("Create an API key at ollama.com/settings/keys. Used for quota, MCP web search, and the local proxy.")
             }
             row("API key:") {
                 cell(apiKeyField)
@@ -62,12 +60,7 @@ internal class OllamaSettingsPanel(
         }
 
         addToTop(ollamaConfigPanel)
-        addToCenter(
-            BorderLayoutPanel().apply {
-                addToTop(JBLabel("Last quota response:"))
-                addToCenter(createResponseViewerPanel(ollamaJsonViewer))
-            },
-        )
+        addToCenter(createResponseSection(ollamaJsonViewer))
     }
 
     override fun updateFields() {

@@ -1,289 +1,365 @@
 package de.moritzf.quota.idea.ui.settings
 
+import com.intellij.ui.CollectionListModel
+import com.intellij.ui.DocumentAdapter
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
+import com.intellij.ui.components.JBList
+import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.components.JBTextField
 import com.intellij.util.IconUtil
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.UIUtil
 import de.moritzf.quota.idea.common.QuotaProviderRegistry
 import de.moritzf.quota.idea.common.QuotaProviderType
+import de.moritzf.quota.idea.common.QuotaUsageService
+import de.moritzf.quota.idea.ui.indicator.ProviderAuthState
 import de.moritzf.quota.idea.ui.indicator.ProviderUiRegistry
 import java.awt.AlphaComposite
 import java.awt.BorderLayout
 import java.awt.Color
-import java.awt.Cursor
+import java.awt.Component
 import java.awt.Dimension
-import java.awt.FlowLayout
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.Image
 import java.awt.Point
+import java.awt.RenderingHints
 import java.awt.datatransfer.DataFlavor
 import java.awt.datatransfer.StringSelection
 import java.awt.datatransfer.Transferable
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import javax.swing.BorderFactory
+import java.awt.event.ActionEvent
+import java.awt.event.InputEvent
+import java.awt.event.KeyEvent
+import java.awt.image.BufferedImage
+import javax.swing.AbstractAction
+import javax.swing.Box
+import javax.swing.BoxLayout
+import javax.swing.DropMode
 import javax.swing.Icon
 import javax.swing.JComponent
+import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.KeyStroke
+import javax.swing.ListCellRenderer
+import javax.swing.ListSelectionModel
+import javax.swing.SwingConstants
 import javax.swing.TransferHandler
+import javax.swing.event.DocumentEvent
 
-/**
- * A horizontal panel of draggable provider icons.
- * Reordering fires [onOrderChanged] with the new provider type list.
- */
 internal class ProviderReorderPanel(
     initialOrder: List<QuotaProviderType>,
     private val onOrderChanged: (List<QuotaProviderType>) -> Unit,
-    private val onProviderSelected: (QuotaProviderType) -> Unit,
+    private val onProviderSelected: (QuotaProviderType?) -> Unit,
 ) : JPanel(BorderLayout()) {
 
     private val providers = ProviderUiRegistry.all.values
         .map { ProviderInfo(it.type, it.icon) }
-
-    private val iconsPanel = object : JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(8), 0)) {
-        override fun paintComponent(g: Graphics) {
-            super.paintComponent(g)
-            val idx = dropIndex
-            if (idx < 0) return
-            val g2 = g as Graphics2D
-            g2.color = JBColor(Color(0x4285F4), Color(0x8AB4F8))
-            g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.9f)
-            val x = computeDropLineX(idx)
-            val top = JBUI.scale(4)
-            val bottom = height - JBUI.scale(4)
-            g2.fillRect(x - JBUI.scale(1), top, JBUI.scale(2), bottom - top)
-            // draw arrow heads
-            val arrowSize = JBUI.scale(5)
-            val xs = intArrayOf(x - arrowSize, x + arrowSize, x)
-            val topYs = intArrayOf(top + arrowSize * 2, top + arrowSize * 2, top + arrowSize)
-            val botYs = intArrayOf(bottom - arrowSize * 2, bottom - arrowSize * 2, bottom - arrowSize)
-            g2.fillPolygon(xs, topYs, 3)
-            g2.fillPolygon(xs, botYs, 3)
-            g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 1.0f)
-        }
-    }.apply {
-        isOpaque = false
-        transferHandler = ProviderTransferHandler()
-    }
 
     private var currentOrder: List<QuotaProviderType> =
         QuotaProviderRegistry.mergeProviderOrder(
             initialOrder.filter { type -> providers.any { it.type == type } },
         )
 
-    /** -1 = no active drop target. Otherwise the index where the dragged item would be inserted. */
-    private var dropIndex: Int = -1
+    private var selectedProvider: QuotaProviderType =
+        currentOrder.firstOrNull() ?: QuotaProviderRegistry.defaultProviderOrder().first()
 
-    private var selectedProvider: QuotaProviderType = currentOrder.firstOrNull() ?: QuotaProviderRegistry.defaultProviderOrder().first()
+    private var updatingList = false
+    private var dropIndex = -1
+    private var draggedType: QuotaProviderType? = null
 
-    private var dragStartTime: Long = 0
-    private var dragStartPoint: Point? = null
+    private val listModel = CollectionListModel<QuotaProviderType>()
+    private val list = object : JBList<QuotaProviderType>(listModel) {
+        override fun paint(g: Graphics) {
+            super.paint(g)
+            paintInsertLine(g)
+        }
+    }.apply {
+        selectionMode = ListSelectionModel.SINGLE_SELECTION
+        cellRenderer = ProviderListCellRenderer()
+        emptyText.text = "No matching providers"
+        dragEnabled = true
+        dropMode = DropMode.INSERT
+        transferHandler = ProviderTransferHandler()
+        border = JBUI.Borders.empty(2, 0)
+        accessibleContext.accessibleName = "Providers"
+    }
+
+    private val filterField = JBTextField().apply {
+        emptyText.text = "Filter providers..."
+    }
 
     init {
         isOpaque = false
-        border = JBUI.Borders.empty(16, 0, 10, 0)
+        background = UIUtil.getPanelBackground()
+        preferredSize = Dimension(JBUI.scale(LIST_WIDTH), JBUI.scale(200))
+        minimumSize = Dimension(JBUI.scale(200), JBUI.scale(80))
 
-        val hintLabel = JBLabel("Click to configure a provider, drag to reorder:").apply {
+        val header = JBLabel("Providers (drag to reorder)").apply {
             foreground = JBColor.GRAY
-            border = JBUI.Borders.emptyBottom(8)
+            border = JBUI.Borders.emptyBottom(6)
         }
 
-        add(hintLabel, BorderLayout.NORTH)
-        add(iconsPanel, BorderLayout.CENTER)
-        rebuild()
+        val north = JPanel(BorderLayout(0, JBUI.scale(6))).apply {
+            isOpaque = false
+            add(header, BorderLayout.NORTH)
+            add(filterField, BorderLayout.CENTER)
+        }
+
+        add(north, BorderLayout.NORTH)
+        add(JBScrollPane(list).apply {
+            border = JBUI.Borders.empty()
+        }, BorderLayout.CENTER)
+
+        filterField.document.addDocumentListener(object : DocumentAdapter() {
+            override fun textChanged(e: DocumentEvent) {
+                rebuildList(notifySelection = true)
+            }
+        })
+
+        list.addListSelectionListener {
+            if (updatingList || list.valueIsAdjusting) {
+                return@addListSelectionListener
+            }
+            val type = list.selectedValue ?: return@addListSelectionListener
+            selectedProvider = type
+            onProviderSelected(type)
+        }
+
+        val inputMap = list.inputMap
+        val actionMap = list.actionMap
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_UP, InputEvent.ALT_DOWN_MASK), "moveProviderUp")
+        inputMap.put(KeyStroke.getKeyStroke(KeyEvent.VK_DOWN, InputEvent.ALT_DOWN_MASK), "moveProviderDown")
+        actionMap.put("moveProviderUp", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent) {
+                moveSelected(-1)
+            }
+        })
+        actionMap.put("moveProviderDown", object : AbstractAction() {
+            override fun actionPerformed(e: ActionEvent) {
+                moveSelected(1)
+            }
+        })
+
+        rebuildList(notifySelection = false)
+        list.setSelectedValue(selectedProvider, true)
     }
 
     fun getOrder(): List<QuotaProviderType> = currentOrder.toList()
 
     fun getSelectedProvider(): QuotaProviderType = selectedProvider
 
+    fun visibleProviders(): List<QuotaProviderType> {
+        val query = filterField.text.trim()
+        if (query.isEmpty()) {
+            return currentOrder
+        }
+        return currentOrder.filter { it.displayName.contains(query, ignoreCase = true) }
+    }
+
+    fun setFilterText(text: String) {
+        filterField.text = text
+    }
+
     fun setOrder(order: List<QuotaProviderType>) {
         currentOrder = QuotaProviderRegistry.mergeProviderOrder(
             order.filter { type -> providers.any { it.type == type } },
         )
         selectedProvider = currentOrder.firstOrNull() ?: selectedProvider
-        rebuild()
+        if (filterField.text.isNotEmpty()) {
+            filterField.text = ""
+            return
+        }
+        rebuildList(notifySelection = false)
+        list.setSelectedValue(selectedProvider, true)
         onProviderSelected(selectedProvider)
     }
 
-    private fun rebuild() {
-        iconsPanel.removeAll()
-        currentOrder.forEach { type ->
-            val provider = providers.find { it.type == type } ?: return@forEach
-            iconsPanel.add(createDraggableIcon(provider))
-        }
-        iconsPanel.revalidate()
-        iconsPanel.repaint()
+    fun refreshStatuses() {
+        list.repaint()
     }
 
-    private fun updateSelectionVisuals() {
-        for (i in 0 until iconsPanel.componentCount) {
-            val label = iconsPanel.getComponent(i) as? JBLabel ?: continue
-            val providerId = label.getClientProperty("providerId") as? String ?: continue
-            val isSelected = providerId == selectedProvider.id
-
-            if (isSelected) {
-                label.background = selectedProviderBackground()
-                label.isOpaque = true
-                label.border = BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(JBColor(Color(0x4285F4), Color(0x8AB4F8)), 2, true),
-                    JBUI.Borders.empty(3, 5),
-                )
-            } else {
-                label.isOpaque = false
-                label.border = BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(JBColor.GRAY, 1, true),
-                    JBUI.Borders.empty(4, 6),
-                )
-            }
+    fun moveSelected(delta: Int) {
+        if (filterField.text.isNotBlank()) {
+            return
         }
-        iconsPanel.repaint()
-    }
-
-    /** Computes the x-coordinate of the drop indicator line for a given insertion index. */
-    private fun computeDropLineX(insertIndex: Int): Int {
-        val components = iconsPanel.components
-        if (components.isEmpty() || insertIndex < 0) return 0
-        if (insertIndex >= components.size) {
-            val last = components.last()
-            return last.x + last.width + JBUI.scale(4)
+        val index = currentOrder.indexOf(selectedProvider)
+        if (index < 0) {
+            return
         }
-        val target = components[insertIndex]
-        return target.x - JBUI.scale(4)
-    }
-
-    /** Calculates the insertion index from a drop point within the icons panel. */
-    private fun insertionIndexFor(point: Point): Int {
-        val components = iconsPanel.components
-        if (components.isEmpty()) return 0
-        for (i in components.indices) {
-            val c = components[i]
-            val mid = c.x + c.width / 2
-            if (point.x < mid) return i
+        val target = (index + delta).coerceIn(0, currentOrder.lastIndex)
+        if (target == index) {
+            return
         }
-        return components.size
-    }
-
-    private fun createDraggableIcon(provider: ProviderInfo): JComponent {
-        val itemWidth = JBUI.scale(83)
-        val itemHeight = JBUI.scale(64)
-        val isSelected = provider.type == selectedProvider
-        return JBLabel(provider.type.displayName, JBLabel.CENTER).apply {
-            val scaledIcon = scaleToSize(provider.icon, JBUI.scale(24), this)
-            icon = scaledIcon
-            horizontalTextPosition = JBLabel.CENTER
-            verticalTextPosition = JBLabel.BOTTOM
-            iconTextGap = JBUI.scale(4)
-            preferredSize = Dimension(itemWidth, itemHeight)
-            minimumSize = Dimension(itemWidth, itemHeight)
-            maximumSize = Dimension(itemWidth, itemHeight)
-
-            if (isSelected) {
-                background = selectedProviderBackground()
-                isOpaque = true
-                border = BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(JBColor(Color(0x4285F4), Color(0x8AB4F8)), 2, true),
-                    JBUI.Borders.empty(3, 5),
-                )
-            } else {
-                isOpaque = false
-                border = BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(JBColor.GRAY, 1, true),
-                    JBUI.Borders.empty(4, 6),
-                )
-            }
-
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
-            toolTipText = "Click to select, drag to reorder ${provider.type.displayName}"
-            transferHandler = ProviderTransferHandler()
-            putClientProperty("providerId", provider.type.id)
-
-            addMouseListener(object : MouseAdapter() {
-                override fun mousePressed(e: MouseEvent) {
-                    selectedProvider = provider.type
-                    updateSelectionVisuals()
-                    onProviderSelected(provider.type)
-
-                    dragStartTime = System.currentTimeMillis()
-                    dragStartPoint = javax.swing.SwingUtilities.convertPoint(this@apply, e.point, iconsPanel)
-
-                    val handler = transferHandler ?: return
-                    handler.exportAsDrag(this@apply, e, TransferHandler.MOVE)
-                }
-
-                override fun mouseClicked(e: MouseEvent) {
-                    // Handled in mousePressed for better responsiveness with drag
-                }
-
-                override fun mouseEntered(e: MouseEvent) {
-                    if (provider.type != selectedProvider) {
-                        background = hoveredProviderBackground()
-                        isOpaque = true
-                        repaint()
-                    }
-                }
-
-                override fun mouseExited(e: MouseEvent) {
-                    if (provider.type != selectedProvider) {
-                        isOpaque = false
-                        repaint()
-                    }
-                }
-            })
-        }
-    }
-
-    private fun moveProvider(draggedId: String, insertIndex: Int) {
-        val draggedType = QuotaProviderType.fromId(draggedId) ?: return
         val mutable = currentOrder.toMutableList()
-        val draggedIndex = mutable.indexOf(draggedType)
-        if (draggedIndex < 0) return
-        mutable.removeAt(draggedIndex)
-        // adjust insert index after removal
-        val adjustedIndex = if (insertIndex > draggedIndex) insertIndex - 1 else insertIndex
-        val clampedIndex = adjustedIndex.coerceIn(0, mutable.size)
-        mutable.add(clampedIndex, draggedType)
+        mutable.removeAt(index)
+        mutable.add(target, selectedProvider)
         currentOrder = mutable
-        rebuild()
+        rebuildList(notifySelection = false)
+        list.setSelectedValue(selectedProvider, true)
         onOrderChanged(currentOrder)
     }
 
+    private fun rebuildList(notifySelection: Boolean) {
+        updatingList = true
+        try {
+            val visible = visibleProviders()
+            listModel.replaceAll(visible)
+            if (selectedProvider in visible) {
+                list.setSelectedValue(selectedProvider, true)
+            } else {
+                list.clearSelection()
+            }
+        } finally {
+            updatingList = false
+        }
+        if (notifySelection) {
+            onProviderSelected(list.selectedValue)
+        }
+    }
+
+    private fun setDropIndex(index: Int) {
+        if (dropIndex == index) {
+            return
+        }
+        dropIndex = index
+        list.repaint()
+    }
+
+    private fun clearDragVisuals() {
+        dropIndex = -1
+        draggedType = null
+        list.repaint()
+    }
+
+    private fun paintInsertLine(g: Graphics) {
+        if (dropIndex < 0) {
+            return
+        }
+        val g2 = g.create() as Graphics2D
+        try {
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2.color = JBColor(Color(0x4285F4), Color(0x8AB4F8))
+            g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.9f)
+            val y = insertLineY(dropIndex)
+            val left = JBUI.scale(8)
+            val right = list.width - JBUI.scale(8)
+            val thickness = JBUI.scale(2)
+            g2.fillRect(left, y - thickness / 2, (right - left).coerceAtLeast(1), thickness)
+            val arrow = JBUI.scale(5)
+            g2.fillPolygon(
+                intArrayOf(left, left + arrow * 2, left + arrow * 2),
+                intArrayOf(y, y - arrow, y + arrow),
+                3,
+            )
+            g2.fillPolygon(
+                intArrayOf(right, right - arrow * 2, right - arrow * 2),
+                intArrayOf(y, y - arrow, y + arrow),
+                3,
+            )
+        } finally {
+            g2.dispose()
+        }
+    }
+
+    private fun insertLineY(index: Int): Int {
+        val count = list.model.size
+        if (count == 0) {
+            return JBUI.scale(4)
+        }
+        return if (index >= count) {
+            val last = list.getCellBounds(count - 1, count - 1)
+            (last?.y ?: 0) + (last?.height ?: 0)
+        } else {
+            list.getCellBounds(index, index)?.y ?: 0
+        }
+    }
+
+    private fun createDragPreview(type: QuotaProviderType): Image? {
+        val info = providers.find { it.type == type } ?: return null
+        val chip = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = true
+            background = list.selectionBackground
+            border = JBUI.Borders.empty(3, 8)
+            add(JBLabel(scaleToSize(info.icon, JBUI.scale(ICON_SIZE), list)))
+            add(Box.createHorizontalStrut(JBUI.scale(6)))
+            add(JBLabel(type.displayName).apply { foreground = list.selectionForeground })
+        }
+        val size = chip.preferredSize
+        chip.size = size
+        chip.doLayout()
+        val image = BufferedImage(size.width.coerceAtLeast(1), size.height.coerceAtLeast(1), BufferedImage.TYPE_INT_ARGB)
+        val g2 = image.createGraphics()
+        try {
+            g2.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.85f)
+            chip.paint(g2)
+        } finally {
+            g2.dispose()
+        }
+        return image
+    }
+
+    private fun moveProvider(draggedId: String, insertIndex: Int) {
+        if (filterField.text.isNotBlank()) {
+            return
+        }
+        val draggedType = QuotaProviderType.fromId(draggedId) ?: return
+        val draggedIndex = currentOrder.indexOf(draggedType)
+        if (draggedIndex < 0) {
+            return
+        }
+        val adjusted = (if (insertIndex > draggedIndex) insertIndex - 1 else insertIndex)
+            .coerceIn(0, currentOrder.size - 1)
+        if (adjusted == draggedIndex) {
+            return
+        }
+        val mutable = currentOrder.toMutableList()
+        mutable.removeAt(draggedIndex)
+        mutable.add(adjusted, draggedType)
+        currentOrder = mutable
+        selectedProvider = draggedType
+        rebuildList(notifySelection = false)
+        list.setSelectedValue(selectedProvider, true)
+        onOrderChanged(currentOrder)
+        onProviderSelected(selectedProvider)
+    }
+
     private inner class ProviderTransferHandler : TransferHandler() {
-        override fun getSourceActions(c: JComponent): Int = MOVE
+        override fun getSourceActions(c: JComponent): Int {
+            return if (filterField.text.isBlank()) MOVE else NONE
+        }
+
+        override fun exportAsDrag(comp: JComponent, e: InputEvent, action: Int) {
+            if (filterField.text.isNotBlank()) {
+                return
+            }
+            draggedType = list.selectedValue
+            list.repaint()
+            super.exportAsDrag(comp, e, action)
+        }
 
         override fun createTransferable(c: JComponent): Transferable? {
-            val id = c.getClientProperty("providerId") as? String ?: return null
-            return StringSelection(id)
+            val type = list.selectedValue ?: return null
+            val preview = createDragPreview(type)
+            dragImage = preview
+            if (preview != null) {
+                dragImageOffset = Point(preview.getWidth(null) / 2, preview.getHeight(null) / 2)
+            }
+            return StringSelection(type.id)
+        }
+
+        override fun exportDone(source: JComponent?, data: Transferable?, action: Int) {
+            clearDragVisuals()
         }
 
         override fun canImport(support: TransferSupport): Boolean {
+            if (filterField.text.isNotBlank()) return false
             if (!support.isDrop) return false
             if (!support.isDataFlavorSupported(DataFlavor.stringFlavor)) return false
-            
-            val target = support.component
-            if (target != iconsPanel && (target as? JComponent)?.getClientProperty("providerId") == null) return false
-
-            val pt = support.dropLocation.dropPoint
-            val iconsPt = if (target == iconsPanel) pt else javax.swing.SwingUtilities.convertPoint(target, pt, iconsPanel)
-
-            val itemWidth = JBUI.scale(83)
-            val now = System.currentTimeMillis()
-            val timeMet = now - dragStartTime >= 500
-            val distanceMet = dragStartPoint?.let { Math.abs(iconsPt.x - it.x) >= itemWidth / 2 } ?: false
-
-            if (timeMet || distanceMet) {
-                val newIndex = insertionIndexFor(iconsPt)
-                if (newIndex != dropIndex) {
-                    dropIndex = newIndex
-                    iconsPanel.repaint()
-                }
-            } else {
-                if (dropIndex != -1) {
-                    dropIndex = -1
-                    iconsPanel.repaint()
-                }
-            }
-
+            support.setShowDropLocation(true)
+            val index = (support.dropLocation as? JList.DropLocation)?.index ?: -1
+            setDropIndex(index)
             return true
         }
 
@@ -292,19 +368,70 @@ internal class ProviderReorderPanel(
             val draggedId = try {
                 support.transferable.getTransferData(DataFlavor.stringFlavor) as String
             } catch (_: Exception) {
+                clearDragVisuals()
                 return false
             }
-            val pt = support.dropLocation.dropPoint
-            val target = support.component
-            val iconsPt = if (target == iconsPanel) pt else javax.swing.SwingUtilities.convertPoint(target, pt, iconsPanel)
-            val insertIndex = insertionIndexFor(iconsPt)
-            
-            dropIndex = -1
-            dragStartPoint = null
-            iconsPanel.repaint()
-
+            val insertIndex = (support.dropLocation as? JList.DropLocation)?.index ?: run {
+                clearDragVisuals()
+                return false
+            }
             moveProvider(draggedId, insertIndex)
+            clearDragVisuals()
             return true
+        }
+    }
+
+    private inner class ProviderListCellRenderer : ListCellRenderer<QuotaProviderType> {
+        private val handle = JBLabel("⋮⋮").apply {
+            foreground = JBColor.GRAY
+            horizontalAlignment = SwingConstants.CENTER
+            border = JBUI.Borders.emptyRight(6)
+        }
+        private val iconLabel = JBLabel()
+        private val nameLabel = JBLabel()
+        private val statusLabel = JBLabel("●").apply {
+            horizontalAlignment = SwingConstants.CENTER
+            border = JBUI.Borders.emptyLeft(8)
+        }
+        private val row = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            border = JBUI.Borders.empty(4, 8)
+            add(handle)
+            add(iconLabel)
+            add(Box.createHorizontalStrut(JBUI.scale(8)))
+            add(nameLabel)
+            add(Box.createHorizontalGlue())
+            add(statusLabel)
+        }
+
+        override fun getListCellRendererComponent(
+            list: JList<out QuotaProviderType>,
+            value: QuotaProviderType?,
+            index: Int,
+            isSelected: Boolean,
+            cellHasFocus: Boolean,
+        ): Component {
+            val type = value ?: return row
+            val info = providers.find { it.type == type }
+            iconLabel.icon = info?.icon?.let { scaleToSize(it, JBUI.scale(ICON_SIZE), iconLabel) }
+            nameLabel.text = type.displayName
+            val snapshot = statusSnapshot(type)
+            val dragging = type == draggedType
+            statusLabel.foreground = if (dragging) JBColor.GRAY else statusColor(snapshot.status)
+            statusLabel.toolTipText = snapshot.explanation
+            row.toolTipText = "${type.displayName} — ${snapshot.explanation}"
+            if (isSelected && !dragging) {
+                row.background = list.selectionBackground
+                row.isOpaque = true
+                nameLabel.foreground = list.selectionForeground
+                handle.foreground = list.selectionForeground
+            } else {
+                row.background = list.background
+                row.isOpaque = true
+                nameLabel.foreground = if (dragging) JBColor.GRAY else list.foreground
+                handle.foreground = JBColor.GRAY
+            }
+            return row
         }
     }
 
@@ -314,19 +441,8 @@ internal class ProviderReorderPanel(
     )
 
     companion object {
-        private fun selectedProviderBackground(): Color {
-            return JBColor.namedColor(
-                "List.selectionInactiveBackground",
-                JBColor(Color(0xDCEBFA), Color(0x2F4359)),
-            )
-        }
-
-        private fun hoveredProviderBackground(): Color {
-            return JBColor.namedColor(
-                "List.hoverBackground",
-                JBColor(Color(0xF2F6FA), Color(0x34383D)),
-            )
-        }
+        private const val LIST_WIDTH = 260
+        private const val ICON_SIZE = 16
 
         fun scaleToSize(icon: Icon, targetSize: Int, component: JComponent): Icon {
             val maxDim = maxOf(icon.iconWidth, icon.iconHeight)
@@ -338,5 +454,33 @@ internal class ProviderReorderPanel(
                 icon
             }
         }
+
+        internal fun statusSnapshot(type: QuotaProviderType): ProviderListStatusSnapshot {
+            val auth = runCatching { ProviderUiRegistry.forType(type).authState() }
+                .getOrDefault(ProviderAuthState.UNKNOWN)
+            val service = runCatching { QuotaUsageService.getInstance() }.getOrNull()
+            val error = service?.getLastError(type)
+            val status = ProviderListStatus.resolve(
+                auth = auth,
+                hasQuota = service?.getLastQuota(type) != null,
+                hasError = !error.isNullOrBlank(),
+            )
+            return ProviderListStatusSnapshot(status, ProviderListStatus.explain(status, error))
+        }
+
+        internal fun statusColor(status: ProviderListStatus): Color {
+            return when (status) {
+                ProviderListStatus.OK -> Color(0x4CAF50)
+                ProviderListStatus.ERROR -> Color(0xF44336)
+                ProviderListStatus.WARNING -> Color(0xFFC107)
+                ProviderListStatus.NEVER_CONFIGURED -> JBColor.GRAY
+            }
+        }
+
     }
 }
+
+internal data class ProviderListStatusSnapshot(
+    val status: ProviderListStatus,
+    val explanation: String,
+)
