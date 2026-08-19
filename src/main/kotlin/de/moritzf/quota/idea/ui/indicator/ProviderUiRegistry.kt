@@ -9,7 +9,7 @@ import de.moritzf.quota.idea.cursor.CursorCredentialsStore
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
-import de.moritzf.quota.idea.mistral.MistralApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralSessionCookieStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.ui.popup.ClaudePopupSection
@@ -223,7 +223,7 @@ internal object MistralUi : ProviderUi {
         mistralPeriodElapsedFraction(quota as? MistralQuota, error)
 
     override fun authState(): ProviderAuthState {
-        val store = MistralApiKeyStore.getInstance()
+        val store = MistralSessionCookieStore.getInstance()
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             !store.load().isNullOrBlank() -> ProviderAuthState.AUTHENTICATED

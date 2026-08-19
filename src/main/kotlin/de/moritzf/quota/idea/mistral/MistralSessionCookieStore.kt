@@ -1,0 +1,93 @@
+package de.moritzf.quota.idea.mistral
+
+import com.intellij.credentialStore.CredentialAttributes
+import com.intellij.credentialStore.Credentials
+import com.intellij.ide.passwordSafe.PasswordSafe
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
+import com.intellij.util.concurrency.AppExecutorUtil
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
+
+@Service(Service.Level.APP)
+class MistralSessionCookieStore {
+    private val attributes = CredentialAttributes("Mistral Session Cookie", "mistral-session-cookie")
+    private val cachedCookie = AtomicReference<String?>()
+    private val loaded = AtomicBoolean(false)
+    private val loading = AtomicBoolean(false)
+    private val loadGeneration = AtomicLong(0)
+    private val loadCallbacks = CopyOnWriteArrayList<() -> Unit>()
+
+    fun load(onLoaded: (() -> Unit)? = null): String? {
+        if (!loaded.get()) {
+            if (onLoaded != null) loadCallbacks += onLoaded
+            if (loading.compareAndSet(false, true)) loadAsync()
+            return null
+        }
+        return cachedCookie.get()
+    }
+
+    fun isLoaded(): Boolean = loaded.get()
+
+    fun loadBlocking(): String? {
+        loadGeneration.incrementAndGet()
+        val cookie = loadCookie(attributes)
+        cachedCookie.set(cookie)
+        loaded.set(true)
+        notifyLoadedCallbacks()
+        return cookie
+    }
+
+    fun save(cookie: String?) {
+        loadGeneration.incrementAndGet()
+        PasswordSafe.instance.set(attributes, cookie?.takeIf { it.isNotBlank() }?.let { Credentials("mistral-session-cookie", it) })
+        cachedCookie.set(cookie?.ifBlank { null })
+        loaded.set(true)
+        loading.set(false)
+        notifyLoadedCallbacks()
+    }
+
+    fun clear() {
+        loadGeneration.incrementAndGet()
+        PasswordSafe.instance.set(attributes, null)
+        cachedCookie.set(null)
+        loaded.set(true)
+        loading.set(false)
+        notifyLoadedCallbacks()
+    }
+
+    private fun loadAsync() {
+        val generation = loadGeneration.get()
+        AppExecutorUtil.getAppExecutorService().execute {
+            try {
+                val cookie = loadCookie(attributes)
+                if (loadGeneration.get() == generation) {
+                    cachedCookie.set(cookie)
+                    loaded.set(true)
+                    notifyLoadedCallbacks()
+                }
+            } finally {
+                loading.set(false)
+            }
+        }
+    }
+
+    private fun loadCookie(attributes: CredentialAttributes): String? {
+        return try { PasswordSafe.instance.get(attributes)?.getPasswordAsString()?.ifBlank { null } } catch (_: Exception) { null }
+    }
+
+    private fun notifyLoadedCallbacks() {
+        if (loadCallbacks.isEmpty()) return
+        val callbacks = loadCallbacks.toList()
+        loadCallbacks.clear()
+        callbacks.forEach { ApplicationManager.getApplication().invokeLater(it) }
+    }
+
+    companion object {
+        @JvmStatic
+        fun getInstance(): MistralSessionCookieStore =
+            ApplicationManager.getApplication().getService(MistralSessionCookieStore::class.java)
+    }
+}

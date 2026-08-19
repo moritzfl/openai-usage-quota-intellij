@@ -134,8 +134,9 @@ private fun indicatorTooltipUsage(quota: ProviderQuota?): IndicatorTooltipUsage 
         is MistralQuota -> {
             val window = mistralDisplayWindow(quota) ?: return IndicatorTooltipUsage(null, null)
             val kind = when {
-                window === quota.tokenUsage -> "Tokens"
-                window === quota.requestUsage -> "Requests"
+                window === quota.monthlyUsage -> "Monthly"
+                window === quota.tokenUsage -> "Tokens / min"
+                window === quota.requestUsage -> "Requests / min"
                 else -> null
             }
             IndicatorTooltipUsage(

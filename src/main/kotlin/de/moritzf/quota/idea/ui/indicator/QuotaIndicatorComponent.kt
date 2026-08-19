@@ -292,7 +292,8 @@ internal fun mistralBarDisplayText(quota: MistralQuota?, error: String?): String
 }
 
 internal fun mistralDisplayWindow(quota: MistralQuota): de.moritzf.quota.mistral.MistralUsageWindow? {
-    return listOfNotNull(quota.tokenUsage, quota.requestUsage).maxByOrNull { it.usagePercent }
+    return quota.monthlyUsage
+        ?: listOfNotNull(quota.tokenUsage, quota.requestUsage).maxByOrNull { it.usagePercent }
 }
 
 internal fun kimiBarDisplayText(quota: KimiQuota?, error: String?): String {

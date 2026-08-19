@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 - Added Mistral as an API-key provider. The status bar shows the official per-minute token and request rate limits. Monthly billing and Vibe plan usage are not available from a standard API key.
+- Mistral monthly quota now uses an `admin.mistral.ai` session cookie (same billing/Vibe endpoints as CodexBar). The API key remains for MCP tools.
 - Mistral MCP tools: Conversations web search, image generation, and OCR document-to-markdown (optional image files next to the markdown).
 
 ## [1.7.9] - 2026-08-16

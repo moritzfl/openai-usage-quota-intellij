@@ -1,6 +1,7 @@
 package de.moritzf.quota.idea.common
 
 import de.moritzf.quota.idea.mistral.MistralApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralSessionCookieStore
 import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.mistral.MistralQuotaClient
 import de.moritzf.quota.mistral.MistralQuotaException
@@ -9,16 +10,17 @@ class MistralQuotaProvider(
     private val client: MistralQuotaClient = MistralQuotaClient(),
 ) : CachedQuotaProvider<MistralQuota>() {
     override val type = QuotaProviderType.MISTRAL
-    override val notConfiguredMessage = "Mistral API key missing. Add a Mistral API key in settings."
+    override val notConfiguredMessage =
+        "Mistral session cookie missing. Paste the Cookie header from admin.mistral.ai in settings."
 
     override fun refresh() {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
-        if (apiKey.isNullOrBlank()) {
+        val cookie = MistralSessionCookieStore.getInstance().loadBlocking()
+        if (cookie.isNullOrBlank()) {
             clearData(notConfiguredMessage)
             return
         }
         try {
-            val quota = client.fetchQuota(apiKey)
+            val quota = client.fetchQuota(cookie, MistralApiKeyStore.getInstance().loadBlocking())
             storeQuota(quota, quota.rawJson)
         } catch (exception: MistralQuotaException) {
             storeFetchFailure(

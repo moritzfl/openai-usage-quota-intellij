@@ -15,6 +15,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
     private val separator = createSeparatedBlock()
     private val errorLabel = createWarningLabel("").apply { border = JBUI.Borders.emptyTop(1) }
     private val titleLabel = createSectionTitleLabel(MISTRAL_LABEL, QuotaIcons.MISTRAL).apply { border = JBUI.Borders.emptyTop(0) }
+    private val monthlyBlock = WindowBlockPanel(3)
     private val tokenBlock = WindowBlockPanel(3)
     private val requestBlock = WindowBlockPanel(3)
 
@@ -23,6 +24,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
         add(separator)
         add(errorLabel)
         add(titleLabel)
+        add(monthlyBlock)
         add(tokenBlock)
         add(requestBlock)
         hideAll()
@@ -46,11 +48,13 @@ internal class MistralPopupSection : ProviderPopupSection() {
                 hideAll()
                 titleLabel.isVisible = true
                 titleLabel.text = MISTRAL_LABEL
-                tokenBlock.showLoading("Tokens")
-                requestBlock.showLoading("Requests")
+                monthlyBlock.showLoading("Monthly")
+                tokenBlock.showLoading("Tokens / min")
+                requestBlock.showLoading("Requests / min")
             }
             else -> {
-                val limitReached = (quota.tokenUsage?.usagePercent ?: 0.0) >= 100.0 ||
+                val limitReached = (quota.monthlyUsage?.usagePercent ?: 0.0) >= 100.0 ||
+                    (quota.tokenUsage?.usagePercent ?: 0.0) >= 100.0 ||
                     (quota.requestUsage?.usagePercent ?: 0.0) >= 100.0
                 errorLabel.isVisible = limitReached
                 if (limitReached) {
@@ -58,8 +62,9 @@ internal class MistralPopupSection : ProviderPopupSection() {
                 }
                 titleLabel.isVisible = true
                 titleLabel.text = quota.organization.ifBlank { MISTRAL_LABEL }
-                quota.tokenUsage?.let { tokenBlock.updateMistral(it, "Tokens") } ?: tokenBlock.clear()
-                quota.requestUsage?.let { requestBlock.updateMistral(it, "Requests") } ?: requestBlock.clear()
+                quota.monthlyUsage?.let { monthlyBlock.updateMistral(it, "Monthly") } ?: monthlyBlock.clear()
+                quota.tokenUsage?.let { tokenBlock.updateMistral(it, "Tokens / min") } ?: tokenBlock.clear()
+                quota.requestUsage?.let { requestBlock.updateMistral(it, "Requests / min") } ?: requestBlock.clear()
             }
         }
     }
@@ -71,6 +76,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
 
     private fun hideContent() {
         titleLabel.isVisible = false
+        monthlyBlock.isVisible = false
         tokenBlock.isVisible = false
         requestBlock.isVisible = false
     }
@@ -78,8 +84,12 @@ internal class MistralPopupSection : ProviderPopupSection() {
     private fun WindowBlockPanel.updateMistral(window: MistralUsageWindow, label: String) {
         val percent = clampPercent(window.usagePercent.roundToInt())
         val resetText = QuotaUiUtil.formatReset(window.resetsAt)
-        var info = "$percent% used"
+        var info = if (window.limit > 0) {
+            "$percent% used (${window.used} / ${window.limit})"
+        } else {
+            "$percent% used"
+        }
         if (resetText != null) info += " - $resetText"
-        update(describeDurationLimitLabel(window.periodDuration, label), info, percent)
+        update(label, info, percent)
     }
 }

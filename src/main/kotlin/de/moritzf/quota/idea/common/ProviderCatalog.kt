@@ -12,6 +12,7 @@ import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.mcp.UsageQuotaMcpRegistration
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
 import de.moritzf.quota.idea.mistral.MistralApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralSessionCookieStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
@@ -195,7 +196,7 @@ internal object ProviderCatalog {
             mcpEmpty = "No Mistral usage response available",
             settings = { ctx -> MistralSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = MistralUi,
-            isQuotaConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isQuotaConfigured = { !MistralSessionCookieStore.getInstance().loadBlocking().isNullOrBlank() },
             isWebSearchConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             webSearchMissingReason = "Mistral API key missing. Add a Mistral API key in settings.",
         ),

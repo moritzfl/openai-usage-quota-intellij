@@ -10,6 +10,7 @@ import com.intellij.util.ui.components.BorderLayoutPanel
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.mistral.MistralApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralSessionCookieStore
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.mistral.MistralQuota
 import java.awt.Color
@@ -20,7 +21,14 @@ internal class MistralSettingsPanel(
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
     override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
-    private val apiKeyField = JBPasswordField().apply { columns = 40 }
+    private val cookieField = JBPasswordField().apply {
+        columns = 40
+        toolTipText = "Cookie header from admin.mistral.ai (must include ory_session_*)"
+    }
+    private val apiKeyField = JBPasswordField().apply {
+        columns = 40
+        toolTipText = "Mistral API key for MCP search, images, and OCR"
+    }
     private val statusLabel = JBLabel().apply { isVisible = false }
     private val responseViewer = createResponseViewer()
 
@@ -28,10 +36,14 @@ internal class MistralSettingsPanel(
         addToTop(panel {
             row { cell(hideFromPopupCheckBox) }
             row { cell(statusLabel) }
+            row {
+                label("Quota: paste Cookie from admin.mistral.ai → DevTools → Network → a billing request. Needs ory_session_* and preferably csrftoken.")
+            }
+            row("Session cookie:") { cell(cookieField).resizableColumn().align(AlignX.FILL) }
             row("API key:") { cell(apiKeyField).resizableColumn().align(AlignX.FILL) }
             row {
-                button("Save") { saveKeysNow() }
-                button("Clear") { clearKeysNow() }
+                button("Save") { saveNow() }
+                button("Clear") { clearNow() }
             }
             separator()
         })
@@ -42,22 +54,24 @@ internal class MistralSettingsPanel(
     }
 
     override fun updateFields() {
-        val apiKey = MistralApiKeyStore.getInstance().load(onLoaded = ::refreshAfterKeyLoad)
+        val cookie = MistralSessionCookieStore.getInstance().load(onLoaded = ::refreshAfterLoad)
+        val apiKey = MistralApiKeyStore.getInstance().load(onLoaded = ::refreshAfterLoad)
+        cookieField.text = if (cookie.isNullOrBlank()) "" else PLACEHOLDER
         apiKeyField.text = if (apiKey.isNullOrBlank()) "" else PLACEHOLDER
         updateStatus()
     }
 
     override fun updateStatus() {
-        val store = MistralApiKeyStore.getInstance()
-        val apiKey = store.load(onLoaded = ::refreshAfterKeyLoad)
+        val cookieStore = MistralSessionCookieStore.getInstance()
+        val cookie = cookieStore.load(onLoaded = ::refreshAfterLoad)
         val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.MISTRAL) as? MistralQuota
         val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.MISTRAL)
         statusLabel.text = when {
-            !store.isLoaded() -> formatStatusText("Loading API keys...", AuthStatusKind.PENDING)
-            apiKey.isNullOrBlank() -> formatStatusText("Mistral API key missing", AuthStatusKind.DISCONNECTED)
+            !cookieStore.isLoaded() -> formatStatusText("Loading credentials...", AuthStatusKind.PENDING)
+            cookie.isNullOrBlank() -> formatStatusText("Mistral session cookie missing", AuthStatusKind.DISCONNECTED)
             error != null -> formatStatusText("Error: $error", AuthStatusKind.DISCONNECTED)
             quota != null -> formatStatusText("Connected", AuthStatusKind.CONNECTED)
-            else -> formatStatusText("API key stored securely", AuthStatusKind.CONNECTED)
+            else -> formatStatusText("Session cookie stored securely", AuthStatusKind.CONNECTED)
         }
         statusLabel.foreground = statusLabelDefaultForeground ?: statusLabel.foreground
         statusLabel.isVisible = true
@@ -75,13 +89,17 @@ internal class MistralSettingsPanel(
         responseViewer.setCaretPosition(0)
     }
 
-    private fun saveKeysNow() {
-        val current = MistralApiKeyStore.getInstance().load()
-        val apiKey = String(apiKeyField.password).let { if (it == PLACEHOLDER) current else it }
-        setPending("Saving API keys...")
+    private fun saveNow() {
+        val currentCookie = MistralSessionCookieStore.getInstance().load()
+        val currentKey = MistralApiKeyStore.getInstance().load()
+        val cookie = String(cookieField.password).let { if (it == PLACEHOLDER) currentCookie else it }
+        val apiKey = String(apiKeyField.password).let { if (it == PLACEHOLDER) currentKey else it }
+        setPending("Saving credentials...")
         ApplicationManager.getApplication().executeOnPooledThread {
+            MistralSessionCookieStore.getInstance().save(cookie)
             MistralApiKeyStore.getInstance().save(apiKey)
             ApplicationManager.getApplication().invokeLater({
+                cookieField.text = if (cookie.isNullOrBlank()) "" else PLACEHOLDER
                 apiKeyField.text = if (apiKey.isNullOrBlank()) "" else PLACEHOLDER
                 updateStatus()
                 QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.MISTRAL)
@@ -89,11 +107,13 @@ internal class MistralSettingsPanel(
         }
     }
 
-    private fun clearKeysNow() {
-        setPending("Clearing API keys...")
+    private fun clearNow() {
+        setPending("Clearing credentials...")
         ApplicationManager.getApplication().executeOnPooledThread {
+            MistralSessionCookieStore.getInstance().clear()
             MistralApiKeyStore.getInstance().clear()
             ApplicationManager.getApplication().invokeLater({
+                cookieField.text = ""
                 apiKeyField.text = ""
                 updateStatus()
                 QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.MISTRAL)
@@ -101,7 +121,7 @@ internal class MistralSettingsPanel(
         }
     }
 
-    private fun refreshAfterKeyLoad() {
+    private fun refreshAfterLoad() {
         updateFields()
         updateResponseArea()
     }

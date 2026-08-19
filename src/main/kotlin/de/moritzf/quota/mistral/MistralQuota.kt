@@ -12,18 +12,22 @@ data class MistralQuota(
     val organization: String = "",
     val workspace: String = "",
     val apiKeyName: String = "",
+    val monthlyUsage: MistralUsageWindow? = null,
     val tokenUsage: MistralUsageWindow? = null,
     val requestUsage: MistralUsageWindow? = null,
     override var fetchedAt: Instant? = null,
     @Transient override var rawJson: String? = null,
 ) : ProviderQuota {
     override fun hasUsageState(): Boolean =
-        organization.isNotBlank() || email.isNotBlank() || tokenUsage != null || requestUsage != null
+        monthlyUsage != null || organization.isNotBlank() || email.isNotBlank() ||
+            tokenUsage != null || requestUsage != null
 
     override fun usageFraction(): Double? =
-        listOfNotNull(tokenUsage?.usagePercent, requestUsage?.usagePercent).maxOrNull()?.let { it / 100.0 }
+        monthlyUsage?.usagePercent?.let { it / 100.0 }
+            ?: listOfNotNull(tokenUsage?.usagePercent, requestUsage?.usagePercent).maxOrNull()?.let { it / 100.0 }
 
     override fun activityWindows(): Map<String, Double> = buildMap {
+        monthlyUsage?.usagePercent?.let { put("monthly", it / 100.0) }
         tokenUsage?.usagePercent?.let { put("tokensMinute", it / 100.0) }
         requestUsage?.usagePercent?.let { put("requestsMinute", it / 100.0) }
     }

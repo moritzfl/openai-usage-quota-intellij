@@ -60,4 +60,39 @@ class MistralQuotaClientTest {
         val now = Instant.fromEpochMilliseconds(1_780_000_000_000L)
         assertNull(MistralQuotaClient.windowFromValues(limit = 0, remaining = 0, now = now))
     }
+
+    @Test
+    fun parseSessionCookiesRequiresOrySession() {
+        val session = MistralQuotaClient.parseSessionCookies(
+            "Cookie: ory_session_abc=token; csrftoken=csrf-1; other=x",
+        )
+        assertEquals("csrf-1", session.csrfToken)
+        assertEquals("csrftoken=csrf-1; ory_session_abc=token", session.consoleCookieHeader())
+        assertFailsWith<MistralQuotaException> {
+            MistralQuotaClient.parseSessionCookies("sessionid=nope")
+        }
+    }
+
+    @Test
+    fun parseVibeUsageReadsPercentAndReset() {
+        val body = """
+            [{"result":{"data":{"json":{"usage_percentage":42.5,"reset_at":"2026-09-01T00:00:00Z"}}}}]
+        """.trimIndent()
+        val vibe = assertNotNull(MistralQuotaClient.parseVibeUsage(body))
+        assertEquals(42.5, vibe.usagePercent)
+        assertEquals(Instant.parse("2026-09-01T00:00:00Z"), vibe.resetsAt)
+    }
+
+    @Test
+    fun monthlyWindowPrefersVibePercentOverBilling() {
+        val now = Instant.parse("2026-08-19T00:00:00Z")
+        val billing = MistralQuotaClient.parseBilling(
+            """{"vibe_usage":10.0,"start_date":"2026-08-01","end_date":"2026-08-31"}""",
+        )
+        val vibe = MistralVibeUsage(42.5, Instant.parse("2026-09-01T00:00:00Z"))
+        val window = assertNotNull(MistralQuotaClient.monthlyWindow(vibe, billing, now))
+        assertEquals(42.5, window.usagePercent)
+        assertEquals(Instant.parse("2026-09-01T00:00:00Z"), window.resetsAt)
+        assertEquals(true, (window.periodDurationMs ?: 0L) > 0L)
+    }
 }
