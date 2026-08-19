@@ -1,6 +1,8 @@
 # LLM Subscription Usage Changelog
 
 ## [Unreleased]
+
+## [1.8.1] - 2026-08-19
 - Settings → Subscription Usage now uses a vertical provider list with search, status dots, and a detail pane, so more providers no longer widen the window. Drag or Alt+Up/Down still sets popup and indicator order. Last quota response can be copied. An eye toggle shows whether a provider is in the quota popup. Logged-out providers stay gray; a yellow dot means configured but the last refresh failed, with the reason shown next to the name.
 
 ## [1.8.0] - 2026-08-19
