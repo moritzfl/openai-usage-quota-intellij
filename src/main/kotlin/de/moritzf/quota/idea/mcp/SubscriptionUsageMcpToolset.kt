@@ -4,8 +4,6 @@ import com.intellij.mcpserver.McpToolset
 import com.intellij.mcpserver.annotations.McpDescription
 import com.intellij.mcpserver.annotations.McpTool
 import com.intellij.openapi.project.ProjectManager
-import de.moritzf.quota.claude.ClaudeDocumentClient
-import de.moritzf.quota.claude.ClaudeQuotaException
 import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.ProviderCatalog
 import de.moritzf.quota.idea.common.QuotaProviderType
@@ -36,6 +34,7 @@ import de.moritzf.quota.supergrok.SuperGrokAudioClient
 import de.moritzf.quota.supergrok.SuperGrokImagineClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
 import de.moritzf.quota.supergrok.SuperGrokWebSearchClient
+import de.moritzf.quota.zai.ZaiImageClient
 import de.moritzf.quota.zai.ZaiOcrClient
 import de.moritzf.quota.zai.ZaiQuotaException
 import de.moritzf.quota.zai.ZaiWebSearchClient
@@ -59,7 +58,7 @@ class SubscriptionUsageMcpToolset(
     private val mistralOcrClient: MistralOcrClient = MistralOcrClient.createDefault(),
     private val mistralAudioClient: MistralAudioClient = MistralAudioClient.createDefault(),
     private val zaiOcrClient: ZaiOcrClient = ZaiOcrClient.createDefault(),
-    private val claudeDocumentClient: ClaudeDocumentClient = ClaudeDocumentClient.createDefault(),
+    private val zaiImageClient: ZaiImageClient = ZaiImageClient.createDefault(),
 ) : McpToolset {
     @McpTool(name = "subscription_quota")
     @McpDescription(description = "Returns the latest subscription quota response JSON for the selected provider.")
@@ -150,10 +149,10 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_image_generation")
-    @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok returns an image URL and OpenAI/Codex returns provider JSON (including b64). With targetFile, the image is written to disk so agents avoid large base64 payloads.")
+    @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok and Z.ai return an image URL and OpenAI/Codex returns provider JSON (including b64). With targetFile, the image is written to disk so agents avoid large base64 payloads.")
     fun subscription_image_generation(
         @McpDescription(description = "Image prompt.") prompt: String,
-        @McpDescription(description = "Provider to use: OPEN_AI (Codex), SUPERGROK (xAI Imagine), or MISTRAL.") provider: ImageGenerationProvider = ImageGenerationProvider.OPEN_AI,
+        @McpDescription(description = "Provider to use. Supported providers are derived from the ImageGenerationProvider enum.") provider: ImageGenerationProvider = ImageGenerationProvider.OPEN_AI,
         @McpDescription(description = "Optional relative project path for the generated image (for example out/image.png). Leave blank to return provider JSON/URL instead of writing a file.") targetFile: String? = null,
     ): String {
         return when (provider) {
@@ -163,6 +162,8 @@ class SubscriptionUsageMcpToolset(
                 superGrokImageGeneration(prompt, targetFile)
             ImageGenerationProvider.MISTRAL ->
                 mistralImageGeneration(prompt, targetFile)
+            ImageGenerationProvider.ZAI ->
+                zaiImageGeneration(prompt, targetFile)
         }
     }
 
@@ -177,7 +178,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_document_to_markdown")
-    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex and Claude convert the document through their chat APIs and do not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
+    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex converts the document through the chat API and does not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
     fun subscription_document_to_markdown(
         @McpDescription(description = "Provider to use. Supported providers are derived from the DocumentToMarkdownProvider enum.") provider: DocumentToMarkdownProvider = DocumentToMarkdownProvider.MISTRAL,
         @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
@@ -211,13 +212,6 @@ class SubscriptionUsageMcpToolset(
                         resolveOptionalPath(outputFile),
                         model,
                     ),
-                )
-            DocumentToMarkdownProvider.CLAUDE ->
-                claudeDocumentToMarkdown(
-                    documentUrl,
-                    localFile,
-                    outputFile,
-                    model.ifBlank { ClaudeDocumentClient.DEFAULT_MODEL },
                 )
         }
     }
@@ -498,6 +492,20 @@ class SubscriptionUsageMcpToolset(
         }
     }
 
+    private fun zaiImageGeneration(prompt: String, targetFile: String?): String {
+        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
+        }
+        return try {
+            zaiImageClient.generateImage(apiKey, prompt, targetFile, projectBaseDirectory())
+        } catch (exception: ZaiQuotaException) {
+            errorResult(exception.message ?: "Z.ai image generation failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Z.ai image generation failed.")
+        }
+    }
+
     private fun mistralImageGeneration(prompt: String, targetFile: String?): String {
         val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
         if (apiKey.isNullOrBlank()) {
@@ -563,50 +571,6 @@ class SubscriptionUsageMcpToolset(
             errorResult(exception.message ?: "Z.ai OCR failed.")
         } catch (exception: Exception) {
             errorResult(exception.message ?: "Z.ai OCR failed.")
-        }
-    }
-
-    private fun claudeDocumentToMarkdown(
-        documentUrl: String?,
-        localFile: String?,
-        outputFile: String?,
-        model: String,
-    ): String {
-        return withClaudeAuth("Claude document conversion failed.") { accessToken ->
-            claudeDocumentClient.convertDocument(
-                accessToken = accessToken,
-                documentUrl = documentUrl,
-                localFile = resolveOptionalPath(localFile),
-                outputFile = resolveOptionalPath(outputFile),
-                model = model,
-            )
-        }
-    }
-
-    private fun withClaudeAuth(failureLabel: String, block: (String) -> String): String {
-        val authService = QuotaAuthService.getInstance()
-        val token = authService.getAccessTokenBlocking(QuotaProviderType.CLAUDE)
-        if (token.isNullOrBlank()) {
-            return errorResult("Claude login required. Log in from Claude settings.")
-        }
-        return try {
-            block(token)
-        } catch (exception: ClaudeQuotaException) {
-            if (exception.statusCode == 401 || exception.statusCode == 403) {
-                val refreshed = authService.forceRefreshBlocking(QuotaProviderType.CLAUDE, token)
-                if (!refreshed.isNullOrBlank()) {
-                    return try {
-                        block(refreshed)
-                    } catch (retryException: ClaudeQuotaException) {
-                        errorResult(retryException.message ?: failureLabel)
-                    } catch (retryException: Exception) {
-                        errorResult(retryException.message ?: failureLabel)
-                    }
-                }
-            }
-            errorResult(exception.message ?: failureLabel)
-        } catch (exception: Exception) {
-            errorResult(exception.message ?: failureLabel)
         }
     }
 

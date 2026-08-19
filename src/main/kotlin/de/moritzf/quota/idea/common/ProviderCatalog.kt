@@ -111,10 +111,7 @@ internal object ProviderCatalog {
     val all: List<ProviderDescriptor> = listOf(
         descriptor(
             type = QuotaProviderType.CLAUDE,
-            capabilities = ProviderCapabilities(
-                documentToMarkdown = true,
-                oauth = true,
-            ),
+            capabilities = ProviderCapabilities(oauth = true),
             quotaFactory = ::ClaudeQuotaProvider,
             snapshotCodec = EnvelopeQuotaCodec(ClaudeQuota.serializer()),
             mcpEmpty = "No Claude usage response available",
@@ -311,6 +308,7 @@ internal object ProviderCatalog {
             type = QuotaProviderType.ZAI,
             capabilities = ProviderCapabilities(
                 webSearch = WebSearchCapability.LIST,
+                imageGeneration = true,
                 documentToMarkdown = true,
                 subscriptionProxy = true,
             ),

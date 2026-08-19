@@ -21,6 +21,7 @@ enum class ImageGenerationProvider(val providerType: QuotaProviderType) {
     OPEN_AI(QuotaProviderType.OPEN_AI),
     SUPERGROK(QuotaProviderType.SUPERGROK),
     MISTRAL(QuotaProviderType.MISTRAL),
+    ZAI(QuotaProviderType.ZAI),
 }
 
 enum class SpeechToTextProvider(val providerType: QuotaProviderType) {
@@ -39,5 +40,4 @@ enum class DocumentToMarkdownProvider(val providerType: QuotaProviderType) {
     MISTRAL(QuotaProviderType.MISTRAL),
     ZAI(QuotaProviderType.ZAI),
     OPEN_AI(QuotaProviderType.OPEN_AI),
-    CLAUDE(QuotaProviderType.CLAUDE),
 }
