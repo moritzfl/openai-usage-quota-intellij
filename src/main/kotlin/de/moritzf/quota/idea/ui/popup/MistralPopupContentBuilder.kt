@@ -84,11 +84,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
     private fun WindowBlockPanel.updateMistral(window: MistralUsageWindow, label: String) {
         val percent = clampPercent(window.usagePercent.roundToInt())
         val resetText = QuotaUiUtil.formatReset(window.resetsAt)
-        var info = if (window.limit > 0) {
-            "$percent% used (${window.used} / ${window.limit})"
-        } else {
-            "$percent% used"
-        }
+        var info = "$percent% used"
         if (resetText != null) info += " - $resetText"
         update(label, info, percent)
     }
