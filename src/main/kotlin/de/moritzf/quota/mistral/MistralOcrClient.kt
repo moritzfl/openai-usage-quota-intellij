@@ -1,0 +1,215 @@
+package de.moritzf.quota.mistral
+
+import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.McpJson
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import java.io.IOException
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.nio.file.Files
+import java.nio.file.Path
+import java.time.Duration
+import java.util.Base64
+import java.util.UUID
+
+open class MistralOcrClient(
+    private val httpClient: HttpClient = defaultHttpClient(),
+    private val ocrUri: URI = OCR_URI,
+    private val filesUri: URI = FILES_URI,
+) {
+    open fun convertDocument(
+        apiKey: String,
+        documentUrl: String? = null,
+        localFile: Path? = null,
+        outputFile: Path? = null,
+        includeImages: Boolean = true,
+        model: String = DEFAULT_MODEL,
+    ): String {
+        val token = apiKey.trim().ifBlank {
+            throw MistralQuotaException("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        val document = resolveDocument(token, documentUrl, localFile)
+        val wantImages = includeImages && outputFile != null
+        val body = JsonSupport.json.encodeToString(
+            MistralOcrRequestDto(
+                model = model.trim().ifBlank { DEFAULT_MODEL },
+                document = document,
+                includeImageBase64 = wantImages,
+            ),
+        )
+        val response = sendString(postJson(token, ocrUri, body))
+        val status = response.statusCode()
+        val responseBody = response.body()
+        if (status == 401 || status == 403) {
+            throw MistralQuotaException("Session expired. Check your Mistral API key.", status, responseBody)
+        }
+        if (status !in 200..299) {
+            throw MistralQuotaException("Mistral OCR failed (HTTP $status). Try again later.", status, responseBody)
+        }
+        if (outputFile == null) {
+            return McpJson.providerJsonOrRaw(responseBody)
+        }
+        val written = writeMarkdown(responseBody, outputFile, wantImages)
+        return JsonSupport.json.encodeToString(written)
+    }
+
+    private fun resolveDocument(apiKey: String, documentUrl: String?, localFile: Path?): MistralOcrDocumentDto {
+        val url = documentUrl?.trim().orEmpty()
+        if (url.isNotEmpty()) {
+            return MistralOcrDocumentDto(type = "document_url", documentUrl = url)
+        }
+        val path = localFile ?: throw MistralQuotaException("Provide documentUrl or a local file path.")
+        if (!Files.isRegularFile(path)) {
+            throw MistralQuotaException("Local document was not found.")
+        }
+        val fileId = uploadFile(apiKey, path)
+        return MistralOcrDocumentDto(type = "file", fileId = fileId)
+    }
+
+    private fun uploadFile(apiKey: String, path: Path): String {
+        val boundary = "----MistralOcr${UUID.randomUUID().toString().replace("-", "")}"
+        val filename = path.fileName.toString()
+        val bytes = Files.readAllBytes(path)
+        val preamble = buildString {
+            append("--").append(boundary).append("\r\n")
+            append("Content-Disposition: form-data; name=\"purpose\"\r\n\r\nocr\r\n")
+            append("--").append(boundary).append("\r\n")
+            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
+            append("Content-Type: application/octet-stream\r\n\r\n")
+        }.toByteArray()
+        val closing = "\r\n--$boundary--\r\n".toByteArray()
+        val payload = ByteArray(preamble.size + bytes.size + closing.size)
+        System.arraycopy(preamble, 0, payload, 0, preamble.size)
+        System.arraycopy(bytes, 0, payload, preamble.size, bytes.size)
+        System.arraycopy(closing, 0, payload, preamble.size + bytes.size, closing.size)
+        val request = HttpRequest.newBuilder()
+            .uri(filesUri)
+            .timeout(Duration.ofSeconds(120))
+            .header("Authorization", "Bearer $apiKey")
+            .header("Content-Type", "multipart/form-data; boundary=$boundary")
+            .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+            .build()
+        val response = sendString(request)
+        if (response.statusCode() !in 200..299) {
+            throw MistralQuotaException("Mistral file upload failed (HTTP ${response.statusCode()}).", response.statusCode(), response.body())
+        }
+        val root = runCatching { JsonSupport.json.parseToJsonElement(response.body()) as? JsonObject }.getOrNull()
+        val id = (root?.get("id") as? JsonPrimitive)?.contentOrNull
+        if (id.isNullOrBlank()) {
+            throw MistralQuotaException("Mistral file upload returned no id.", response.statusCode(), response.body())
+        }
+        return id
+    }
+
+    private fun sendString(request: HttpRequest): HttpResponse<String> {
+        return try {
+            httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        } catch (exception: IOException) {
+            throw MistralQuotaException("Request failed. Check your connection.", 0, null, exception)
+        } catch (exception: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw MistralQuotaException("Request failed. Check your connection.", 0, null, exception)
+        }
+    }
+
+    companion object {
+        const val DEFAULT_MODEL = "mistral-ocr-latest"
+        private val OCR_URI = URI.create("https://api.mistral.ai/v1/ocr")
+        private val FILES_URI = URI.create("https://api.mistral.ai/v1/files")
+
+        fun createDefault(): MistralOcrClient = MistralOcrClient()
+
+        internal fun writeMarkdown(responseBody: String, outputFile: Path, includeImages: Boolean): MistralOcrWriteResult {
+            val parsed = try {
+                JsonSupport.json.decodeFromString<MistralOcrResponseDto>(responseBody)
+            } catch (exception: Exception) {
+                throw MistralQuotaException("Could not parse OCR response.", 200, responseBody, exception)
+            }
+            val markdown = parsed.pages.joinToString("\n\n") { it.markdown }
+            val parent = outputFile.parent
+            if (parent != null) {
+                Files.createDirectories(parent)
+            }
+            Files.writeString(outputFile, markdown)
+            val imageFiles = mutableListOf<String>()
+            if (includeImages) {
+                val imageDir = outputFile.parent ?: Path.of(".")
+                parsed.pages.forEach { page ->
+                    page.images.forEach { image ->
+                        val name = image.id.trim().ifBlank { return@forEach }
+                        val encoded = image.imageBase64?.substringAfter("base64,", image.imageBase64)?.trim().orEmpty()
+                        if (encoded.isEmpty()) return@forEach
+                        val bytes = runCatching { Base64.getDecoder().decode(encoded) }.getOrNull() ?: return@forEach
+                        val imagePath = imageDir.resolve(name)
+                        Files.write(imagePath, bytes)
+                        imageFiles += imagePath.toString()
+                    }
+                }
+            }
+            return MistralOcrWriteResult(
+                outputFile = outputFile.toString(),
+                imageFiles = imageFiles,
+                pages = parsed.pages.size,
+            )
+        }
+
+        private fun defaultHttpClient(): HttpClient =
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build()
+
+        private fun postJson(apiKey: String, uri: URI, body: String): HttpRequest {
+            return HttpRequest.newBuilder()
+                .uri(uri)
+                .timeout(Duration.ofSeconds(180))
+                .header("Authorization", "Bearer $apiKey")
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body))
+                .build()
+        }
+    }
+}
+
+@Serializable
+internal data class MistralOcrRequestDto(
+    val model: String,
+    val document: MistralOcrDocumentDto,
+    @SerialName("include_image_base64") val includeImageBase64: Boolean = false,
+)
+
+@Serializable
+internal data class MistralOcrDocumentDto(
+    val type: String,
+    @SerialName("document_url") val documentUrl: String? = null,
+    @SerialName("file_id") val fileId: String? = null,
+)
+
+@Serializable
+internal data class MistralOcrResponseDto(
+    val pages: List<MistralOcrPageDto> = emptyList(),
+)
+
+@Serializable
+internal data class MistralOcrPageDto(
+    val markdown: String = "",
+    val images: List<MistralOcrImageDto> = emptyList(),
+)
+
+@Serializable
+internal data class MistralOcrImageDto(
+    val id: String = "",
+    @SerialName("image_base64") val imageBase64: String? = null,
+)
+
+@Serializable
+internal data class MistralOcrWriteResult(
+    @SerialName("output_file") val outputFile: String,
+    @SerialName("image_files") val imageFiles: List<String>,
+    val pages: Int,
+)

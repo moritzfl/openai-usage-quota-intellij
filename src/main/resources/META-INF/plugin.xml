@@ -7,7 +7,7 @@
         <p>Track and use your LLM subscriptions directly in the IDE.</p>
         <ul>
             <li><b>Quota at a glance</b> — usage for OpenAI (ChatGPT/Codex), Claude, SuperGrok/xAI, GitHub Copilot, Cursor, OpenCode Go, Ollama Cloud, Z.ai, MiniMax, Mistral, and Kimi in the status bar or main toolbar, with a detailed popup showing usage windows and reset times.</li>
-            <li><b>MCP tools</b> — quota lookup, subscription-backed web search (OpenAI/Codex, SuperGrok/xAI, Kimi, Z.ai, MiniMax, Ollama), image generation (OpenAI/Codex, SuperGrok/xAI Imagine) with optional file output, and SuperGrok/xAI Imagine video generation. Served through IntelliJ's built-in MCP server to the IDE's AI chat and to any external MCP-capable agent.</li>
+            <li><b>MCP tools</b> — quota lookup, subscription-backed web search (OpenAI/Codex, SuperGrok/xAI, Mistral, Kimi, Z.ai, MiniMax, Ollama), image generation (OpenAI/Codex, SuperGrok/xAI Imagine, Mistral) with optional file output, SuperGrok/xAI Imagine video generation, and Mistral OCR document-to-markdown. Served through IntelliJ's built-in MCP server to the IDE's AI chat and to any external MCP-capable agent.</li>
             <li><b>Local OpenAI-compatible proxy</b> — expose selected subscriptions (OpenAI/Codex, SuperGrok, GitHub Copilot, Kimi, MiniMax, Ollama, OpenCode Zen, Z.ai) through standard OpenAI/LiteLLM endpoints, so tools like JetBrains Junie can use them as a custom LLM provider. Compatibility is tested with the Junie CLI and JetBrains' API Connections for AI features such as the integrated chat.</li>
             <li><b>MCP server URL sync</b> — keeps JSON, TOML, and YAML client config files pointed at IntelliJ's active MCP endpoint when its port changes.</li>
         </ul>

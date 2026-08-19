@@ -20,4 +20,5 @@ enum class ListSearchProvider(val providerType: QuotaProviderType) {
 enum class ImageGenerationProvider(val providerType: QuotaProviderType) {
     OPEN_AI(QuotaProviderType.OPEN_AI),
     SUPERGROK(QuotaProviderType.SUPERGROK),
+    MISTRAL(QuotaProviderType.MISTRAL),
 }

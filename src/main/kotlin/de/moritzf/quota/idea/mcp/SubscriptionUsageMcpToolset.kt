@@ -10,6 +10,7 @@ import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
@@ -19,6 +20,10 @@ import de.moritzf.quota.minimax.MiniMaxQuotaException
 import de.moritzf.quota.minimax.MiniMaxRegion
 import de.moritzf.quota.minimax.MiniMaxRegionPreference
 import de.moritzf.quota.minimax.MiniMaxWebSearchClient
+import de.moritzf.quota.mistral.MistralImageClient
+import de.moritzf.quota.mistral.MistralOcrClient
+import de.moritzf.quota.mistral.MistralQuotaException
+import de.moritzf.quota.mistral.MistralWebSearchClient
 import de.moritzf.quota.ollama.OllamaQuotaException
 import de.moritzf.quota.ollama.OllamaWebSearchClient
 import de.moritzf.quota.shared.JsonSupport
@@ -43,6 +48,9 @@ class SubscriptionUsageMcpToolset(
     private val ollamaSearchClient: OllamaWebSearchClient = OllamaWebSearchClient.createDefault(),
     private val superGrokSearchClient: SuperGrokWebSearchClient = SuperGrokWebSearchClient.createDefault(),
     private val superGrokImagineClient: SuperGrokImagineClient = SuperGrokImagineClient.createDefault(),
+    private val mistralSearchClient: MistralWebSearchClient = MistralWebSearchClient.createDefault(),
+    private val mistralImageClient: MistralImageClient = MistralImageClient.createDefault(),
+    private val mistralOcrClient: MistralOcrClient = MistralOcrClient.createDefault(),
 ) : McpToolset {
     @McpTool(name = "subscription_quota")
     @McpDescription(description = "Returns the latest subscription quota response JSON for the selected provider.")
@@ -135,7 +143,7 @@ class SubscriptionUsageMcpToolset(
     @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok returns an image URL and OpenAI/Codex returns provider JSON (including b64). With targetFile, the image is written to disk so agents avoid large base64 payloads.")
     fun subscription_image_generation(
         @McpDescription(description = "Image prompt.") prompt: String,
-        @McpDescription(description = "Provider to use: OPEN_AI (Codex) or SUPERGROK (xAI Imagine).") provider: ImageGenerationProvider = ImageGenerationProvider.OPEN_AI,
+        @McpDescription(description = "Provider to use: OPEN_AI (Codex), SUPERGROK (xAI Imagine), or MISTRAL.") provider: ImageGenerationProvider = ImageGenerationProvider.OPEN_AI,
         @McpDescription(description = "Optional relative project path for the generated image (for example out/image.png). Leave blank to return provider JSON/URL instead of writing a file.") targetFile: String? = null,
     ): String {
         return when (provider) {
@@ -143,7 +151,31 @@ class SubscriptionUsageMcpToolset(
                 codexResult(codexClient.imageGeneration(prompt, targetFile, projectBaseDirectory()))
             ImageGenerationProvider.SUPERGROK ->
                 superGrokImageGeneration(prompt, targetFile)
+            ImageGenerationProvider.MISTRAL ->
+                mistralImageGeneration(prompt, targetFile)
         }
+    }
+
+    @McpTool(name = "mistral_web_search")
+    @McpDescription(description = "Runs a Mistral Conversations web search using the stored Mistral API key and returns the provider JSON response.")
+    fun mistral_web_search(
+        @McpDescription(description = "Search query to send to Mistral web search.") query: String,
+        @McpDescription(description = "Mistral model id for the Conversations request.") model: String = MistralWebSearchClient.DEFAULT_MODEL,
+        @McpDescription(description = "When true, use web_search_premium instead of web_search.") premium: Boolean = false,
+    ): String {
+        return mistralWebSearch(query, model, premium)
+    }
+
+    @McpTool(name = "subscription_document_to_markdown")
+    @McpDescription(description = "Converts a document to markdown with Mistral OCR. Pass a public documentUrl or a localFile path. Without outputFile the provider OCR JSON is returned. With outputFile the markdown is written and optional extracted images are saved next to it using the API image names.")
+    fun subscription_document_to_markdown(
+        @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
+        @McpDescription(description = "Optional project-relative or absolute local file path.") localFile: String? = null,
+        @McpDescription(description = "Optional markdown output path. Leave blank to return provider OCR JSON.") outputFile: String? = null,
+        @McpDescription(description = "When writing outputFile, also write extracted images next to the markdown using the OCR placeholder names.") includeImages: Boolean = true,
+        @McpDescription(description = "OCR model id.") model: String = MistralOcrClient.DEFAULT_MODEL,
+    ): String {
+        return mistralDocumentToMarkdown(documentUrl, localFile, outputFile, includeImages, model)
     }
 
     @McpTool(name = "supergrok_video_generation")
@@ -300,6 +332,69 @@ class SubscriptionUsageMcpToolset(
             }
         }
         return searchError(lastException?.message ?: "MiniMax web search failed.")
+    }
+
+    private fun mistralWebSearch(query: String, model: String, premium: Boolean): String {
+        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return searchError("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        return try {
+            mistralSearchClient.webSearch(apiKey, query, model, premium)
+        } catch (exception: MistralQuotaException) {
+            searchError(exception.message ?: "Mistral web search failed.")
+        } catch (exception: Exception) {
+            searchError(exception.message ?: "Mistral web search failed.")
+        }
+    }
+
+    private fun mistralImageGeneration(prompt: String, targetFile: String?): String {
+        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        return try {
+            mistralImageClient.generateImage(apiKey, prompt, targetFile, projectBaseDirectory())
+        } catch (exception: MistralQuotaException) {
+            errorResult(exception.message ?: "Mistral image generation failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Mistral image generation failed.")
+        }
+    }
+
+    private fun mistralDocumentToMarkdown(
+        documentUrl: String?,
+        localFile: String?,
+        outputFile: String?,
+        includeImages: Boolean,
+        model: String,
+    ): String {
+        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        if (apiKey.isNullOrBlank()) {
+            return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
+        }
+        return try {
+            mistralOcrClient.convertDocument(
+                apiKey = apiKey,
+                documentUrl = documentUrl,
+                localFile = resolveOptionalPath(localFile),
+                outputFile = resolveOptionalPath(outputFile),
+                includeImages = includeImages,
+                model = model,
+            )
+        } catch (exception: MistralQuotaException) {
+            errorResult(exception.message ?: "Mistral OCR failed.")
+        } catch (exception: Exception) {
+            errorResult(exception.message ?: "Mistral OCR failed.")
+        }
+    }
+
+    private fun resolveOptionalPath(value: String?): Path? {
+        val trimmed = value?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val path = Path.of(trimmed)
+        if (path.isAbsolute) return path.normalize()
+        val base = projectBaseDirectory()
+        return if (base == null) path.normalize() else base.resolve(path).normalize()
     }
 
     private fun ollamaWebSearch(query: String, limit: Int, includeContent: Boolean): String {

@@ -45,7 +45,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 | Ollama Cloud | API key | ✓ | ✓ | — | — | ✓ |
 | Z.ai | API key | ✓ | ✓ | — | — | ✓ |
 | MiniMax | API key | ✓ | ✓ | — | — | ✓ |
-| Mistral | API key | ✓ | — | — | — | — |
+| Mistral | API key | ✓ | ✓ | ✓ | — | — |
 | Kimi | Device code | ✓ | ✓ | — | — | ✓ |
 
 *Web search, images, and video are MCP chat tools backed by your subscription. Proxy = available through the local OpenAI-compatible proxy.*
@@ -82,8 +82,10 @@ The plugin registers subscription-backed tools with IntelliJ's built-in MCP serv
 | `subscription_tools_status` | Which providers and tools are ready to use |
 | `codex_web_search` | Web search answered by OpenAI/Codex (context size, live access, domain filters) |
 | `supergrok_web_search` | Web search answered by Grok (model selection, domain filters) |
+| `mistral_web_search` | Answer-style web search via Mistral Conversations |
 | `subscription_web_search` | Result-list web search via Kimi, Z.ai, MiniMax, or Ollama |
-| `subscription_image_generation` | Image generation via OpenAI/Codex or SuperGrok/xAI Imagine, optionally saved to a file |
+| `subscription_document_to_markdown` | Convert a PDF/document to markdown via Mistral OCR |
+| `subscription_image_generation` | Image generation via OpenAI/Codex, SuperGrok/xAI Imagine, or Mistral, optionally saved to a file |
 | `supergrok_video_generation` | Video generation via SuperGrok/xAI Imagine |
 
 Individual tools can be enabled or disabled under `Settings` > `Tools` > `MCP Server` > `Exposed Tools`.

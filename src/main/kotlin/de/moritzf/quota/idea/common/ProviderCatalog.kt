@@ -186,12 +186,18 @@ internal object ProviderCatalog {
         ),
         descriptor(
             type = QuotaProviderType.MISTRAL,
+            capabilities = ProviderCapabilities(
+                webSearch = WebSearchCapability.ANSWER,
+                imageGeneration = true,
+            ),
             quotaFactory = ::MistralQuotaProvider,
             snapshotCodec = EnvelopeQuotaCodec(MistralQuota.serializer()),
             mcpEmpty = "No Mistral usage response available",
             settings = { ctx -> MistralSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = MistralUi,
             isQuotaConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isWebSearchConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            webSearchMissingReason = "Mistral API key missing. Add a Mistral API key in settings.",
         ),
         descriptor(
             type = QuotaProviderType.OLLAMA,

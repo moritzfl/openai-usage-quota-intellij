@@ -52,7 +52,7 @@ class ProviderCatalogTest {
         )
         assertEquals(
             ProviderCatalog.all.filter { it.capabilities.webSearch == WebSearchCapability.ANSWER }.map { it.type }.toSet(),
-            setOf(QuotaProviderType.OPEN_AI, QuotaProviderType.SUPERGROK),
+            setOf(QuotaProviderType.OPEN_AI, QuotaProviderType.SUPERGROK, QuotaProviderType.MISTRAL),
         )
     }
 
