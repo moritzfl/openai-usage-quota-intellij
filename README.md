@@ -36,19 +36,24 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 
 | Provider | Sign-in | Quota | Web search | Images | Video | Voice | Docs | Proxy |
 |---|---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
-| OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ | * | ✓ |
-| Claude (Anthropic) | Browser login | ✓ | — | — | — | — | * | — |
+| OpenAI (ChatGPT / Codex) | Browser login | ✓ | ✓ | ✓ | — | ✓ | (✓) | ✓ |
+| Claude (Anthropic) | Browser login | ✓ | — | — | — | — | (✓) | — |
 | SuperGrok / xAI | Browser login | ✓ | ✓ | ✓ | ✓ | ✓ | — | ✓ |
 | GitHub Copilot | Device code | ✓ | — | — | — | — | — | ✓ |
 | Cursor | Session cookie | ✓ | — | — | — | — | — | — |
 | OpenCode (Go / Zen) | Session cookie + API key | ✓ | — | — | — | — | — | ✓ |
 | Ollama Cloud | API key | ✓ | ✓ | — | — | — | — | ✓ |
-| Z.ai | API key | ✓ | ✓ | — | — | — | * | ✓ |
+| Z.ai | API key | ✓ | ✓ | — | — | — | (✓) | ✓ |
 | MiniMax | API key | ✓ | ✓ | — | — | — | — | ✓ |
 | Mistral | Session cookie + API key | ✓ | ✓ | ✓ | — | ✓ | ✓ | ✓ |
 | Kimi | Device code | ✓ | ✓ | — | — | — | — | ✓ |
 
-*Web search, images, video, voice, and docs are MCP chat tools backed by your subscription. Docs ✓ = markdown plus extracted document images. Docs * = markdown only. Proxy = available through the local OpenAI-compatible proxy. Copilot Chat can Bing-search in GitHub's own UI, but Copilot has no callable search API we can wrap.*
+- **Quota** — usage in the status bar and detail popup.
+- **Web search** — MCP tool that searches the web with your subscription. Copilot Chat can Bing-search in GitHub's own UI, but Copilot has no callable search API we can wrap.
+- **Images** / **Video** — MCP tools that generate images or video with your subscription.
+- **Voice** — MCP tools for speech-to-text and text-to-speech.
+- **Docs** — MCP tool that converts a PDF or image to markdown. ✓ also extracts images from the document; (✓) is markdown only.
+- **Proxy** — available through the local OpenAI-compatible proxy (for use of subscriptions in tools like Jetbrains AI Chat and other tools that require authentication by endpoint and API key).
 
 ## Installation
 
