@@ -168,24 +168,79 @@ open class MistralQuotaClient(
         private const val PROBE_BODY =
             """{"model":"mistral-small-latest","messages":[{"role":"user","content":"."}],"max_tokens":1}"""
 
+        internal fun encodeStoredSession(sessionName: String, sessionValue: String, csrfToken: String?): String {
+            val session = sessionFromFields(sessionName, sessionValue, csrfToken)
+            return JsonSupport.json.encodeToString(
+                MistralStoredSessionDto.serializer(),
+                MistralStoredSessionDto(
+                    sessionName = session.sessionPairs.first().first,
+                    sessionValue = session.sessionPairs.first().second,
+                    csrfToken = session.csrfToken.orEmpty(),
+                ),
+            )
+        }
+
+        internal fun storedSessionFields(raw: String?): MistralStoredSessionDto? {
+            val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            decodeStoredSession(value)?.let { return it }
+            return runCatching { parseSessionCookies(value) }.getOrNull()?.toStoredFields()
+        }
+
         internal fun parseSessionCookies(raw: String): MistralSessionCookies {
-            val header = raw.trim().removePrefix("Cookie:").trim()
-            if (header.isBlank()) {
-                throw MistralQuotaException("Mistral session cookie missing. Paste the Cookie header from admin.mistral.ai.")
+            val trimmed = raw.trim()
+            if (trimmed.isBlank()) {
+                throw MistralQuotaException("Mistral session cookie missing.")
             }
+            decodeStoredSession(trimmed)?.let { stored ->
+                return sessionFromFields(stored.sessionName, stored.sessionValue, stored.csrfToken)
+            }
+            val header = trimmed.removePrefix("Cookie:").trim()
             val pairs = header.split(';').mapNotNull { part ->
-                val trimmed = part.trim()
-                val eq = trimmed.indexOf('=')
+                val item = part.trim()
+                val eq = item.indexOf('=')
                 if (eq <= 0) return@mapNotNull null
-                trimmed.substring(0, eq).trim() to trimmed.substring(eq + 1).trim()
+                item.substring(0, eq).trim() to stripCookieQuotes(item.substring(eq + 1).trim())
             }
             val sessionPairs = pairs.filter { it.first.startsWith("ory_session_") && it.second.isNotBlank() }
             if (sessionPairs.isEmpty()) {
-                throw MistralQuotaException("Mistral cookie must include an ory_session_* value from admin.mistral.ai.")
+                throw MistralQuotaException("Mistral cookie must include an ory_session_* name and value.")
             }
             val csrf = pairs.firstOrNull { it.first == "csrftoken" }?.second?.takeIf { it.isNotBlank() }
             val cookieHeader = pairs.joinToString("; ") { "${it.first}=${it.second}" }
             return MistralSessionCookies(cookieHeader = cookieHeader, csrfToken = csrf, sessionPairs = sessionPairs)
+        }
+
+        private fun sessionFromFields(sessionName: String, sessionValue: String, csrfToken: String?): MistralSessionCookies {
+            val name = sessionName.trim()
+            val value = stripCookieQuotes(sessionValue)
+            if (!name.startsWith("ory_session_") || value.isBlank()) {
+                throw MistralQuotaException("Need the ory_session_* cookie name and value from admin.mistral.ai.")
+            }
+            val csrf = csrfToken?.let(::stripCookieQuotes)?.takeIf { it.isNotBlank() }
+            val pairs = buildList {
+                add("$name=$value")
+                csrf?.let { add("csrftoken=$it") }
+            }
+            return MistralSessionCookies(
+                cookieHeader = pairs.joinToString("; "),
+                csrfToken = csrf,
+                sessionPairs = listOf(name to value),
+            )
+        }
+
+        private fun decodeStoredSession(raw: String): MistralStoredSessionDto? {
+            if (!raw.startsWith("{")) return null
+            return runCatching { JsonSupport.json.decodeFromString<MistralStoredSessionDto>(raw) }.getOrNull()
+                ?.takeIf { it.sessionName.isNotBlank() && it.sessionValue.isNotBlank() }
+        }
+
+        private fun stripCookieQuotes(value: String): String {
+            val trimmed = value.trim()
+            return if (trimmed.length >= 2 && trimmed.startsWith('"') && trimmed.endsWith('"')) {
+                trimmed.substring(1, trimmed.length - 1)
+            } else {
+                trimmed
+            }
         }
 
         internal fun parseVibeUsage(body: String): MistralVibeUsage? {
@@ -312,7 +367,19 @@ internal data class MistralSessionCookies(
         }
         return pairs.joinToString("; ")
     }
+
+    fun toStoredFields(): MistralStoredSessionDto {
+        val session = sessionPairs.first()
+        return MistralStoredSessionDto(session.first, session.second, csrfToken.orEmpty())
+    }
 }
+
+@Serializable
+internal data class MistralStoredSessionDto(
+    val sessionName: String = "",
+    val sessionValue: String = "",
+    val csrfToken: String = "",
+)
 
 internal data class MistralVibeUsage(
     val usagePercent: Double,

@@ -4,6 +4,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ModalityState
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBPasswordField
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.AlignX
 import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.components.BorderLayoutPanel
@@ -13,6 +14,7 @@ import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.mistral.MistralSessionCookieStore
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.mistral.MistralQuota
+import de.moritzf.quota.mistral.MistralQuotaClient
 import java.awt.Color
 import javax.swing.JComponent
 
@@ -21,9 +23,18 @@ internal class MistralSettingsPanel(
     private val statusLabelDefaultForeground: Color? = null,
 ) : ProviderSettingsPanel() {
     override val hideFromPopupCheckBox = com.intellij.ui.components.JBCheckBox("Hide from quota popup")
-    private val cookieField = JBPasswordField().apply {
+    private val sessionNameField = JBTextField().apply {
         columns = 40
-        toolTipText = "Cookie header from admin.mistral.ai (must include ory_session_*)"
+        emptyText.text = "ory_session_…"
+        toolTipText = "Cookie name from admin.mistral.ai, starts with ory_session_"
+    }
+    private val sessionValueField = JBPasswordField().apply {
+        columns = 40
+        toolTipText = "Value of the ory_session_* cookie"
+    }
+    private val csrfField = JBPasswordField().apply {
+        columns = 40
+        toolTipText = "Value of the csrftoken cookie from console.mistral.ai"
     }
     private val apiKeyField = JBPasswordField().apply {
         columns = 40
@@ -37,9 +48,11 @@ internal class MistralSettingsPanel(
             row { cell(hideFromPopupCheckBox) }
             row { cell(statusLabel) }
             row {
-                label("Quota: paste Cookie from admin.mistral.ai → DevTools → Network → a billing request. Needs ory_session_* and preferably csrftoken.")
+                label("Quota cookies from admin.mistral.ai / console.mistral.ai → DevTools → Application → Cookies. Copy each name/value.")
             }
-            row("Session cookie:") { cell(cookieField).resizableColumn().align(AlignX.FILL) }
+            row("ory_session name:") { cell(sessionNameField).resizableColumn().align(AlignX.FILL) }
+            row("ory_session value:") { cell(sessionValueField).resizableColumn().align(AlignX.FILL) }
+            row("csrftoken:") { cell(csrfField).resizableColumn().align(AlignX.FILL) }
             row("API key:") { cell(apiKeyField).resizableColumn().align(AlignX.FILL) }
             row {
                 button("Save") { saveNow() }
@@ -54,9 +67,13 @@ internal class MistralSettingsPanel(
     }
 
     override fun updateFields() {
-        val cookie = MistralSessionCookieStore.getInstance().load(onLoaded = ::refreshAfterLoad)
+        val stored = MistralQuotaClient.storedSessionFields(
+            MistralSessionCookieStore.getInstance().load(onLoaded = ::refreshAfterLoad),
+        )
         val apiKey = MistralApiKeyStore.getInstance().load(onLoaded = ::refreshAfterLoad)
-        cookieField.text = if (cookie.isNullOrBlank()) "" else PLACEHOLDER
+        sessionNameField.text = stored?.sessionName.orEmpty()
+        sessionValueField.text = if (stored?.sessionValue.isNullOrBlank()) "" else PLACEHOLDER
+        csrfField.text = if (stored?.csrfToken.isNullOrBlank()) "" else PLACEHOLDER
         apiKeyField.text = if (apiKey.isNullOrBlank()) "" else PLACEHOLDER
         updateStatus()
     }
@@ -90,20 +107,33 @@ internal class MistralSettingsPanel(
     }
 
     private fun saveNow() {
-        val currentCookie = MistralSessionCookieStore.getInstance().load()
+        val current = MistralQuotaClient.storedSessionFields(MistralSessionCookieStore.getInstance().load())
         val currentKey = MistralApiKeyStore.getInstance().load()
-        val cookie = String(cookieField.password).let { if (it == PLACEHOLDER) currentCookie else it }
+        val sessionName = sessionNameField.text
+        val sessionValue = String(sessionValueField.password).let { value ->
+            if (value == PLACEHOLDER) current?.sessionValue.orEmpty() else value
+        }
+        val csrf = String(csrfField.password).let { value ->
+            if (value == PLACEHOLDER) current?.csrfToken.orEmpty() else value
+        }
         val apiKey = String(apiKeyField.password).let { if (it == PLACEHOLDER) currentKey else it }
         setPending("Saving credentials...")
         ApplicationManager.getApplication().executeOnPooledThread {
-            MistralSessionCookieStore.getInstance().save(cookie)
+            val encoded = runCatching {
+                MistralQuotaClient.encodeStoredSession(sessionName, sessionValue, csrf)
+            }.getOrElse { error ->
+                ApplicationManager.getApplication().invokeLater({
+                    statusLabel.text = formatStatusText(error.message ?: "Invalid Mistral cookies", AuthStatusKind.DISCONNECTED)
+                    statusLabel.isVisible = true
+                }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@MistralSettingsPanel))
+                return@executeOnPooledThread
+            }
+            MistralSessionCookieStore.getInstance().save(encoded)
             MistralApiKeyStore.getInstance().save(apiKey)
             ApplicationManager.getApplication().invokeLater({
-                cookieField.text = if (cookie.isNullOrBlank()) "" else PLACEHOLDER
-                apiKeyField.text = if (apiKey.isNullOrBlank()) "" else PLACEHOLDER
-                updateStatus()
+                updateFields()
                 QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.MISTRAL)
-            }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
+            }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@MistralSettingsPanel))
         }
     }
 
@@ -113,7 +143,9 @@ internal class MistralSettingsPanel(
             MistralSessionCookieStore.getInstance().clear()
             MistralApiKeyStore.getInstance().clear()
             ApplicationManager.getApplication().invokeLater({
-                cookieField.text = ""
+                sessionNameField.text = ""
+                sessionValueField.text = ""
+                csrfField.text = ""
                 apiKeyField.text = ""
                 updateStatus()
                 QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.MISTRAL)

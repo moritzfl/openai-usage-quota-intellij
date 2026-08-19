@@ -11,7 +11,7 @@ class MistralQuotaProvider(
 ) : CachedQuotaProvider<MistralQuota>() {
     override val type = QuotaProviderType.MISTRAL
     override val notConfiguredMessage =
-        "Mistral session cookie missing. Paste the Cookie header from admin.mistral.ai in settings."
+        "Mistral session cookie missing. Add the ory_session_* cookie from admin.mistral.ai in settings."
 
     override fun refresh() {
         val cookie = MistralSessionCookieStore.getInstance().loadBlocking()

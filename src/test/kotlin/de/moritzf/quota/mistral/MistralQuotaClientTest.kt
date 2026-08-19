@@ -74,6 +74,22 @@ class MistralQuotaClientTest {
     }
 
     @Test
+    fun encodeStoredSessionStripsQuotesAndRoundTripsFields() {
+        val stored = MistralQuotaClient.encodeStoredSession(
+            sessionName = "ory_session_coolcurranf83m3srkfl",
+            sessionValue = "\"abc\"",
+            csrfToken = "csrf-1",
+        )
+        val session = MistralQuotaClient.parseSessionCookies(stored)
+        assertEquals("csrf-1", session.csrfToken)
+        assertEquals("ory_session_coolcurranf83m3srkfl", session.sessionPairs.single().first)
+        assertEquals("abc", session.sessionPairs.single().second)
+        val fields = assertNotNull(MistralQuotaClient.storedSessionFields(stored))
+        assertEquals("ory_session_coolcurranf83m3srkfl", fields.sessionName)
+        assertEquals("abc", fields.sessionValue)
+    }
+
+    @Test
     fun parseVibeUsageReadsPercentAndReset() {
         val body = """
             [{"result":{"data":{"json":{"usage_percentage":42.5,"reset_at":"2026-09-01T00:00:00Z"}}}}]
