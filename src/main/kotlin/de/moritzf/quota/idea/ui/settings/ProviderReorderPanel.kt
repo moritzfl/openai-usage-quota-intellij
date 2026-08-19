@@ -22,6 +22,7 @@ import java.awt.Component
 import java.awt.Dimension
 import java.awt.Graphics
 import java.awt.Graphics2D
+import java.awt.GraphicsEnvironment
 import java.awt.Image
 import java.awt.Point
 import java.awt.RenderingHints
@@ -78,7 +79,9 @@ internal class ProviderReorderPanel(
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         cellRenderer = ProviderListCellRenderer()
         emptyText.text = "No matching providers"
-        dragEnabled = true
+        if (!GraphicsEnvironment.isHeadless()) {
+            dragEnabled = true
+        }
         dropMode = DropMode.INSERT
         transferHandler = ProviderTransferHandler()
         border = JBUI.Borders.empty(2, 0)
