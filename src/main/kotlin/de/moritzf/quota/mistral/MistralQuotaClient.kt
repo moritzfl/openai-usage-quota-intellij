@@ -5,6 +5,12 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -34,7 +40,7 @@ open class MistralQuotaClient(
             referer = "https://admin.mistral.ai/organization/usage",
         )
         val billing = parseBilling(billingBody)
-        val vibe = session.csrfToken?.let { csrf ->
+        val vibeBody = session.csrfToken?.let { csrf ->
             runCatching {
                 getAdminJson(
                     url = VIBE_USAGE_URI,
@@ -44,12 +50,14 @@ open class MistralQuotaClient(
                     referer = "https://console.mistral.ai/",
                     csrfHeaderName = "X-CSRFToken",
                 )
-            }.getOrNull()?.let(::parseVibeUsage)
+            }.getOrNull()
         }
+        val vibe = vibeBody?.let(::parseVibeUsage)
         val monthly = monthlyWindow(vibe, billing, now)
-        val identity = apiKey?.takeIf { it.isNotBlank() }?.let { key ->
-            runCatching { parseIdentity(getJson(key, IDENTITY_URI)) }.getOrNull()
+        val identityBody = apiKey?.takeIf { it.isNotBlank() }?.let { key ->
+            runCatching { getJson(key, IDENTITY_URI) }.getOrNull()
         }
+        val identity = identityBody?.let { runCatching { parseIdentity(it) }.getOrNull() }
         val probe = apiKey?.takeIf { it.isNotBlank() }?.let { key ->
             runCatching { probeRateLimits(key) }.getOrNull()
         }
@@ -65,7 +73,7 @@ open class MistralQuotaClient(
             requestUsage = requestUsage,
             fetchedAt = now,
         )
-        quota.rawJson = billingBody
+        quota.rawJson = buildRawResponse(billingBody, vibeBody, identityBody, probe?.let(::rateLimitHeaders))
         return quota
     }
 
@@ -167,6 +175,48 @@ open class MistralQuotaClient(
         private const val MINUTE_MS = 60_000L
         private const val PROBE_BODY =
             """{"model":"mistral-small-latest","messages":[{"role":"user","content":"."}],"max_tokens":1}"""
+
+        internal fun buildRawResponse(
+            billingBody: String?,
+            vibeBody: String?,
+            identityBody: String?,
+            rateLimits: Map<String, String>?,
+        ): String {
+            val session = buildJsonObject {
+                jsonOrRaw(billingBody)?.let { put("billing", it) }
+                jsonOrRaw(vibeBody)?.let { put("vibe", it) }
+            }
+            val apiKey = buildJsonObject {
+                jsonOrRaw(identityBody)?.let { put("identity", it) }
+                if (!rateLimits.isNullOrEmpty()) {
+                    put("rate_limits", buildJsonObject {
+                        rateLimits.forEach { (name, value) -> put(name, value) }
+                    })
+                }
+            }
+            return JsonSupport.json.encodeToString(
+                JsonObject.serializer(),
+                buildJsonObject {
+                    if (session.isNotEmpty()) put("session", session)
+                    if (apiKey.isNotEmpty()) put("api_key", apiKey)
+                },
+            )
+        }
+
+        internal fun rateLimitHeaders(headers: HttpHeaders): Map<String, String> {
+            return headers.map().entries
+                .filter { it.key.startsWith("x-ratelimit-", ignoreCase = true) }
+                .mapNotNull { entry ->
+                    val value = entry.value.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                    entry.key.lowercase() to value
+                }
+                .toMap()
+        }
+
+        private fun jsonOrRaw(body: String?): JsonElement? {
+            val value = body?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            return runCatching { JsonSupport.json.parseToJsonElement(value) }.getOrElse { JsonPrimitive(value) }
+        }
 
         internal fun encodeStoredSession(sessionName: String, sessionValue: String, csrfToken: String?): String {
             val session = sessionFromFields(sessionName, sessionValue, csrfToken)

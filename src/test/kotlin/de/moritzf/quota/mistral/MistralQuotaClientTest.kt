@@ -5,9 +5,37 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Instant
 
 class MistralQuotaClientTest {
+    @Test
+    fun buildRawResponseWrapsSessionAndApiKeyPayloads() {
+        val raw = MistralQuotaClient.buildRawResponse(
+            billingBody = """{"vibe_usage":1.5}""",
+            vibeBody = """[{"result":{"data":{"json":{"usage_percentage":1.5}}}}]""",
+            identityBody = """{"email":"a@b.c"}""",
+            rateLimits = mapOf(
+                "x-ratelimit-limit-tokens-minute" to "500000",
+                "x-ratelimit-remaining-tokens-minute" to "499000",
+            ),
+        )
+        assertTrue(raw.contains("\"session\""))
+        assertTrue(raw.contains("\"billing\""))
+        assertTrue(raw.contains("\"vibe\""))
+        assertTrue(raw.contains("\"api_key\""))
+        assertTrue(raw.contains("\"identity\""))
+        assertTrue(raw.contains("\"rate_limits\""))
+        assertTrue(raw.contains("500000"))
+    }
+
+    @Test
+    fun buildRawResponseOmitsMissingSides() {
+        val sessionOnly = MistralQuotaClient.buildRawResponse("""{"vibe_usage":0}""", null, null, null)
+        assertTrue(sessionOnly.contains("\"session\""))
+        assertTrue(!sessionOnly.contains("\"api_key\""))
+    }
+
     @Test
     fun parseIdentityReadsOrgWorkspaceAndKeyName() {
         val body = """

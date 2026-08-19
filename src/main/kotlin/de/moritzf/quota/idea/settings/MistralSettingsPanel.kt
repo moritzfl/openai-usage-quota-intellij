@@ -61,7 +61,7 @@ internal class MistralSettingsPanel(
             separator()
         })
         addToCenter(BorderLayoutPanel().apply {
-            addToTop(JBLabel("Last quota response:"))
+            addToTop(JBLabel("Last quota response (session + API key):"))
             addToCenter(createResponseViewerPanel(responseViewer))
         })
     }
