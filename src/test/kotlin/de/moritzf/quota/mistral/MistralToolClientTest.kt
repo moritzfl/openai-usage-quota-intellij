@@ -41,6 +41,29 @@ class MistralToolClientTest {
     }
 
     @Test
+    fun transcriptionJsonUsesFileUrlAndOptionalLanguage() {
+        val json = MistralAudioClient.transcriptionJson("voxtral-mini-latest", "https://example.com/a.mp3", "en", true)
+        assertTrue("file_url" in json && "https://example.com/a.mp3" in json)
+        assertTrue("\"language\"" in json && "en" in json)
+        assertTrue("\"diarize\"" in json && "true" in json)
+    }
+
+    @Test
+    fun firstPresetVoiceIdReadsListItems() {
+        val body = """{"items":[{"id":"voice-1","name":"Ada"},{"id":"voice-2"}]}"""
+        assertEquals("voice-1", MistralAudioClient.firstPresetVoiceId(body))
+        assertEquals(null, MistralAudioClient.firstPresetVoiceId("{}"))
+    }
+
+    @Test
+    fun speechOutputDefaultsToProjectSpeechFile() {
+        val dir = Path.of("/tmp/project")
+        assertEquals(dir.resolve("out/hi.mp3"), MistralAudioClient.resolveOutput("out/hi.mp3", dir, "mp3"))
+        assertEquals(dir.resolve("speech.wav"), MistralAudioClient.resolveOutput(null, dir, "wav"))
+        assertEquals(null, MistralAudioClient.resolveOutput(null, null, "mp3"))
+    }
+
+    @Test
     fun writeMarkdownPersistsApiPlaceholdersAsSiblingImages() {
         val dir = Files.createTempDirectory("mistral-ocr")
         val markdownFile = dir.resolve("doc.md")
