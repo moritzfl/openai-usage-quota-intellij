@@ -286,9 +286,14 @@ internal fun mistralBarDisplayText(quota: MistralQuota?, error: String?): String
     if (quota == null) return "loading..."
     val usage = mistralDisplayWindow(quota) ?: return "no data"
     val percent = clampPercent(usage.usagePercent.roundToInt())
-    val reset = QuotaUiUtil.formatResetCompact(usage.resetsAt)
+    val reset = if (isMistralPerMinuteWindow(usage)) null else QuotaUiUtil.formatResetCompact(usage.resetsAt)
     val text = "$percent%"
     return if (reset != null) "$text • $reset" else text
+}
+
+internal fun isMistralPerMinuteWindow(window: de.moritzf.quota.mistral.MistralUsageWindow): Boolean {
+    val durationMs = window.periodDurationMs ?: return false
+    return durationMs in 1..60_000L
 }
 
 internal fun mistralDisplayWindow(quota: MistralQuota): de.moritzf.quota.mistral.MistralUsageWindow? {

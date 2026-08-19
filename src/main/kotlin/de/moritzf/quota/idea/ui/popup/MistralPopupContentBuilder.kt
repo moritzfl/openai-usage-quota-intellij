@@ -4,6 +4,7 @@ import com.intellij.util.ui.JBUI
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.indicator.QuotaIcons
 import de.moritzf.quota.idea.ui.indicator.clampPercent
+import de.moritzf.quota.idea.ui.indicator.isMistralPerMinuteWindow
 import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.mistral.MistralUsageWindow
 import de.moritzf.quota.shared.ProviderQuota
@@ -83,7 +84,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
 
     private fun WindowBlockPanel.updateMistral(window: MistralUsageWindow, label: String) {
         val percent = clampPercent(window.usagePercent.roundToInt())
-        val resetText = QuotaUiUtil.formatReset(window.resetsAt)
+        val resetText = if (isMistralPerMinuteWindow(window)) null else QuotaUiUtil.formatReset(window.resetsAt)
         var info = "$percent% used"
         if (resetText != null) info += " - $resetText"
         update(label, info, percent)

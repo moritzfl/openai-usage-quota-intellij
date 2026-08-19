@@ -141,7 +141,7 @@ private fun indicatorTooltipUsage(quota: ProviderQuota?): IndicatorTooltipUsage 
             }
             IndicatorTooltipUsage(
                 clampPercent(window.usagePercent.roundToInt()),
-                compactReset(window.resetsAt),
+                if (isMistralPerMinuteWindow(window)) null else compactReset(window.resetsAt),
                 kind,
             )
         }
