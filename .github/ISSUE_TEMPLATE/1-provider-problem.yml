@@ -16,6 +16,7 @@ body:
         - Ollama Cloud
         - Z.ai
         - MiniMax
+        - Mistral
         - Kimi
         - Local OpenAI-compatible proxy
         - MCP tools / MCP server URL sync

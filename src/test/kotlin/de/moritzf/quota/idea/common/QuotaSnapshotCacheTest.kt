@@ -4,6 +4,7 @@ import de.moritzf.quota.cursor.CursorQuota
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.kimi.KimiQuota
 import de.moritzf.quota.minimax.MiniMaxQuota
+import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.openai.OpenAiUsageResponseFixtures.proliteWithAdditionalRateLimits
 import de.moritzf.quota.shared.ProviderQuota
@@ -21,6 +22,7 @@ class QuotaSnapshotCacheTest {
         assertEquals("ollama raw", roundTrip(QuotaProviderType.OLLAMA, OllamaQuota(), "ollama raw").rawJson)
         assertEquals("zai raw", roundTrip(QuotaProviderType.ZAI, ZaiQuota(plan = "Pro"), "zai raw").rawJson)
         assertEquals("minimax raw", roundTrip(QuotaProviderType.MINIMAX, MiniMaxQuota(plan = "Pro"), "minimax raw").rawJson)
+        assertEquals("mistral raw", roundTrip(QuotaProviderType.MISTRAL, MistralQuota(organization = "Example"), "mistral raw").rawJson)
         assertEquals("kimi raw", roundTrip(QuotaProviderType.KIMI, KimiQuota(plan = "Pro"), "kimi raw").rawJson)
         assertEquals("github raw", roundTrip(QuotaProviderType.GITHUB, GitHubQuota(plan = "Copilot Pro"), "github raw").rawJson)
         assertEquals("cursor raw", roundTrip(QuotaProviderType.CURSOR, CursorQuota(planName = "Pro"), "cursor raw").rawJson)

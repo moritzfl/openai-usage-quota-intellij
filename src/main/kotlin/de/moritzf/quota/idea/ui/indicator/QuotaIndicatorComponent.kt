@@ -15,6 +15,7 @@ import de.moritzf.quota.openai.UsageWindow
 import de.moritzf.quota.zai.ZaiQuota
 import de.moritzf.quota.cursor.CursorQuota
 import de.moritzf.quota.minimax.MiniMaxQuota
+import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.github.GitHubSubscriptionState
 import de.moritzf.quota.claude.ClaudeQuota
@@ -278,6 +279,20 @@ internal fun miniMaxBarDisplayText(quota: MiniMaxQuota?, error: String?): String
     val reset = QuotaUiUtil.formatResetCompact(usage.resetsAt)
     val text = "$percent%"
     return if (reset != null) "$text • $reset" else text
+}
+
+internal fun mistralBarDisplayText(quota: MistralQuota?, error: String?): String {
+    if (error != null) return "error"
+    if (quota == null) return "loading..."
+    val usage = mistralDisplayWindow(quota) ?: return "no data"
+    val percent = clampPercent(usage.usagePercent.roundToInt())
+    val reset = QuotaUiUtil.formatResetCompact(usage.resetsAt)
+    val text = "$percent%"
+    return if (reset != null) "$text • $reset" else text
+}
+
+internal fun mistralDisplayWindow(quota: MistralQuota): de.moritzf.quota.mistral.MistralUsageWindow? {
+    return listOfNotNull(quota.tokenUsage, quota.requestUsage).maxByOrNull { it.usagePercent }
 }
 
 internal fun kimiBarDisplayText(quota: KimiQuota?, error: String?): String {

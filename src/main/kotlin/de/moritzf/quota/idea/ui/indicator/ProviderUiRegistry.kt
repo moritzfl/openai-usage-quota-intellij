@@ -9,6 +9,7 @@ import de.moritzf.quota.idea.cursor.CursorCredentialsStore
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.ui.popup.ClaudePopupSection
@@ -16,6 +17,7 @@ import de.moritzf.quota.idea.ui.popup.CursorPopupSection
 import de.moritzf.quota.idea.ui.popup.GitHubPopupSection
 import de.moritzf.quota.idea.ui.popup.KimiPopupSection
 import de.moritzf.quota.idea.ui.popup.MiniMaxPopupSection
+import de.moritzf.quota.idea.ui.popup.MistralPopupSection
 import de.moritzf.quota.idea.ui.popup.OllamaPopupSection
 import de.moritzf.quota.idea.ui.popup.OpenAiPopupSection
 import de.moritzf.quota.idea.ui.popup.OpenCodePopupSection
@@ -25,6 +27,7 @@ import de.moritzf.quota.idea.ui.popup.ZaiPopupSection
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.KimiQuota
 import de.moritzf.quota.minimax.MiniMaxQuota
+import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.opencode.OpenCodeQuota
@@ -204,6 +207,31 @@ internal object MiniMaxUi : ProviderUi {
     }
 
     override fun createPopupSection() = MiniMaxPopupSection()
+}
+
+internal object MistralUi : ProviderUi {
+    override val type = QuotaProviderType.MISTRAL
+    override val icon: Icon get() = QuotaIcons.MISTRAL
+
+    override fun barText(quota: ProviderQuota?, error: String?) =
+        mistralBarDisplayText(quota as? MistralQuota, error)
+
+    override fun displayPercent(quota: ProviderQuota?, error: String?) =
+        (quota as? MistralQuota)?.let(::mistralDisplayWindow)?.usagePercent?.roundToInt()?.let(::clampPercent) ?: -1
+
+    override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
+        mistralPeriodElapsedFraction(quota as? MistralQuota, error)
+
+    override fun authState(): ProviderAuthState {
+        val store = MistralApiKeyStore.getInstance()
+        return when {
+            !store.isLoaded() -> ProviderAuthState.UNKNOWN
+            !store.load().isNullOrBlank() -> ProviderAuthState.AUTHENTICATED
+            else -> ProviderAuthState.UNAUTHENTICATED
+        }
+    }
+
+    override fun createPopupSection() = MistralPopupSection()
 }
 
 internal object KimiUi : ProviderUi {

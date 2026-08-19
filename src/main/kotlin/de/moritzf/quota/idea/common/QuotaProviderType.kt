@@ -10,6 +10,7 @@ enum class QuotaProviderType(val id: String, val displayName: String) {
     SUPERGROK("supergrok", "SuperGrok"),
     ZAI("zai", "Z.ai"),
     MINIMAX("minimax", "MiniMax"),
+    MISTRAL("mistral", "Mistral"),
     KIMI("kimi", "Kimi");
 
     companion object {

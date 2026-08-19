@@ -45,6 +45,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 | Ollama Cloud | API key | ✓ | ✓ | — | — | ✓ |
 | Z.ai | API key | ✓ | ✓ | — | — | ✓ |
 | MiniMax | API key | ✓ | ✓ | — | — | ✓ |
+| Mistral | API key | ✓ | — | — | — | — |
 | Kimi | Device code | ✓ | ✓ | — | — | ✓ |
 
 *Web search, images, and video are MCP chat tools backed by your subscription. Proxy = available through the local OpenAI-compatible proxy.*

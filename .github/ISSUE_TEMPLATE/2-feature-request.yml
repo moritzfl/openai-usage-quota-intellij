@@ -24,6 +24,7 @@ body:
         - Ollama Cloud
         - Z.ai
         - MiniMax
+        - Mistral
         - Kimi
         - A new provider (name it above)
     validations:

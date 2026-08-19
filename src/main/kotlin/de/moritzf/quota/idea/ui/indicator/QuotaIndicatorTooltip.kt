@@ -8,6 +8,7 @@ import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.popup.toDisplayLabel
 import de.moritzf.quota.kimi.KimiQuota
 import de.moritzf.quota.minimax.MiniMaxQuota
+import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.opencode.OpenCodeQuota
@@ -128,6 +129,19 @@ private fun indicatorTooltipUsage(quota: ProviderQuota?): IndicatorTooltipUsage 
                 clampPercent(window.usagePercent.roundToInt()),
                 compactReset(window.resetsAt),
                 "Session",
+            )
+        }
+        is MistralQuota -> {
+            val window = mistralDisplayWindow(quota) ?: return IndicatorTooltipUsage(null, null)
+            val kind = when {
+                window === quota.tokenUsage -> "Tokens"
+                window === quota.requestUsage -> "Requests"
+                else -> null
+            }
+            IndicatorTooltipUsage(
+                clampPercent(window.usagePercent.roundToInt()),
+                compactReset(window.resetsAt),
+                kind,
             )
         }
         is KimiQuota -> {

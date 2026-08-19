@@ -11,6 +11,7 @@ import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.mcp.UsageQuotaMcpRegistration
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
@@ -19,6 +20,7 @@ import de.moritzf.quota.idea.settings.CursorSettingsPanel
 import de.moritzf.quota.idea.settings.GitHubSettingsPanel
 import de.moritzf.quota.idea.settings.KimiSettingsPanel
 import de.moritzf.quota.idea.settings.MiniMaxSettingsPanel
+import de.moritzf.quota.idea.settings.MistralSettingsPanel
 import de.moritzf.quota.idea.settings.OllamaSettingsPanel
 import de.moritzf.quota.idea.settings.OpenAiSettingsPanel
 import de.moritzf.quota.idea.settings.OpenCodeSettingsPanel
@@ -31,6 +33,7 @@ import de.moritzf.quota.idea.ui.indicator.CursorUi
 import de.moritzf.quota.idea.ui.indicator.GitHubUi
 import de.moritzf.quota.idea.ui.indicator.KimiUi
 import de.moritzf.quota.idea.ui.indicator.MiniMaxUi
+import de.moritzf.quota.idea.ui.indicator.MistralUi
 import de.moritzf.quota.idea.ui.indicator.OllamaUi
 import de.moritzf.quota.idea.ui.indicator.OpenAiUi
 import de.moritzf.quota.idea.ui.indicator.OpenCodeUi
@@ -40,6 +43,7 @@ import de.moritzf.quota.idea.ui.indicator.ZaiUi
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.KimiQuota
 import de.moritzf.quota.minimax.MiniMaxQuota
+import de.moritzf.quota.mistral.MistralQuota
 import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.opencode.OpenCodeQuota
 import de.moritzf.quota.shared.JsonSupport
@@ -179,6 +183,15 @@ internal object ProviderCatalog {
             },
             webSearchMissingReason = "MiniMax API key missing. Add a MiniMax API key in settings.",
             ideProxyFactory = IdeProxyFactories::miniMax,
+        ),
+        descriptor(
+            type = QuotaProviderType.MISTRAL,
+            quotaFactory = ::MistralQuotaProvider,
+            snapshotCodec = EnvelopeQuotaCodec(MistralQuota.serializer()),
+            mcpEmpty = "No Mistral usage response available",
+            settings = { ctx -> MistralSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
+            ui = MistralUi,
+            isQuotaConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
         ),
         descriptor(
             type = QuotaProviderType.OLLAMA,

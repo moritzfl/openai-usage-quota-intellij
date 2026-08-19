@@ -12,6 +12,8 @@ import de.moritzf.quota.kimi.KimiQuota
 import de.moritzf.quota.kimi.KimiUsageWindow
 import de.moritzf.quota.minimax.MiniMaxQuota
 import de.moritzf.quota.minimax.MiniMaxUsageWindow
+import de.moritzf.quota.mistral.MistralQuota
+import de.moritzf.quota.mistral.MistralUsageWindow
 import de.moritzf.quota.ollama.OllamaQuota
 import de.moritzf.quota.ollama.OllamaUsageWindow
 import de.moritzf.quota.openai.OpenAiCodexQuota
@@ -97,6 +99,12 @@ internal fun ZaiCountUsageWindow.periodElapsedFraction(periodDuration: Duration,
 }
 
 internal fun MiniMaxUsageWindow.periodElapsedFraction(now: Instant = Clock.System.now()): Double? {
+    val durationMs = periodDurationMs ?: return null
+    val resetAt = resetsAt ?: return null
+    return computePeriodElapsedFraction(durationMs, resetAt, now)
+}
+
+internal fun MistralUsageWindow.periodElapsedFraction(now: Instant = Clock.System.now()): Double? {
     val durationMs = periodDurationMs ?: return null
     val resetAt = resetsAt ?: return null
     return computePeriodElapsedFraction(durationMs, resetAt, now)
@@ -225,6 +233,13 @@ internal fun miniMaxPeriodElapsedFraction(quota: MiniMaxQuota?, error: String?):
         return null
     }
     return quota.sessionUsage?.periodElapsedFraction()
+}
+
+internal fun mistralPeriodElapsedFraction(quota: MistralQuota?, error: String?): Double? {
+    if (error != null || quota == null) {
+        return null
+    }
+    return mistralDisplayWindow(quota)?.periodElapsedFraction()
 }
 
 internal fun kimiPeriodElapsedFraction(quota: KimiQuota?, error: String?): Double? {
