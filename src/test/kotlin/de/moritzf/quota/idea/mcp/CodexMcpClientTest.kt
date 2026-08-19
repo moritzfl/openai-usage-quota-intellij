@@ -296,6 +296,48 @@ class CodexMcpClientTest {
     }
 
     @Test
+    fun postsTranscriptionToCodexAudioEndpoint() {
+        TestUpstream(responseBody = """{"text":"hello"}""").use { upstream ->
+            val dir = Files.createTempDirectory("codex-stt")
+            val audio = dir.resolve("clip.wav")
+            Files.write(audio, byteArrayOf(1, 2, 3, 4))
+            val client = newClient(upstream.baseUri)
+
+            val response = client.transcribe(localFile = audio, language = "en")
+
+            assertFalse(response.isError)
+            assertEquals("hello", parseObject(response.body)["text"]!!.jsonPrimitive.content)
+            val request = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            assertEquals("POST", request.method)
+            assertEquals("/backend-api/codex/audio/transcriptions", request.path)
+            assertTrue(request.body.contains("gpt-transcribe"))
+            assertTrue(request.body.contains("clip.wav"))
+            assertTrue(request.body.contains("en"))
+        }
+    }
+
+    @Test
+    fun writesSpeechAudioFromCodexSpeechEndpoint(@TempDir tempDir: Path) {
+        val audioBytes = byteArrayOf(9, 8, 7, 6)
+        TestUpstream(responseBytes = audioBytes).use { upstream ->
+            val client = newClient(upstream.baseUri)
+            val target = "out/hi.mp3"
+
+            val response = client.synthesize("Hello there", targetFile = target, baseDirectory = tempDir)
+
+            assertFalse(response.isError)
+            assertEquals(tempDir.resolve(target).toString(), parseObject(response.body)["output_file"]!!.jsonPrimitive.content)
+            assertEquals(audioBytes.toList(), Files.readAllBytes(tempDir.resolve(target)).toList())
+            val request = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            assertEquals("/backend-api/codex/audio/speech", request.path)
+            val body = parseObject(request.body)
+            assertEquals("gpt-4o-mini-tts", body["model"]!!.jsonPrimitive.content)
+            assertEquals("coral", body["voice"]!!.jsonPrimitive.content)
+            assertEquals("Hello there", body["input"]!!.jsonPrimitive.content)
+        }
+    }
+
+    @Test
     fun reportsLoginRequiredWithoutCallingUpstream() {
         TestUpstream().use { upstream ->
             val client = CodexMcpClient(
@@ -327,6 +369,7 @@ class CodexMcpClientTest {
 
     private class TestUpstream(
         private val responseBody: String = sse("""{"type":"response.output_text.delta","delta":"ok"}"""),
+        private val responseBytes: ByteArray? = null,
         private val responseStatus: Int = 200,
         private val failFirstRequests: Int = 0,
         private val failStatus: Int = 503,
@@ -346,9 +389,12 @@ class CodexMcpClientTest {
                     body = body,
                 )
                 val failing = requestCount.incrementAndGet() <= failFirstRequests
-                val response = (if (failing) "{\"detail\":\"transient upstream failure\"}" else responseBody)
-                    .toByteArray(Charsets.UTF_8)
-                exchange.responseHeaders.set("Content-Type", "text/event-stream")
+                val response = when {
+                    failing -> "{\"detail\":\"transient upstream failure\"}".toByteArray(Charsets.UTF_8)
+                    responseBytes != null -> responseBytes
+                    else -> responseBody.toByteArray(Charsets.UTF_8)
+                }
+                exchange.responseHeaders.set("Content-Type", if (responseBytes != null) "audio/mpeg" else "text/event-stream")
                 exchange.sendResponseHeaders(if (failing) failStatus else responseStatus, response.size.toLong())
                 exchange.responseBody.use { output -> output.write(response) }
             }

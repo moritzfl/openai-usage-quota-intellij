@@ -56,7 +56,7 @@ open class CodexHttpClient {
         val logRequestId = requestId ?: requestLogger.nextRequestId()
         val authHeaders = credentialsProvider.getAuthHeaders()
         var response = httpClient.send(
-            buildRequest(path, method, body, extraHeaders, promptCacheKey, logRequestId, authHeaders),
+            buildRequest(path, method, body, null, extraHeaders, promptCacheKey, logRequestId, authHeaders),
             HttpResponse.BodyHandlers.ofInputStream(),
         )
         if (response.statusCode() == 401 && refreshAfterUnauthorized(authHeaders)) {
@@ -67,6 +67,7 @@ open class CodexHttpClient {
                     path,
                     method,
                     body,
+                    null,
                     extraHeaders,
                     promptCacheKey,
                     logRequestId,
@@ -109,16 +110,43 @@ open class CodexHttpClient {
         val requestId = requestLogger.nextRequestId()
         val authHeaders = credentialsProvider.getAuthHeaders()
         var response = httpClient.send(
-            buildRequest(path, method, body, extraHeaders, null, requestId, authHeaders),
+            buildRequest(path, method, body, null, extraHeaders, null, requestId, authHeaders),
             HttpResponse.BodyHandlers.ofString(),
         )
         if (response.statusCode() == 401 && refreshAfterUnauthorized(authHeaders)) {
             response = httpClient.send(
-                buildRequest(path, method, body, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders()),
+                buildRequest(path, method, body, null, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders()),
                 HttpResponse.BodyHandlers.ofString(),
             )
         }
         requestLogger.logUpstreamResponse(requestId, response.statusCode(), responseHeaders(response), response.body())
+        return response
+    }
+
+    open fun requestBytes(
+        path: String,
+        method: String?,
+        body: ByteArray?,
+        extraHeaders: Map<String, String>?,
+    ): HttpResponse<ByteArray> {
+        val requestId = requestLogger.nextRequestId()
+        val authHeaders = credentialsProvider.getAuthHeaders()
+        var response = httpClient.send(
+            buildRequest(path, method, null, body, extraHeaders, null, requestId, authHeaders),
+            HttpResponse.BodyHandlers.ofByteArray(),
+        )
+        if (response.statusCode() == 401 && refreshAfterUnauthorized(authHeaders)) {
+            response = httpClient.send(
+                buildRequest(path, method, null, body, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders()),
+                HttpResponse.BodyHandlers.ofByteArray(),
+            )
+        }
+        requestLogger.logUpstreamResponse(
+            requestId,
+            response.statusCode(),
+            responseHeaders(response),
+            "[binary ${response.body().size} bytes]",
+        )
         return response
     }
     /**
@@ -140,6 +168,7 @@ open class CodexHttpClient {
         path: String,
         method: String?,
         body: String?,
+        bodyBytes: ByteArray?,
         extraHeaders: Map<String, String>?,
         promptCacheKey: String?,
         requestId: String,
@@ -168,12 +197,18 @@ open class CodexHttpClient {
             loggedHeaders[CONVERSATION_ID_HEADER] = promptCacheKey
             loggedHeaders[SESSION_ID_HEADER] = promptCacheKey
         }
-        if (!body.isNullOrEmpty()) {
+        if (bodyBytes != null) {
+            builder.method(method ?: "POST", HttpRequest.BodyPublishers.ofByteArray(bodyBytes))
+        } else if (!body.isNullOrEmpty()) {
             builder.method(method ?: "POST", HttpRequest.BodyPublishers.ofString(body))
         } else {
             builder.method(method ?: "GET", HttpRequest.BodyPublishers.noBody())
         }
-        requestLogger.logUpstreamRequest(requestId, method ?: "GET", path, loggedHeaders, body)
+        val loggedBody = when {
+            bodyBytes != null -> "[binary ${bodyBytes.size} bytes]"
+            else -> body
+        }
+        requestLogger.logUpstreamRequest(requestId, method ?: "GET", path, loggedHeaders, loggedBody)
         return builder.build()
     }
     /**

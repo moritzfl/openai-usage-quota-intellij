@@ -17,14 +17,20 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import java.io.ByteArrayInputStream
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.util.Base64
 import java.util.Locale
+import java.util.UUID
 import javax.imageio.ImageIO
 import java.net.URI
 import java.net.http.HttpClient
@@ -92,6 +98,124 @@ class CodexMcpClient(
         return postResponses(imageGenerationRequest(trimmedPrompt)) { body ->
             parseImageGenerationToFileResponse(body, outputTarget.path!!, outputTarget.format!!)
         }
+    }
+
+    fun transcribe(
+        audioUrl: String? = null,
+        localFile: Path? = null,
+        language: String? = null,
+        diarize: Boolean = false,
+        model: String = DEFAULT_TRANSCRIBE_MODEL,
+    ): CodexMcpResponse {
+        val audio = resolveAudioBytes(audioUrl, localFile)
+            ?: return CodexMcpResponse(errorJson("Provide audioUrl or a local audio file path."), true)
+        val filename = localFile?.fileName?.toString() ?: "audio.mp3"
+        val selectedModel = if (diarize) {
+            DIARIZE_TRANSCRIBE_MODEL
+        } else {
+            model.trim().ifBlank { DEFAULT_TRANSCRIBE_MODEL }
+        }
+        val multipart = transcriptionMultipart(audio, filename, selectedModel, language, diarize)
+        return try {
+            val response = client.requestBytes(
+                TRANSCRIPTIONS_PATH,
+                "POST",
+                multipart.body,
+                mapOf(
+                    "Content-Type" to "multipart/form-data; boundary=${multipart.boundary}",
+                    "Accept" to "application/json",
+                ),
+            )
+            if (response.statusCode() in 200..299) {
+                CodexMcpResponse(McpJson.providerJsonOrRaw(String(response.body(), Charsets.UTF_8)), false)
+            } else {
+                val mapped = upstreamErrorMapper.map(response.statusCode(), String(response.body(), Charsets.UTF_8))
+                CodexMcpResponse(mapped.body, true)
+            }
+        } catch (exception: AuthRequiredException) {
+            CodexMcpResponse(errorJson(exception.message ?: "OpenAI login required."), true)
+        } catch (exception: Exception) {
+            val message = exception.message?.takeIf { it.isNotBlank() } ?: exception::class.java.simpleName
+            CodexMcpResponse(errorJson(message), true)
+        }
+    }
+
+    fun synthesize(
+        text: String,
+        targetFile: String? = null,
+        baseDirectory: Path? = null,
+        voiceId: String? = null,
+        model: String = DEFAULT_SPEECH_MODEL,
+        responseFormat: String = DEFAULT_SPEECH_FORMAT,
+    ): CodexMcpResponse {
+        val input = text.trim()
+        if (input.isBlank()) {
+            return CodexMcpResponse(errorJson("Speech text is required."), true)
+        }
+        val format = responseFormat.trim().ifBlank { DEFAULT_SPEECH_FORMAT }
+        val output = resolveSpeechOutput(targetFile, baseDirectory, format)
+            ?: return CodexMcpResponse(errorJson("Provide targetFile so the audio is written to disk."), true)
+        val body = speechRequestJson(
+            input,
+            voiceId?.trim()?.ifBlank { null } ?: DEFAULT_SPEECH_VOICE,
+            model.trim().ifBlank { DEFAULT_SPEECH_MODEL },
+            format,
+        )
+        return try {
+            val response = client.requestBytes(
+                SPEECH_PATH,
+                "POST",
+                body.toByteArray(Charsets.UTF_8),
+                mapOf(
+                    "Content-Type" to "application/json",
+                    "Accept" to "application/octet-stream",
+                ),
+            )
+            if (response.statusCode() !in 200..299) {
+                val mapped = upstreamErrorMapper.map(response.statusCode(), String(response.body(), Charsets.UTF_8))
+                return CodexMcpResponse(mapped.body, true)
+            }
+            val parent = output.parent
+            if (parent != null) {
+                Files.createDirectories(parent)
+            }
+            Files.write(output, response.body())
+            CodexMcpResponse(
+                JsonSupport.json.encodeToString(CodexSpeechWriteResult(output.toString(), response.body().size.toLong())),
+                false,
+            )
+        } catch (exception: AuthRequiredException) {
+            CodexMcpResponse(errorJson(exception.message ?: "OpenAI login required."), true)
+        } catch (exception: Exception) {
+            val message = exception.message?.takeIf { it.isNotBlank() } ?: exception::class.java.simpleName
+            CodexMcpResponse(errorJson(message), true)
+        }
+    }
+
+    fun listVoices(): CodexMcpResponse {
+        return CodexMcpResponse(JsonSupport.json.encodeToString(CodexVoiceList(CODEX_VOICES)), false)
+    }
+
+    private fun resolveAudioBytes(audioUrl: String?, localFile: Path?): ByteArray? {
+        if (localFile != null) {
+            if (!Files.isRegularFile(localFile)) {
+                return null
+            }
+            return Files.readAllBytes(localFile)
+        }
+        val url = audioUrl?.trim().orEmpty()
+        if (url.isEmpty()) {
+            return null
+        }
+        return runCatching {
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(30)).build()
+                .send(
+                    HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(60)).GET().build(),
+                    HttpResponse.BodyHandlers.ofByteArray(),
+                )
+                .takeIf { it.statusCode() in 200..299 }
+                ?.body()
+        }.getOrNull()
     }
 
     private fun postResponses(
@@ -489,7 +613,14 @@ class CodexMcpClient(
 
     companion object {
         private const val RESPONSES_PATH = "/responses"
+        private const val TRANSCRIPTIONS_PATH = "/audio/transcriptions"
+        private const val SPEECH_PATH = "/audio/speech"
         private const val RESPONSES_MODEL = "gpt-5.5"
+        const val DEFAULT_TRANSCRIBE_MODEL = "gpt-transcribe"
+        const val DEFAULT_SPEECH_MODEL = "gpt-4o-mini-tts"
+        const val DEFAULT_SPEECH_FORMAT = "mp3"
+        const val DEFAULT_SPEECH_VOICE = "coral"
+        private const val DIARIZE_TRANSCRIBE_MODEL = "gpt-4o-transcribe-diarize"
         private const val DEFAULT_SEARCH_CONTEXT_SIZE = "medium"
         private const val MAX_SEARCH_FILTER_DOMAINS = 100
         private const val SEARCH_INSTRUCTIONS = "You are a concise assistant. Use web search when needed."
@@ -546,5 +677,78 @@ class CodexMcpClient(
         private fun errorJson(message: String): String {
             return McpJson.error(message)
         }
+
+        internal fun speechRequestJson(input: String, voice: String, model: String, format: String): String {
+            return buildJsonObject {
+                put("model", model)
+                put("input", input)
+                put("voice", voice)
+                put("response_format", format)
+            }.toString()
+        }
+
+        internal fun transcriptionMultipart(
+            fileBytes: ByteArray,
+            filename: String,
+            model: String,
+            language: String?,
+            diarize: Boolean,
+        ): MultipartBody {
+            val boundary = "----CodexAudio${UUID.randomUUID().toString().replace("-", "")}"
+            val preamble = buildString {
+                append("--").append(boundary).append("\r\n")
+                append("Content-Disposition: form-data; name=\"model\"\r\n\r\n").append(model).append("\r\n")
+                if (diarize) {
+                    append("--").append(boundary).append("\r\n")
+                    append("Content-Disposition: form-data; name=\"response_format\"\r\n\r\ndiarized_json\r\n")
+                }
+                language?.trim()?.takeIf { it.isNotEmpty() }?.let { value ->
+                    append("--").append(boundary).append("\r\n")
+                    append("Content-Disposition: form-data; name=\"language\"\r\n\r\n").append(value).append("\r\n")
+                }
+                append("--").append(boundary).append("\r\n")
+                append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
+                append("Content-Type: application/octet-stream\r\n\r\n")
+            }.toByteArray()
+            val closing = "\r\n--$boundary--\r\n".toByteArray()
+            val payload = ByteArray(preamble.size + fileBytes.size + closing.size)
+            System.arraycopy(preamble, 0, payload, 0, preamble.size)
+            System.arraycopy(fileBytes, 0, payload, preamble.size, fileBytes.size)
+            System.arraycopy(closing, 0, payload, preamble.size + fileBytes.size, closing.size)
+            return MultipartBody(boundary, payload)
+        }
+
+        internal fun resolveSpeechOutput(targetFile: String?, baseDirectory: Path?, format: String): Path? {
+            val trimmed = targetFile?.trim()?.takeIf { it.isNotBlank() }
+            if (trimmed != null) {
+                val path = Path.of(trimmed)
+                return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path).normalize()
+            }
+            return baseDirectory?.resolve("speech.$format")
+        }
+
+        internal val CODEX_VOICES = listOf(
+            "alloy", "ash", "ballad", "coral", "echo", "fable", "nova",
+            "onyx", "sage", "shimmer", "verse", "marin", "cedar",
+        ).map { CodexVoice(it, it) }
     }
+
+    internal data class MultipartBody(val boundary: String, val body: ByteArray)
 }
+
+@Serializable
+internal data class CodexSpeechWriteResult(
+    @SerialName("output_file") val outputFile: String,
+    val bytes: Long,
+)
+
+@Serializable
+internal data class CodexVoiceList(
+    val voices: List<CodexVoice>,
+)
+
+@Serializable
+internal data class CodexVoice(
+    val id: String,
+    val name: String,
+)
