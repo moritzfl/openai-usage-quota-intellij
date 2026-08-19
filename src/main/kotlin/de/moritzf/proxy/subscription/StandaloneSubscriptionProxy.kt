@@ -7,6 +7,7 @@ import de.moritzf.quota.kimi.KimiCredentials
 import de.moritzf.quota.kimi.proxy.KimiSubscriptionProxyProvider
 import de.moritzf.quota.minimax.MiniMaxRegion
 import de.moritzf.quota.minimax.proxy.MiniMaxSubscriptionProxyProvider
+import de.moritzf.quota.mistral.proxy.MistralSubscriptionProxyProvider
 import de.moritzf.quota.ollama.proxy.OllamaSubscriptionProxyProvider
 import de.moritzf.quota.openai.proxy.OpenAiCodexSubscriptionProxyProvider
 import de.moritzf.quota.opencode.proxy.OpenCodeZenSubscriptionProxyProvider
@@ -60,7 +61,7 @@ internal data class StandaloneSubscriptionOptions(
     val host: String = "127.0.0.1",
     val port: Int = DEFAULT_PORT,
     val envFile: Path = DEFAULT_ENV_FILE,
-    val providers: Set<String> = setOf("openai", "supergrok", "github", "kimi", "minimax", "ollama", "opencode", "zai"),
+    val providers: Set<String> = setOf("openai", "supergrok", "github", "kimi", "minimax", "mistral", "ollama", "opencode", "zai"),
     val allowAnyCors: Boolean = false,
     val corsOrigins: List<String> = emptyList(),
     val logRequests: Boolean = false,
@@ -210,6 +211,13 @@ private fun createProviders(
         providers += MiniMaxSubscriptionProxyProvider(
             apiKeyProvider = { env.value("MINIMAX_PROXY_API_KEY") ?: env.value("MINIMAX_API_KEY") },
             regionProvider = { miniMaxRegion(env.value("MINIMAX_PROXY_REGION") ?: env.value("MINIMAX_REGION")) },
+            fullRequestLogging = options.logRequests,
+            requestLogDir = options.requestLogDir,
+        )
+    }
+    if ("mistral" in selected) {
+        providers += MistralSubscriptionProxyProvider(
+            apiKeyProvider = { env.value("MISTRAL_PROXY_API_KEY") ?: env.value("MISTRAL_API_KEY") },
             fullRequestLogging = options.logRequests,
             requestLogDir = options.requestLogDir,
         )

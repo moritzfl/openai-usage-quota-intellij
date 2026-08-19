@@ -196,6 +196,7 @@ internal object ProviderCatalog {
                 imageGeneration = true,
                 speechToText = true,
                 textToSpeech = true,
+                subscriptionProxy = true,
             ),
             quotaFactory = ::MistralQuotaProvider,
             snapshotCodec = EnvelopeQuotaCodec(MistralQuota.serializer()),
@@ -206,7 +207,11 @@ internal object ProviderCatalog {
             isWebSearchConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isImageGenerationConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
             isVoiceConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isProxyConfigured = { onLoaded ->
+                !MistralApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
+            },
             webSearchMissingReason = "Mistral API key missing. Add a Mistral API key in settings.",
+            ideProxyFactory = IdeProxyFactories::mistral,
         ),
         descriptor(
             type = QuotaProviderType.OLLAMA,

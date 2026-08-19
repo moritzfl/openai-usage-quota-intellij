@@ -7,6 +7,7 @@ import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
@@ -15,6 +16,7 @@ import de.moritzf.quota.kimi.proxy.KimiSubscriptionProxyProvider
 import de.moritzf.quota.minimax.MiniMaxRegion
 import de.moritzf.quota.minimax.MiniMaxRegionPreference
 import de.moritzf.quota.minimax.proxy.MiniMaxSubscriptionProxyProvider
+import de.moritzf.quota.mistral.proxy.MistralSubscriptionProxyProvider
 import de.moritzf.quota.ollama.proxy.OllamaSubscriptionProxyProvider
 import de.moritzf.quota.openai.proxy.OpenAiCodexSubscriptionProxyProvider
 import de.moritzf.quota.opencode.proxy.OpenCodeZenSubscriptionProxyProvider
@@ -31,6 +33,7 @@ internal data class IdeProxyBuildContext(
     val githubCredentials: () -> GitHubCredentialsStore = { GitHubCredentialsStore.getInstance() },
     val kimiCredentials: () -> KimiCredentialsStore = { KimiCredentialsStore.getInstance() },
     val miniMaxApiKey: () -> MiniMaxApiKeyStore = { MiniMaxApiKeyStore.getInstance() },
+    val mistralApiKey: () -> MistralApiKeyStore = { MistralApiKeyStore.getInstance() },
     val ollamaApiKey: () -> OllamaApiKeyStore = { OllamaApiKeyStore.getInstance() },
     val openCodeApiKey: () -> OpenCodeApiKeyStore = { OpenCodeApiKeyStore.getInstance() },
     val zaiApiKey: () -> ZaiApiKeyStore = { ZaiApiKeyStore.getInstance() },
@@ -90,6 +93,14 @@ internal object IdeProxyFactories {
         return MiniMaxSubscriptionProxyProvider(
             apiKeyProvider = { ctx.miniMaxApiKey().loadBlocking() },
             regionProvider = { miniMaxProxyRegion(ctx.settings.miniMaxRegionPreference()) },
+            fullRequestLogging = ctx.logRequests,
+            requestLogDir = ctx.requestLogDir,
+        )
+    }
+
+    fun mistral(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
+        return MistralSubscriptionProxyProvider(
+            apiKeyProvider = { ctx.mistralApiKey().loadBlocking() },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
