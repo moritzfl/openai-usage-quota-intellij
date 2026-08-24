@@ -1,12 +1,22 @@
 package de.moritzf.quota.idea.ui.popup
 
+import com.intellij.icons.AllIcons
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.ui.Messages
+import com.intellij.ui.components.ActionLink
 import com.intellij.util.ui.JBUI
+import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.indicator.QuotaIcons
 import de.moritzf.quota.idea.ui.indicator.clampPercent
 import de.moritzf.quota.shared.ProviderQuota
 import de.moritzf.quota.supergrok.SuperGrokQuota
+import de.moritzf.quota.supergrok.SuperGrokResetToken
 import de.moritzf.quota.supergrok.SuperGrokUsageWindow
+import java.awt.Cursor
+import java.awt.FlowLayout
+import javax.swing.JLabel
+import javax.swing.JPanel
 import kotlin.math.roundToInt
 
 internal class SuperGrokPopupSection : ProviderPopupSection() {
@@ -14,6 +24,10 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
     private val errorLabel = createWarningLabel("").apply { border = JBUI.Borders.emptyTop(1) }
     private val titleLabel = createSectionTitleLabel("SuperGrok", QuotaIcons.SUPERGROK).apply { border = JBUI.Borders.emptyTop(0) }
     private val blocks = listOf(WindowBlockPanel(3), WindowBlockPanel(5))
+    private val resetTokensPanel = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(3), 0)).apply {
+        isOpaque = false
+        border = JBUI.Borders.emptyTop(5)
+    }
 
     init {
         isOpaque = false
@@ -21,6 +35,7 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
         add(errorLabel)
         add(titleLabel)
         blocks.forEach(::add)
+        add(resetTokensPanel)
         hideAll()
     }
 
@@ -60,6 +75,7 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
                 quota.onDemandCap?.takeIf { it > 0 }?.let { cap ->
                     blocks.getOrNull(1)?.update("Pay as you go", "Cap $cap", 0)
                 }
+                updateResetTokens(quota.resetTokens)
             }
         }
     }
@@ -72,6 +88,51 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
     private fun hideContent() {
         titleLabel.isVisible = false
         blocks.forEach { it.isVisible = false }
+        resetTokensPanel.isVisible = false
+    }
+
+    private fun updateResetTokens(resetTokens: List<SuperGrokResetToken>) {
+        resetTokensPanel.removeAll()
+        if (resetTokens.isEmpty()) {
+            resetTokensPanel.isVisible = false
+            return
+        }
+        val nextExpiry = resetTokens.mapNotNull { it.expiresAt }.minOrNull()
+        val expiryText = nextExpiry?.let { QuotaUiUtil.formatReset(it) }
+        resetTokensPanel.add(JLabel("Resets available: ${resetTokens.size}"))
+        resetTokensPanel.add(ActionLink("Reset") { confirmAndReset(resetTokens.first().tokenId) }.apply {
+            icon = AllIcons.Actions.Restart
+            toolTipText = expiryText?.let { "Redeem one SuperGrok weekly reset. $it" }
+                ?: "Redeem one SuperGrok weekly reset"
+            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        })
+        resetTokensPanel.isVisible = true
+    }
+
+    private fun confirmAndReset(tokenId: String) {
+        val result = Messages.showYesNoDialog(
+            "Redeem one SuperGrok weekly reset now?",
+            "Reset SuperGrok Limits",
+            "Reset",
+            "Cancel",
+            AllIcons.Actions.Restart,
+        )
+        if (result != Messages.YES) {
+            return
+        }
+        resetTokensPanel.components.filterIsInstance<ActionLink>().forEach { it.isEnabled = false }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            runCatching { QuotaUsageService.getInstance().consumeSuperGrokReset(tokenId) }
+                .onFailure { exception ->
+                    ApplicationManager.getApplication().invokeLater {
+                        Messages.showErrorDialog(
+                            this,
+                            exception.message ?: "Reset request failed",
+                            "Reset SuperGrok Limits",
+                        )
+                    }
+                }
+        }
     }
 
     private fun WindowBlockPanel.updateSuperGrok(window: SuperGrokUsageWindow) {

@@ -141,6 +141,11 @@ class QuotaUsageService(
         refreshProvider(QuotaProviderType.OPEN_AI)
     }
 
+    fun consumeSuperGrokReset(tokenId: String?) {
+        (provider(QuotaProviderType.SUPERGROK) as? SuperGrokQuotaProvider)?.consumeReset(tokenId)
+        refreshProvider(QuotaProviderType.SUPERGROK)
+    }
+
     private fun scheduleRefresh() {
         val minutes = maxOf(1, settingsProvider()?.refreshMinutes ?: 5)
         scheduled = scheduler.scheduleWithFixedDelay(::refreshNow, 0, minutes.toLong(), TimeUnit.MINUTES)

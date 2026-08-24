@@ -16,6 +16,9 @@ class SuperGrokQuotaProvider(
     private val loggedInProvider: () -> Boolean = {
         QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.SUPERGROK)
     },
+    private val resetConsumer: (String, String) -> Unit = { accessToken, tokenId ->
+        client.redeemReset(accessToken, tokenId)
+    },
 ) : CachedQuotaProvider<SuperGrokQuota>() {
     override val type = QuotaProviderType.SUPERGROK
     override val notConfiguredMessage = "Grok login required. Log in from SuperGrok settings."
@@ -66,6 +69,24 @@ class SuperGrokQuotaProvider(
             return false
         }
         return true
+    }
+
+    fun consumeReset(tokenId: String?) {
+        val accessToken = tokenProvider()
+        if (accessToken.isNullOrBlank()) {
+            throw SuperGrokQuotaException(notConfiguredMessage)
+        }
+        val resetId = tokenId?.trim()?.takeIf { it.isNotBlank() }
+            ?: lastQuotaRef.get()?.resetTokens?.firstOrNull()?.tokenId
+            ?: throw SuperGrokQuotaException("No SuperGrok reset is available.")
+        try {
+            resetConsumer(accessToken, resetId)
+        } catch (exception: SuperGrokQuotaException) {
+            if (exception.statusCode != 401 && exception.statusCode != 403) throw exception
+            val refreshed = tokenRefresher(accessToken)?.takeIf { it.isNotBlank() && it != accessToken }
+                ?: throw exception
+            resetConsumer(refreshed, resetId)
+        }
     }
 
     private fun fetchQuotaWithAuthRetry(accessToken: String): SuperGrokQuota {

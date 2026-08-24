@@ -10,6 +10,9 @@ import de.moritzf.quota.opencode.OpenCodeQuota
 import de.moritzf.quota.opencode.OpenCodeQuotaClient
 import de.moritzf.quota.opencode.OpenCodeQuotaException
 import de.moritzf.quota.opencode.OpenCodeUsageWindow
+import de.moritzf.quota.supergrok.SuperGrokQuota
+import de.moritzf.quota.supergrok.SuperGrokQuotaClient
+import de.moritzf.quota.supergrok.SuperGrokResetToken
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -773,6 +776,41 @@ class QuotaUsageServiceTest {
             service.consumeOpenAiResetCredit("credit-1")
             assertTrue(consumed)
             // refresh is called internally
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun consumeSuperGrokResetCallsProviderAndRefreshes() {
+        var consumed: String? = null
+        var fetches = 0
+        val superGrokProvider = SuperGrokQuotaProvider(
+            client = object : SuperGrokQuotaClient() {
+                override fun fetchQuota(accessToken: String?): SuperGrokQuota {
+                    fetches++
+                    return SuperGrokQuota(
+                        resetTokens = listOf(SuperGrokResetToken(tokenId = "restok_1")),
+                    )
+                }
+            },
+            tokenProvider = { "token" },
+            tokenRefresher = { null },
+            resetConsumer = { _, tokenId -> consumed = tokenId },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(superGrokProvider),
+            settingsProvider = { null },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+
+        try {
+            service.refreshNowBlocking()
+            val before = fetches
+            service.consumeSuperGrokReset("restok_1")
+            assertEquals("restok_1", consumed)
+            assertTrue(fetches > before)
         } finally {
             service.dispose()
         }

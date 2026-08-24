@@ -3,6 +3,7 @@ package de.moritzf.quota.idea.common
 import de.moritzf.quota.supergrok.SuperGrokQuota
 import de.moritzf.quota.supergrok.SuperGrokQuotaClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
+import de.moritzf.quota.supergrok.SuperGrokResetToken
 import de.moritzf.quota.supergrok.SuperGrokUsageWindow
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -208,6 +209,25 @@ class SuperGrokQuotaProviderTest {
 
         assertSame(firstQuota, provider.getLastQuota())
         assertEquals("Grok auth expired.", provider.getLastError())
+    }
+
+    @Test
+    fun consumeResetUsesFirstAvailableTokenAndConsumer() {
+        val quota = SuperGrokQuota(
+            resetTokens = listOf(SuperGrokResetToken(tokenId = "restok_1")),
+        )
+        var consumed: Pair<String, String>? = null
+        val provider = SuperGrokQuotaProvider(
+            client = FakeSuperGrokClient { quota },
+            tokenProvider = { "token" },
+            tokenRefresher = { null },
+            resetConsumer = { accessToken, tokenId -> consumed = accessToken to tokenId },
+        )
+
+        provider.refresh()
+        provider.consumeReset(null)
+
+        assertEquals("token" to "restok_1", consumed)
     }
 
     private class FakeSuperGrokClient(private val fetch: () -> SuperGrokQuota) : SuperGrokQuotaClient() {
