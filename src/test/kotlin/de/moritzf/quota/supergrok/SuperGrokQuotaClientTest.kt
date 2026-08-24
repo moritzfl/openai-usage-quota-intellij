@@ -113,16 +113,61 @@ class SuperGrokQuotaClientTest {
 
         assertEquals("SuperGrok Heavy", quota.plan)
         assertEquals(
-            listOf("https://grok.test/v1/billing?format=credits", "https://grok.test/v1/settings"),
+            listOf(
+                "https://grok.test/v1/billing?format=credits",
+                "https://grok.test/v1/settings",
+                SuperGrokQuotaClient.DEFAULT_RESET_LIST_URI.toString(),
+            ),
             httpClient.requests.map { it.uri().toString() },
         )
-        httpClient.requests.forEach { request ->
+        httpClient.requests.take(2).forEach { request ->
             assertEquals("Bearer token-123", request.headers().firstValue("Authorization").orElse(null))
             assertEquals("xai-grok-cli", request.headers().firstValue("X-XAI-Token-Auth").orElse(null))
             assertEquals("application/json", request.headers().firstValue("Accept").orElse(null))
         }
+        assertEquals("Bearer token-123", httpClient.requests[2].headers().firstValue("Authorization").orElse(null))
+        assertEquals("application/grpc-web+proto", httpClient.requests[2].headers().firstValue("Content-Type").orElse(null))
         assertTrue(quota.rawJson?.contains("\"billing\"") == true)
         assertTrue(quota.rawJson?.contains("\"settings\"") == true)
+        assertTrue(quota.resetTokens.isEmpty())
+    }
+
+    @Test
+    fun fetchQuotaAttachesUnexpiredResetTokens() {
+        val expiresAt = Instant.parse("2026-09-13T00:00:00Z")
+        val httpClient = FakeHttpClient(
+            FakeResponseSpec(BILLING_WEEKLY_RESPONSE),
+            FakeResponseSpec(SETTINGS_RESPONSE),
+            resetListBody = SuperGrokResetCodec.encodeTokens(
+                listOf(SuperGrokResetToken(tokenId = "restok_test", expiresAt = expiresAt)),
+            ),
+        )
+        val client = SuperGrokQuotaClient(httpClient, URI.create("https://grok.test/v1/"))
+
+        val quota = client.fetchQuota("token-123")
+
+        assertEquals(listOf(SuperGrokResetToken(tokenId = "restok_test", expiresAt = expiresAt)), quota.resetTokens)
+        assertTrue(quota.rawJson?.contains("restok_test") == true)
+    }
+
+    @Test
+    fun redeemResetPostsTokenId() {
+        val httpClient = FakeHttpClient(
+            resetRedeemBody = SuperGrokResetCodec.encodeTokens(emptyList()),
+        )
+        val client = SuperGrokQuotaClient(httpClient, URI.create("https://grok.test/v1/"))
+
+        val remaining = client.redeemReset("token-123", "restok_test")
+
+        assertEquals(emptyList(), remaining)
+        val request = httpClient.requests.single()
+        assertEquals(SuperGrokQuotaClient.DEFAULT_RESET_REDEEM_URI.toString(), request.uri().toString())
+        assertEquals("Bearer token-123", request.headers().firstValue("Authorization").orElse(null))
+        assertEquals("application/grpc-web+proto", request.headers().firstValue("Content-Type").orElse(null))
+        assertEquals(
+            SuperGrokResetCodec.redeemRequestFrame("restok_test").toList(),
+            request.readBody().toList(),
+        )
     }
 
     @Test
@@ -155,7 +200,11 @@ class SuperGrokQuotaClientTest {
 
     private data class FakeResponseSpec(val body: String, val status: Int = 200)
 
-    private class FakeHttpClient(private vararg val responses: FakeResponseSpec) : HttpClient() {
+    private class FakeHttpClient(
+        private vararg val responses: FakeResponseSpec,
+        private val resetListBody: ByteArray = SuperGrokResetCodec.emptyRequestFrame(),
+        private val resetRedeemBody: ByteArray = SuperGrokResetCodec.emptyRequestFrame(),
+    ) : HttpClient() {
         val requests = mutableListOf<HttpRequest>()
         private var index = 0
 
@@ -164,6 +213,12 @@ class SuperGrokQuotaClientTest {
             responseBodyHandler: HttpResponse.BodyHandler<T>
         ): HttpResponse<T> {
             requests.add(request)
+            val path = request.uri().path
+            if (path.endsWith("GetRemainingResets") || path.endsWith("RedeemReset")) {
+                val body = if (path.endsWith("RedeemReset")) resetRedeemBody else resetListBody
+                @Suppress("UNCHECKED_CAST")
+                return FakeResponse(body, 200, request) as HttpResponse<T>
+            }
             val response = responses.getOrElse(index) { responses.last() }
             index++
             @Suppress("UNCHECKED_CAST")
@@ -192,19 +247,47 @@ class SuperGrokQuotaClientTest {
         override fun executor(): Optional<java.util.concurrent.Executor> = Optional.empty()
     }
 
-    private class FakeResponse(
-        private val body: String,
+    private class FakeResponse<T>(
+        private val body: T,
         private val status: Int,
         private val request: HttpRequest,
-    ) : HttpResponse<String> {
+    ) : HttpResponse<T> {
         override fun statusCode(): Int = status
         override fun request(): HttpRequest = request
-        override fun previousResponse(): Optional<HttpResponse<String>> = Optional.empty()
+        override fun previousResponse(): Optional<HttpResponse<T>> = Optional.empty()
         override fun headers(): HttpHeaders = HttpHeaders.of(emptyMap()) { _, _ -> true }
-        override fun body(): String = body
+        override fun body(): T = body
         override fun sslSession(): Optional<SSLSession> = Optional.empty()
         override fun uri(): URI = request.uri()
         override fun version(): HttpClient.Version = HttpClient.Version.HTTP_1_1
+    }
+
+    private fun HttpRequest.readBody(): ByteArray {
+        val publisher = bodyPublisher().orElseThrow()
+        val stream = java.io.ByteArrayOutputStream()
+        val latch = java.util.concurrent.CountDownLatch(1)
+        publisher.subscribe(object : java.util.concurrent.Flow.Subscriber<java.nio.ByteBuffer> {
+            override fun onSubscribe(subscription: java.util.concurrent.Flow.Subscription) {
+                subscription.request(Long.MAX_VALUE)
+            }
+
+            override fun onNext(item: java.nio.ByteBuffer) {
+                val bytes = ByteArray(item.remaining())
+                item.get(bytes)
+                stream.write(bytes)
+            }
+
+            override fun onError(throwable: Throwable) {
+                latch.countDown()
+                throw throwable
+            }
+
+            override fun onComplete() {
+                latch.countDown()
+            }
+        })
+        latch.await()
+        return stream.toByteArray()
     }
 
     private companion object {

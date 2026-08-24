@@ -24,6 +24,8 @@ import java.time.Duration
 open class SuperGrokQuotaClient(
     private val httpClient: HttpClient = HttpClient.newHttpClient(),
     private val baseUri: URI = DEFAULT_BASE_URI,
+    private val resetListUri: URI = DEFAULT_RESET_LIST_URI,
+    private val resetRedeemUri: URI = DEFAULT_RESET_REDEEM_URI,
 ) {
     open fun fetchQuota(accessToken: String?): SuperGrokQuota {
         val token = accessToken?.trim()?.takeIf { it.isNotBlank() }
@@ -32,11 +34,12 @@ open class SuperGrokQuotaClient(
         val weeklyJson = getJson(token, WEEKLY_BILLING_PATH, required = true)
             ?: throw SuperGrokQuotaException("Grok billing response changed.")
         val settingsJson = getJson(token, SETTINGS_PATH, required = false)
+        val resetTokens = fetchResetTokens(token)
 
-        val rawJson = combinedRawJson(weeklyJson, settingsJson)
+        val rawJson = combinedRawJson(weeklyJson, settingsJson, resetTokens)
 
         val quota = try {
-            parseQuota(weeklyJson, settingsJson)
+            parseQuota(weeklyJson, settingsJson).copy(resetTokens = resetTokens)
         } catch (exception: SuperGrokQuotaException) {
             throw SuperGrokQuotaException(
                 exception.message ?: "Grok billing response changed.",
@@ -49,6 +52,14 @@ open class SuperGrokQuotaClient(
         }
         quota.rawJson = rawJson
         return quota
+    }
+
+    open fun redeemReset(accessToken: String?, tokenId: String?): List<SuperGrokResetToken> {
+        val token = accessToken?.trim()?.takeIf { it.isNotBlank() }
+            ?: throw SuperGrokQuotaException("Grok login required. Log in from SuperGrok settings.")
+        val resetId = tokenId?.trim()?.takeIf { it.isNotBlank() }
+            ?: throw SuperGrokQuotaException("Grok reset token is missing.")
+        return postReset(token, resetRedeemUri, SuperGrokResetCodec.redeemRequestFrame(resetId), required = true)
     }
 
     private fun getJson(accessToken: String, path: String, required: Boolean): String? {
@@ -90,9 +101,70 @@ open class SuperGrokQuotaClient(
         throw SuperGrokQuotaException(GROK_BILLING_TIMEOUT_MESSAGE)
     }
 
+    private fun fetchResetTokens(accessToken: String): List<SuperGrokResetToken> {
+        return runCatching {
+            postReset(accessToken, resetListUri, SuperGrokResetCodec.emptyRequestFrame(), required = false)
+        }.getOrDefault(emptyList())
+    }
+
+    private fun postReset(
+        accessToken: String,
+        uri: URI,
+        body: ByteArray,
+        required: Boolean,
+    ): List<SuperGrokResetToken> {
+        val request = HttpRequest.newBuilder()
+            .uri(uri)
+            .timeout(Duration.ofSeconds(30))
+            .header("Authorization", "Bearer $accessToken")
+            .header("Accept", "*/*")
+            .header("Content-Type", GRPC_WEB_CONTENT_TYPE)
+            .header("Origin", "https://grok.com")
+            .header("Referer", "https://grok.com/?_s=usage")
+            .header("x-grpc-web", "1")
+            .header("x-user-agent", "connect-es/2.1.1")
+            .header("User-Agent", "LLM Subscription Usage")
+            .POST(HttpRequest.BodyPublishers.ofByteArray(body))
+            .build()
+        val response = sendBytes(request)
+        val status = response.statusCode()
+        val payload = response.body()
+        if (status == 401 || status == 403) {
+            throw SuperGrokQuotaException(
+                "Grok auth expired. Log in to SuperGrok again from settings.",
+                status,
+            )
+        }
+        if (status !in 200..299) {
+            if (!required) return emptyList()
+            throw SuperGrokQuotaException("Grok reset request failed (HTTP $status). Try again later.", status)
+        }
+        val headers = response.headers().map()
+        val (grpcStatus, grpcMessage) = SuperGrokResetCodec.grpcStatus(payload, headers)
+        if (grpcStatus != 0) {
+            if (!required) return emptyList()
+            val detail = grpcMessage?.takeIf { it.isNotBlank() } ?: "status $grpcStatus"
+            throw SuperGrokQuotaException("Grok reset request failed ($detail).", status)
+        }
+        return SuperGrokResetCodec.parseResetTokens(payload, Clock.System.now())
+    }
+
     private fun send(request: HttpRequest): HttpResponse<String> {
         return try {
             httpClient.send(request, HttpResponse.BodyHandlers.ofString())
+        } catch (exception: HttpTimeoutException) {
+            throw SuperGrokQuotaException(GROK_BILLING_TIMEOUT_MESSAGE, 0, null, exception)
+        } catch (exception: IOException) {
+            throw SuperGrokQuotaException("Grok billing request failed. Check your connection.", 0, null, exception)
+        } catch (exception: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw SuperGrokQuotaException("Grok billing request failed. Check your connection.", 0, null, exception)
+        }
+    }
+
+    private fun sendBytes(request: HttpRequest): HttpResponse<ByteArray> {
+        return try {
+            httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray())
         } catch (exception: HttpTimeoutException) {
             throw SuperGrokQuotaException(GROK_BILLING_TIMEOUT_MESSAGE, 0, null, exception)
         } catch (exception: IOException) {
@@ -107,9 +179,18 @@ open class SuperGrokQuotaClient(
         @JvmField
         val DEFAULT_BASE_URI: URI = URI.create("https://cli-chat-proxy.grok.com/v1/")
 
+        @JvmField
+        val DEFAULT_RESET_LIST_URI: URI =
+            URI.create("https://grok.com/prod_mc_billing.ConsumerUiSvc/GetRemainingResets")
+
+        @JvmField
+        val DEFAULT_RESET_REDEEM_URI: URI =
+            URI.create("https://grok.com/prod_mc_billing.ConsumerUiSvc/RedeemReset")
+
         private const val WEEKLY_BILLING_PATH = "billing?format=credits"
         private const val SETTINGS_PATH = "settings"
         private const val TOKEN_AUTH_HEADER = "xai-grok-cli"
+        private const val GRPC_WEB_CONTENT_TYPE = "application/grpc-web+proto"
         private const val AUTH_SOURCE = "xai-oauth-cli-proxy"
         private const val BILLING_REQUEST_ATTEMPTS = 2
         private const val GROK_BILLING_TIMEOUT_MESSAGE =
@@ -160,12 +241,24 @@ open class SuperGrokQuotaClient(
             )
         }
 
-        fun combinedRawJson(weeklyBillingJson: String, settingsJson: String?): String {
+        fun combinedRawJson(
+            weeklyBillingJson: String,
+            settingsJson: String?,
+            resetTokens: List<SuperGrokResetToken> = emptyList(),
+        ): String {
             return buildJsonObject {
                 put("authSource", AUTH_SOURCE)
                 put("billing", rawElement(weeklyBillingJson))
                 if (!settingsJson.isNullOrBlank()) {
                     put("settings", rawElement(settingsJson))
+                }
+                if (resetTokens.isNotEmpty()) {
+                    put("resets", JsonArray(resetTokens.map { token ->
+                        buildJsonObject {
+                            put("tokenId", token.tokenId)
+                            token.expiresAt?.let { put("expiresAt", it.toString()) }
+                        }
+                    }))
                 }
             }.toString()
         }

@@ -14,6 +14,7 @@ data class SuperGrokQuota(
     val onDemandCap: Long? = null,
     val isUnifiedBilling: Boolean = false,
     val periodType: String = "",
+    val resetTokens: List<SuperGrokResetToken> = emptyList(),
     override var fetchedAt: Instant? = null,
     @Transient override var rawJson: String? = null,
 ) : ProviderQuota {
