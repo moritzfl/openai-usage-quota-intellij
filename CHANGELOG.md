@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.9.0] - 2026-08-24
 
 - SuperGrok quota popup can show and redeem a weekly usage reset when grok.com reports one, with confirmation before consuming it.
 
