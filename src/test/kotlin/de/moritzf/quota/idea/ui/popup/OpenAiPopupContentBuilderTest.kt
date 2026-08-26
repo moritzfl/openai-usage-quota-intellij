@@ -39,6 +39,19 @@ class OpenAiPopupContentBuilderTest {
         assertTrue(resetIndex > lastExtraIndex)
     }
 
+    @Test
+    fun showsTitleCasedPlanWithoutSelfServePrefix() {
+        val section = OpenAiPopupSection()
+        val quota = OpenAiCodexQuota(
+            planType = "self_serve_business_prolite",
+            primary = UsageWindow(usedPercent = 0.0, windowDuration = Duration.ofDays(7)),
+        )
+
+        section.update(quota, error = null, visible = true)
+
+        assertTrue(section.components.any { it.containsLabel("Codex (Business Prolite)") })
+    }
+
     private fun Any?.containsLabel(text: String): Boolean {
         return when (this) {
             is JLabel -> this.text == text

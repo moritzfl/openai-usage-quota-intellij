@@ -182,14 +182,21 @@ internal fun getLimitWarning(quota: OpenAiCodexQuota?): String? {
 }
 
 @Language("RegExp")
-private const val WHITESPACE_REGEX = "\\s+"
+private const val PLAN_WORD_REGEX = "[_\\s]+"
+
+@Language("RegExp")
+private const val SELF_SERVE_PREFIX_REGEX = "(?i)^self_serve[_\\s]*"
 
 internal fun String.toDisplayLabel(): String {
-    return split(Regex(WHITESPACE_REGEX)).joinToString(" ") { word ->
-        word.lowercase().replaceFirstChar { character ->
-            if (character.isLowerCase()) character.titlecase() else character.toString()
+    return trim()
+        .replace(Regex(SELF_SERVE_PREFIX_REGEX), "")
+        .split(Regex(PLAN_WORD_REGEX))
+        .filter { it.isNotEmpty() }
+        .joinToString(" ") { word ->
+            word.lowercase().replaceFirstChar { character ->
+                if (character.isLowerCase()) character.titlecase() else character.toString()
+            }
         }
-    }
 }
 
 internal fun createPopupTitleLabel(): JBLabel {

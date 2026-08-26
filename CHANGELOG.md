@@ -1,5 +1,9 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+- Codex plan names are shown as title case with `self_serve` stripped, so `self_serve_business_prolite` appears as Business Prolite.
+
 ## [1.9.0] - 2026-08-24
 
 - SuperGrok quota popup can show and redeem a weekly usage reset when grok.com reports one, with confirmation before consuming it.

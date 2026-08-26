@@ -107,7 +107,7 @@ class QuotaIndicatorComponentTest {
 
         assertEquals("available", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(-1, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertEquals("OpenAI • Self_serve_business_usage_based", tooltip(QuotaProviderType.OPEN_AI, quota))
+        assertEquals("OpenAI • Business Usage Based", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
@@ -115,7 +115,7 @@ class QuotaIndicatorComponentTest {
         val quota = businessMemberAssignedCreditsDepleted()
         assertEquals("100%", indicatorBarDisplayText(quota, error = null, loggedIn = true))
         assertEquals(100, indicatorDisplayPercent(quota, error = null, loggedIn = true))
-        assertEquals("OpenAI • Self_serve_business_usage_based • 100%", tooltip(QuotaProviderType.OPEN_AI, quota))
+        assertEquals("OpenAI • Business Usage Based • 100%", tooltip(QuotaProviderType.OPEN_AI, quota))
     }
 
     @Test
