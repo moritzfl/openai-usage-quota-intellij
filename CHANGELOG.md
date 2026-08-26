@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.9.1] - 2026-08-26
 
 - Codex plan names are shown as title case with `self_serve` stripped, so `self_serve_business_prolite` appears as Business Prolite.
 
