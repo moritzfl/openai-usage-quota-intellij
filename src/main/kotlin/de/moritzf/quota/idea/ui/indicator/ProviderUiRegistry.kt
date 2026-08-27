@@ -56,7 +56,7 @@ internal interface ProviderUi {
     val updatedAtLabel: String get() = type.displayName
 
     fun tooltip(quota: ProviderQuota?, error: String?, accountId: String = type.id): String =
-        buildIndicatorTooltip(type, quota, error, authState(accountId))
+        buildIndicatorTooltip(type, quota, error, authState(accountId), accountTooltipName(type, accountId))
 
     fun barText(quota: ProviderQuota?, error: String?): String
 
@@ -77,6 +77,13 @@ internal interface ProviderUi {
     fun authState(): ProviderAuthState = authState(type.id)
     fun authState(accountId: String): ProviderAuthState
     fun createPopupSection(): ProviderPopupSection
+}
+
+internal fun accountTooltipName(type: QuotaProviderType, accountId: String): String? {
+    val settings = runCatching { de.moritzf.quota.idea.settings.QuotaSettingsState.getInstance() }.getOrNull()
+        ?: return null
+    if (!settings.accountTypeHasDuplicates(type)) return null
+    return settings.account(accountId)?.name?.trim()?.takeIf { it.isNotEmpty() }
 }
 
 /** Facade over [de.moritzf.quota.idea.common.ProviderCatalog] for indicator/popup UI. */

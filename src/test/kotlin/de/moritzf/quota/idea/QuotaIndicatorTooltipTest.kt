@@ -81,6 +81,22 @@ class QuotaIndicatorTooltipTest {
             ),
         )
         assertNull(indicatorPlanName(OpenAiCodexQuota(primary = de.moritzf.quota.openai.UsageWindow(usedPercent = 1.0))))
+        assertEquals(
+            "OpenAI (Work) • Plus • 1% 5-hour",
+            buildIndicatorTooltip(
+                QuotaProviderType.OPEN_AI,
+                OpenAiCodexQuota(
+                    planType = "plus",
+                    primary = de.moritzf.quota.openai.UsageWindow(
+                        usedPercent = 1.0,
+                        windowDuration = java.time.Duration.ofHours(5),
+                    ),
+                ),
+                error = null,
+                ProviderAuthState.AUTHENTICATED,
+                accountName = "Work",
+            ),
+        )
     }
 
     @Test

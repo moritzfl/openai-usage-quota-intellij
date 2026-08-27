@@ -50,12 +50,16 @@ internal fun buildIndicatorTooltip(
     quota: ProviderQuota?,
     error: String?,
     authState: ProviderAuthState,
+    accountName: String? = null,
 ): String {
+    val providerLabel = accountName?.trim()?.takeIf { it.isNotEmpty() }
+        ?.let { "${type.displayName} ($it)" }
+        ?: type.displayName
     val plan = indicatorPlanName(quota)
     val usage = indicatorTooltipUsage(quota)
     if (plan != null || usage.percent != null || usage.reset != null) {
         return formatIndicatorTooltip(
-            provider = type.displayName,
+            provider = providerLabel,
             plan = plan,
             percent = usage.percent,
             windowKind = usage.windowKind,
@@ -63,7 +67,7 @@ internal fun buildIndicatorTooltip(
         )
     }
     return formatIndicatorTooltip(
-        provider = type.displayName,
+        provider = providerLabel,
         status = when {
             error != null -> error
             authState == ProviderAuthState.UNAUTHENTICATED -> "not logged in"
