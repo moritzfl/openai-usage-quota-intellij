@@ -219,10 +219,13 @@ internal class OpenAiPopupSection : ProviderPopupSection() {
         resetCreditsPanel.components.filterIsInstance<ActionLink>().forEach { it.isEnabled = false }
         ApplicationManager.getApplication().executeOnPooledThread {
             runCatching {
-                QuotaUsageService.getInstance().consumeOpenAiResetCredit(
-                    creditId,
-                    accountId ?: de.moritzf.quota.idea.common.QuotaProviderType.OPEN_AI.id,
-                )
+                val resolvedAccountId = accountId
+                    ?: runCatching {
+                        de.moritzf.quota.idea.settings.QuotaSettingsState.getInstance()
+                            .defaultAccount(de.moritzf.quota.idea.common.QuotaProviderType.OPEN_AI)?.id
+                    }.getOrNull()
+                    ?: return@runCatching
+                QuotaUsageService.getInstance().consumeOpenAiResetCredit(creditId, resolvedAccountId)
             }
                 .onFailure { exception ->
                     ApplicationManager.getApplication().invokeLater {

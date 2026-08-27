@@ -103,6 +103,35 @@ class AccountResolverTest {
     }
 
     @Test
+    fun rateLimitedAccountIsExhaustedUntilCleared() {
+        AccountResolver.clearAllRateLimited()
+        try {
+            val state = twoOpenAi()
+            val quotas = emptyMap<String, ProviderQuota>()
+            assertFalse(AccountResolver.isExhausted(state.account("openai")!!, { quotas[it] }))
+            AccountResolver.markRateLimited("openai")
+            assertTrue(AccountResolver.isExhausted(state.account("openai")!!, { quotas[it] }))
+            val failedOver = AccountResolver.resolve(
+                QuotaProviderType.OPEN_AI,
+                capability = AccountCapability.PROXY,
+                settings = state,
+                quotaLookup = { quotas[it] },
+            )
+            assertEquals("personal", failedOver.id)
+            AccountResolver.clearRateLimited("openai")
+            val defaultAgain = AccountResolver.resolve(
+                QuotaProviderType.OPEN_AI,
+                capability = AccountCapability.PROXY,
+                settings = state,
+                quotaLookup = { quotas[it] },
+            )
+            assertEquals("openai", defaultAgain.id)
+        } finally {
+            AccountResolver.clearAllRateLimited()
+        }
+    }
+
+    @Test
     fun openAiSpendCapIsHardStop() {
         assertTrue(AccountResolver.isHardStop(exhaustedOpenAi()))
         assertFalse(AccountResolver.isHardStop(OpenAiCodexQuota(limitReached = false)))

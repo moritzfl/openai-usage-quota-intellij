@@ -15,6 +15,7 @@ import de.moritzf.quota.opencode.OpenCodeQuota
 import de.moritzf.quota.shared.ProviderQuota
 import de.moritzf.quota.supergrok.SuperGrokQuota
 import de.moritzf.quota.zai.ZaiQuota
+import java.util.concurrent.ConcurrentHashMap
 
 internal enum class AccountCapability {
     QUOTA,
@@ -31,6 +32,21 @@ internal enum class AccountCapability {
 internal class AccountResolveException(message: String) : IllegalStateException(message)
 
 internal object AccountResolver {
+    private val rateLimitedUntilMs = ConcurrentHashMap<String, Long>()
+    private const val RATE_LIMIT_STICKY_MS = 5 * 60 * 1000L
+
+    fun markRateLimited(accountId: String, nowMs: Long = System.currentTimeMillis()) {
+        rateLimitedUntilMs[accountId] = nowMs + RATE_LIMIT_STICKY_MS
+    }
+
+    fun clearRateLimited(accountId: String) {
+        rateLimitedUntilMs.remove(accountId)
+    }
+
+    fun clearAllRateLimited() {
+        rateLimitedUntilMs.clear()
+    }
+
     fun resolve(
         type: QuotaProviderType,
         accountParam: String? = null,
@@ -88,7 +104,12 @@ internal object AccountResolver {
         quotaLookup: (String) -> ProviderQuota? = { id ->
             runCatching { QuotaUsageService.getInstance().getLastQuota(id) }.getOrNull()
         },
+        nowMs: Long = System.currentTimeMillis(),
     ): Boolean {
+        val stickyUntil = rateLimitedUntilMs[account.id]
+        if (stickyUntil != null && stickyUntil > nowMs) {
+            return true
+        }
         val quota = quotaLookup(account.id) ?: return false
         return isHardStop(quota)
     }

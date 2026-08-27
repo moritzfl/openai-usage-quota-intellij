@@ -550,12 +550,14 @@ class SubscriptionUsageMcpToolset(
         return try {
             block(token)
         } catch (exception: SuperGrokQuotaException) {
+            noteSpendRateLimit(account.id, exception.statusCode)
             if (exception.statusCode == 401 || exception.statusCode == 403) {
                 val refreshed = authService.forceRefreshBlocking(account.id, QuotaProviderType.SUPERGROK, token)
                 if (!refreshed.isNullOrBlank()) {
                     return try {
                         block(refreshed)
                     } catch (retryException: SuperGrokQuotaException) {
+                        noteSpendRateLimit(account.id, retryException.statusCode)
                         searchError(retryException.message ?: failureLabel)
                     } catch (retryException: Exception) {
                         searchError(retryException.message ?: failureLabel)
@@ -589,6 +591,7 @@ class SubscriptionUsageMcpToolset(
             }
             result.body
         } catch (exception: KimiQuotaException) {
+            noteSpendRateLimit(account.id, exception.statusCode)
             searchError(exception.message ?: "Kimi web search failed.")
         } catch (exception: Exception) {
             searchError(exception.message ?: "Kimi web search failed.")
@@ -898,6 +901,12 @@ class SubscriptionUsageMcpToolset(
             searchError(exception.message ?: "Ollama web search failed.")
         } catch (exception: Exception) {
             searchError(exception.message ?: "Ollama web search failed.")
+        }
+    }
+
+    private fun noteSpendRateLimit(accountId: String, statusCode: Int?) {
+        if (statusCode == 429) {
+            de.moritzf.quota.idea.settings.AccountResolver.markRateLimited(accountId)
         }
     }
 

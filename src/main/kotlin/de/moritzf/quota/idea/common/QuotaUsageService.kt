@@ -6,6 +6,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.util.concurrency.AppExecutorUtil
+import de.moritzf.quota.idea.settings.AccountResolver
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorData
 import de.moritzf.quota.idea.ui.indicator.QuotaIndicatorSource
@@ -66,8 +67,10 @@ class QuotaUsageService(
         }
     }
 
-    fun provider(type: QuotaProviderType): QuotaProvider? =
-        states[type.id]?.provider ?: states.values.firstOrNull { it.provider.type == type }?.provider
+    fun provider(type: QuotaProviderType): QuotaProvider? {
+        val preferredId = settingsProvider()?.defaultAccount(type)?.id ?: type.id
+        return states[preferredId]?.provider
+    }
 
     fun providerForAccount(accountId: String): QuotaProvider? = states[accountId]?.provider
 
@@ -107,9 +110,7 @@ class QuotaUsageService(
             val preferredId = settings?.defaultAccount(type)?.id
                 ?: settings?.accountsOf(type)?.firstOrNull()?.id
                 ?: type.id
-            val state = states[preferredId]
-                ?: states.values.firstOrNull { it.provider.type == type }
-                ?: return@mapNotNull null
+            val state = states[preferredId] ?: return@mapNotNull null
             type to ProviderSnapshot(state.provider.getLastQuota(), displayError(state.provider))
         }.toMap()
         return QuotaUsageSnapshot(typeEntries, accountEntries, accountTypes)
@@ -127,12 +128,12 @@ class QuotaUsageService(
             QuotaIndicatorSource.LAST_USED -> settings?.lastActiveAccount()?.id ?: type.id
             else -> settings?.defaultAccount(type)?.id ?: type.id
         }
-        val accountProvider = providerForAccount(accountId) ?: provider(type)
+        val accountProvider = providerForAccount(accountId)
         return QuotaIndicatorData(
             type,
             accountProvider?.getLastQuota(),
             accountProvider?.let(::displayError),
-            accountProvider?.accountId ?: accountId,
+            accountId,
         )
     }
 
@@ -161,12 +162,19 @@ class QuotaUsageService(
     }
 
     fun clearAllUsageData(openAiError: String? = null) {
-        clearUsageData(QuotaProviderType.OPEN_AI, openAiError)
-        states.keys.filter { it != QuotaProviderType.OPEN_AI.id }.forEach { clearUsageData(it) }
+        states.keys.toList().forEach { id ->
+            val type = states[id]?.provider?.type
+            clearUsageData(id, if (type == QuotaProviderType.OPEN_AI) openAiError else null)
+        }
     }
 
     fun clearUsageData(type: QuotaProviderType, error: String? = null) {
-        clearUsageData(provider(type)?.accountId ?: type.id, error)
+        val ids = states.filter { it.value.provider.type == type }.keys
+        if (ids.isEmpty()) {
+            clearUsageData(type.id, error)
+            return
+        }
+        ids.forEach { clearUsageData(it, error) }
     }
 
     fun clearUsageData(accountId: String, error: String? = null) {
@@ -183,6 +191,7 @@ class QuotaUsageService(
         if (accounts.isEmpty() && settings.settingsVersion >= 3) {
             states.clear()
             activityBaselines.clear()
+            settings.pruneOrphanAccountData()
             publishUpdate()
             return
         }
@@ -213,19 +222,17 @@ class QuotaUsageService(
         (providerForAccount(accountId) as? OpenCodeQuotaProvider)?.resetWorkspaceCache()
     }
 
-    fun consumeOpenAiResetCredit(creditId: String?, accountId: String = QuotaProviderType.OPEN_AI.id) {
-        val provider = providerForAccount(accountId) as? OpenAiQuotaProvider
-            ?: provider(QuotaProviderType.OPEN_AI) as? OpenAiQuotaProvider
-        provider?.consumeResetCredit(creditId)
-        refreshProvider(provider?.accountId ?: accountId, forceUpdate = true)
+    fun consumeOpenAiResetCredit(creditId: String?, accountId: String) {
+        val provider = providerForAccount(accountId) as? OpenAiQuotaProvider ?: return
+        provider.consumeResetCredit(creditId)
+        refreshProvider(accountId, forceUpdate = true)
     }
 
-    fun consumeSuperGrokReset(tokenId: String?, accountId: String = QuotaProviderType.SUPERGROK.id) {
-        val provider = providerForAccount(accountId) as? SuperGrokQuotaProvider
-            ?: provider(QuotaProviderType.SUPERGROK) as? SuperGrokQuotaProvider
-        provider?.consumeReset(tokenId)
+    fun consumeSuperGrokReset(tokenId: String?, accountId: String) {
+        val provider = providerForAccount(accountId) as? SuperGrokQuotaProvider ?: return
+        provider.consumeReset(tokenId)
         sleeper(SUPERGROK_RESET_PROPAGATION_MS)
-        refreshProvider(provider?.accountId ?: accountId, forceUpdate = true)
+        refreshProvider(accountId, forceUpdate = true)
     }
 
     private fun scheduleRefresh() {
@@ -286,8 +293,12 @@ class QuotaUsageService(
                     provider.refresh()
                 }
                 noteActivity(accountId, provider, settings)
-                if (provider.getLastQuota() != null) {
+                val quota = provider.getLastQuota()
+                if (quota != null) {
                     settings?.let(provider::persistToCache)
+                    if (!AccountResolver.isHardStop(quota)) {
+                        AccountResolver.clearRateLimited(accountId)
+                    }
                 }
                 publishUpdate()
                 future.complete(Unit)

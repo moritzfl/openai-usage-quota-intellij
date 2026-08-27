@@ -123,10 +123,13 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
         resetTokensPanel.components.filterIsInstance<ActionLink>().forEach { it.isEnabled = false }
         ApplicationManager.getApplication().executeOnPooledThread {
             runCatching {
-                QuotaUsageService.getInstance().consumeSuperGrokReset(
-                    tokenId,
-                    accountId ?: de.moritzf.quota.idea.common.QuotaProviderType.SUPERGROK.id,
-                )
+                val resolvedAccountId = accountId
+                    ?: runCatching {
+                        de.moritzf.quota.idea.settings.QuotaSettingsState.getInstance()
+                            .defaultAccount(de.moritzf.quota.idea.common.QuotaProviderType.SUPERGROK)?.id
+                    }.getOrNull()
+                    ?: return@runCatching
+                QuotaUsageService.getInstance().consumeSuperGrokReset(tokenId, resolvedAccountId)
             }
                 .onFailure { exception ->
                     ApplicationManager.getApplication().invokeLater {

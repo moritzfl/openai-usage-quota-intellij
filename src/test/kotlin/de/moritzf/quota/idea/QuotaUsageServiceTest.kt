@@ -945,6 +945,86 @@ class QuotaUsageServiceTest {
     }
 
     @Test
+    fun lastUsedIndicatorDoesNotFallBackToSiblingWhenAccountMissing() {
+        val settings = QuotaSettingsState().apply {
+            accounts = mutableListOf(
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "openai",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Work",
+                    isDefault = true,
+                ),
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "personal",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Personal",
+                ),
+            )
+            setSource(QuotaIndicatorSource.LAST_USED)
+            setLastActiveAccount("personal")
+        }
+        val work = OpenAiQuotaProvider(
+            accountId = "openai",
+            quotaFetcher = { _, _ ->
+                OpenAiCodexQuota(allowed = true).apply { primary = UsageWindow(usedPercent = 10.0) }
+            },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "work" },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(work),
+            settingsProvider = { settings },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+        try {
+            service.refreshNowBlocking()
+            val indicator = service.getEffectiveIndicatorData()
+            assertEquals("personal", indicator.accountId)
+            assertNull(indicator.quota)
+            assertNull(indicator.error)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun consumeOpenAiResetCreditDoesNotFallBackToSibling() {
+        var workConsumed = false
+        var personalConsumed = false
+        val work = OpenAiQuotaProvider(
+            accountId = "openai",
+            quotaFetcher = { _, _ -> OpenAiCodexQuota() },
+            resetCreditConsumer = { _, _, _ -> workConsumed = true },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "work" },
+        )
+        val personal = OpenAiQuotaProvider(
+            accountId = "personal",
+            quotaFetcher = { _, _ -> OpenAiCodexQuota() },
+            resetCreditConsumer = { _, _, _ -> personalConsumed = true },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "personal" },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(work, personal),
+            settingsProvider = { null },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+        try {
+            service.consumeOpenAiResetCredit("credit-1", "missing")
+            assertFalse(workConsumed)
+            assertFalse(personalConsumed)
+            service.consumeOpenAiResetCredit("credit-1", "personal")
+            assertFalse(workConsumed)
+            assertTrue(personalConsumed)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
     fun consumeOpenAiResetCreditCallsClientAndRefreshes() {
         var consumed = false
         val openAiProvider = OpenAiQuotaProvider(
@@ -956,7 +1036,7 @@ class QuotaUsageServiceTest {
         val service = createService(openAiProvider = openAiProvider)
 
         try {
-            service.consumeOpenAiResetCredit("credit-1")
+            service.consumeOpenAiResetCredit("credit-1", QuotaProviderType.OPEN_AI.id)
             assertTrue(consumed)
             // refresh is called internally
         } finally {
@@ -992,7 +1072,7 @@ class QuotaUsageServiceTest {
         try {
             service.refreshNowBlocking()
             val before = fetches
-            service.consumeSuperGrokReset("restok_1")
+            service.consumeSuperGrokReset("restok_1", QuotaProviderType.SUPERGROK.id)
             assertEquals("restok_1", consumed)
             assertTrue(fetches > before)
         } finally {
