@@ -10,6 +10,10 @@ import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
 import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
+import com.intellij.openapi.diagnostic.Logger
+import de.moritzf.quota.idea.settings.AccountCapability
+import de.moritzf.quota.idea.settings.AccountResolveException
+import de.moritzf.quota.idea.settings.AccountResolver
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.proxy.KimiSubscriptionProxyProvider
@@ -43,12 +47,12 @@ internal object IdeProxyFactories {
     fun openAi(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return OpenAiCodexSubscriptionProxyProvider(
             accessTokenProvider = {
-                resolvedAccount(QuotaProviderType.OPEN_AI)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.OPEN_AI)?.let { account ->
                     ctx.authService().getAccessTokenBlocking(account.id, QuotaProviderType.OPEN_AI)
                 }
             },
             accountIdProvider = {
-                resolvedAccount(QuotaProviderType.OPEN_AI)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.OPEN_AI)?.let { account ->
                     ctx.authService().getAccountId(account.id, QuotaProviderType.OPEN_AI)
                 }
             },
@@ -65,7 +69,7 @@ internal object IdeProxyFactories {
     fun superGrok(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return SuperGrokSubscriptionProxyProvider(
             accessTokenProvider = {
-                resolvedAccount(QuotaProviderType.SUPERGROK)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.SUPERGROK)?.let { account ->
                     ctx.authService().getAccessTokenBlocking(account.id, QuotaProviderType.SUPERGROK)
                 }
             },
@@ -80,13 +84,13 @@ internal object IdeProxyFactories {
     fun github(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return GitHubCopilotSubscriptionProxyProvider(
             accessTokenProvider = {
-                resolvedAccount(QuotaProviderType.GITHUB)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.GITHUB)?.let { account ->
                     GitHubCredentialsStore.forAccount(account.id).loadBlocking()?.accessToken
                 }
             },
             upstreamBaseUri = githubCopilotBaseUri(
                 ctx.settings.githubHostFor(
-                    resolvedAccount(QuotaProviderType.GITHUB)?.id ?: QuotaProviderType.GITHUB.id,
+                    resolvedAccount(ctx, QuotaProviderType.GITHUB)?.id ?: QuotaProviderType.GITHUB.id,
                 ),
             ),
             persistentModelCacheProvider = {
@@ -103,12 +107,12 @@ internal object IdeProxyFactories {
     fun kimi(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return KimiSubscriptionProxyProvider(
             credentialsProvider = {
-                resolvedAccount(QuotaProviderType.KIMI)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.KIMI)?.let { account ->
                     KimiCredentialsStore.forAccount(account.id).loadBlocking()
                 }
             },
             credentialsSaver = { credentials ->
-                resolvedAccount(QuotaProviderType.KIMI)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.KIMI)?.let { account ->
                     KimiCredentialsStore.forAccount(account.id).save(credentials)
                 }
             },
@@ -120,12 +124,12 @@ internal object IdeProxyFactories {
     fun miniMax(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return MiniMaxSubscriptionProxyProvider(
             apiKeyProvider = {
-                resolvedAccount(QuotaProviderType.MINIMAX)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.MINIMAX)?.let { account ->
                     MiniMaxApiKeyStore.forAccount(account.id).loadBlocking()
                 }
             },
             regionProvider = {
-                val account = resolvedAccount(QuotaProviderType.MINIMAX)
+                val account = resolvedAccount(ctx, QuotaProviderType.MINIMAX)
                 miniMaxProxyRegion(ctx.settings.miniMaxRegionFor(account?.id ?: QuotaProviderType.MINIMAX.id))
             },
             fullRequestLogging = ctx.logRequests,
@@ -136,7 +140,7 @@ internal object IdeProxyFactories {
     fun mistral(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return MistralSubscriptionProxyProvider(
             apiKeyProvider = {
-                resolvedAccount(QuotaProviderType.MISTRAL)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.MISTRAL)?.let { account ->
                     MistralApiKeyStore.forAccount(account.id).loadBlocking()
                 }
             },
@@ -148,7 +152,7 @@ internal object IdeProxyFactories {
     fun ollama(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return OllamaSubscriptionProxyProvider(
             apiKeyProvider = {
-                resolvedAccount(QuotaProviderType.OLLAMA)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.OLLAMA)?.let { account ->
                     OllamaApiKeyStore.forAccount(account.id).loadBlocking()
                 }
             },
@@ -160,7 +164,7 @@ internal object IdeProxyFactories {
     fun openCode(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return OpenCodeZenSubscriptionProxyProvider(
             apiKeyProvider = {
-                resolvedAccount(QuotaProviderType.OPEN_CODE)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.OPEN_CODE)?.let { account ->
                     OpenCodeApiKeyStore.forAccount(account.id).loadBlocking()
                 }
             },
@@ -172,7 +176,7 @@ internal object IdeProxyFactories {
     fun zai(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return ZaiSubscriptionProxyProvider(
             apiKeyProvider = {
-                resolvedAccount(QuotaProviderType.ZAI)?.let { account ->
+                resolvedAccount(ctx, QuotaProviderType.ZAI)?.let { account ->
                     ZaiApiKeyStore.forAccount(account.id).loadBlocking()
                 }
             },
@@ -181,11 +185,17 @@ internal object IdeProxyFactories {
         )
     }
 
-    private fun resolvedAccount(type: QuotaProviderType): de.moritzf.quota.idea.settings.ProviderAccount? {
-        return de.moritzf.quota.idea.settings.AccountResolver.resolveOrNull(
-            type,
-            capability = de.moritzf.quota.idea.settings.AccountCapability.PROXY,
-        )
+    private fun resolvedAccount(
+        ctx: IdeProxyBuildContext,
+        type: QuotaProviderType,
+    ): de.moritzf.quota.idea.settings.ProviderAccount? {
+        if (ctx.settings.accountsOf(type).isEmpty()) return null
+        return try {
+            AccountResolver.resolve(type, capability = AccountCapability.PROXY, settings = ctx.settings)
+        } catch (exception: AccountResolveException) {
+            LOG.warn("Could not resolve ${type.displayName} account for the local proxy: ${exception.message}")
+            null
+        }
     }
 
     private fun refreshToken(
@@ -199,7 +209,7 @@ internal object IdeProxyFactories {
                 auth.peekAccessToken(account.id, type) == token
             }
         }
-        val account = owner ?: resolvedAccount(type) ?: return null
+        val account = owner ?: resolvedAccount(ctx, type) ?: return null
         return auth.forceRefreshBlocking(account.id, type, staleToken)
     }
 
@@ -216,4 +226,6 @@ internal object IdeProxyFactories {
             MiniMaxRegionPreference.AUTO -> MiniMaxRegion.GLOBAL
         }
     }
+
+    private val LOG = Logger.getInstance(IdeProxyFactories::class.java)
 }

@@ -14,6 +14,7 @@ import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
+import com.intellij.openapi.diagnostic.Logger
 
 internal object AccountSecrets {
     fun clear(account: ProviderAccount) {
@@ -26,7 +27,7 @@ internal object AccountSecrets {
                 val type = account.providerType()!!
                 QuotaAuthService.getInstance().clearCredentials(id, type)
                 QuotaAuthService.getInstance().forgetAccount(id)
-            }
+            }.onFailure { LOG.warn("Failed to clear OAuth credentials for account $id", it) }
             QuotaProviderType.MISTRAL -> {
                 MistralSessionCookieStore.forAccount(id).clear()
                 MistralApiKeyStore.forAccount(id).clear()
@@ -41,15 +42,19 @@ internal object AccountSecrets {
             }
             QuotaProviderType.GITHUB -> {
                 runCatching { GitHubAuthService.forAccount(id).clearCredentials() }
+                    .onFailure { LOG.warn("Failed to clear GitHub credentials for account $id", it) }
                 GitHubCredentialsStore.forAccount(id).clear()
                 GitHubAuthService.forgetAccount(id)
             }
             QuotaProviderType.KIMI -> {
                 runCatching { KimiAuthService.forAccount(id).clearCredentials() }
+                    .onFailure { LOG.warn("Failed to clear Kimi credentials for account $id", it) }
                 KimiCredentialsStore.forAccount(id).clear()
                 KimiAuthService.forgetAccount(id)
             }
             null -> Unit
         }
     }
+
+    private val LOG = Logger.getInstance(AccountSecrets::class.java)
 }
