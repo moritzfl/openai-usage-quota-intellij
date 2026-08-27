@@ -49,15 +49,8 @@ internal class OpenCodeSettingsPanel(
         workspaceComboBox.addActionListener {
             if (updatingWorkspaceComboBox) return@addActionListener
             val selected = workspaceComboBox.selectedItem as? OpenCodeWorkspace ?: return@addActionListener
-            val accountId = accountKey(QuotaProviderType.OPEN_CODE)
             if (boundAccount?.extra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE) == selected.id) return@addActionListener
             boundAccount?.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, selected.id)
-            val state = QuotaSettingsState.getInstance()
-            if (state.account(accountId) != null && state.openCodeWorkspaceIdFor(accountId) != selected.id) {
-                state.setOpenCodeWorkspaceIdFor(accountId, selected.id)
-                QuotaUsageService.getInstance().resetOpenCodeWorkspaceCache(accountId)
-                QuotaUsageService.getInstance().refreshAsync(accountId)
-            }
         }
 
         val openCodeConfigPanel = panel {
@@ -87,10 +80,6 @@ internal class OpenCodeSettingsPanel(
                     OpenCodeSessionCookieStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE)).clear()
                     openCodeCookieField.text = ""
                     boundAccount?.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, null)
-                    val accountId = accountKey(QuotaProviderType.OPEN_CODE)
-                    if (QuotaSettingsState.getInstance().account(accountId) != null) {
-                        QuotaSettingsState.getInstance().setOpenCodeWorkspaceIdFor(accountId, null)
-                    }
                     workspaceComboBox.removeAllItems()
                     workspaceComboBox.isVisible = false
                     workspaceLabel.isVisible = false
@@ -265,10 +254,6 @@ internal class OpenCodeSettingsPanel(
                         preselected?.let { workspace ->
                             workspaceComboBox.selectedItem = workspace
                             boundAccount?.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, workspace.id)
-                            val state = QuotaSettingsState.getInstance()
-                            if (state.account(accountId) != null) {
-                                state.setOpenCodeWorkspaceIdFor(accountId, workspace.id)
-                            }
                         }
                     } finally {
                         updatingWorkspaceComboBox = false
