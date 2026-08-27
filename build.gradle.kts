@@ -145,6 +145,7 @@ tasks {
 
     test {
         useJUnitPlatform()
+        maxHeapSize = "2g"
     }
 
     register<JavaExec>("runStandaloneOpenAiProxy") {
