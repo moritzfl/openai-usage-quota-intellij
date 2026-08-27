@@ -56,7 +56,7 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = "SuperGrok"
+                titleLabel.text = sectionTitle("SuperGrok")
                 blocks.getOrNull(0)?.showLoading("Monthly credits")
             }
             else -> {
@@ -67,7 +67,7 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
                     errorLabel.text = "SuperGrok limit reached"
                 }
                 titleLabel.isVisible = true
-                titleLabel.text = quota.plan.takeIf { it.isNotBlank() } ?: "SuperGrok"
+                titleLabel.text = sectionTitle("SuperGrok", quota.plan.takeIf { it.isNotBlank() })
                 blocks.forEach { it.clear() }
                 if (usage != null) {
                     blocks[0].updateSuperGrok(usage)
@@ -98,7 +98,7 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
             return
         }
         val nextExpiry = resetTokens.mapNotNull { it.expiresAt }.minOrNull()
-        val expiryText = nextExpiry?.let { QuotaUiUtil.formatReset(it) }
+        val expiryText = nextExpiry?.let { QuotaUiUtil.formatExpiry(it) }
         resetTokensPanel.add(JLabel("Resets available: ${resetTokens.size}"))
         resetTokensPanel.add(ActionLink("Reset") { confirmAndReset(resetTokens.first().tokenId) }.apply {
             icon = AllIcons.Actions.Restart
@@ -122,7 +122,12 @@ internal class SuperGrokPopupSection : ProviderPopupSection() {
         }
         resetTokensPanel.components.filterIsInstance<ActionLink>().forEach { it.isEnabled = false }
         ApplicationManager.getApplication().executeOnPooledThread {
-            runCatching { QuotaUsageService.getInstance().consumeSuperGrokReset(tokenId) }
+            runCatching {
+                QuotaUsageService.getInstance().consumeSuperGrokReset(
+                    tokenId,
+                    accountId ?: de.moritzf.quota.idea.common.QuotaProviderType.SUPERGROK.id,
+                )
+            }
                 .onFailure { exception ->
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(

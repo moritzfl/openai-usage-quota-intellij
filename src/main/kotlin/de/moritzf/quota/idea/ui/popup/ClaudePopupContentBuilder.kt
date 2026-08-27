@@ -55,7 +55,7 @@ internal class ClaudePopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = "Claude"
+                titleLabel.text = sectionTitle("Claude")
                 fiveHourBlock.showLoading("5-hour")
                 weeklyBlock.showLoading("Weekly")
             }
@@ -75,7 +75,7 @@ internal class ClaudePopupSection : ProviderPopupSection() {
                     errorLabel.text = "Claude limit reached"
                 }
                 titleLabel.isVisible = true
-                titleLabel.text = quota.plan.takeIf { it.isNotBlank() } ?: "Claude"
+                titleLabel.text = sectionTitle("Claude", quota.plan.takeIf { it.isNotBlank() })
 
                 quota.fiveHourUsage?.let { fiveHourBlock.updateClaude(it, "5-hour") } ?: fiveHourBlock.clear()
                 quota.sevenDayUsage?.let { weeklyBlock.updateClaude(it, "Weekly") } ?: weeklyBlock.clear()

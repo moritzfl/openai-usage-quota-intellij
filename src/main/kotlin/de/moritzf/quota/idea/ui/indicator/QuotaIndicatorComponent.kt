@@ -106,7 +106,7 @@ internal class QuotaIndicatorComponent(
 
     fun updateUsage(data: QuotaIndicatorData, displayMode: QuotaDisplayMode) {
         this.data = data
-        val tooltip = ProviderUiRegistry.forType(data.type).tooltip(data.quota, data.error)
+        val tooltip = ProviderUiRegistry.forType(data.type).tooltip(data.quota, data.error, data.accountId)
         toolTipText = tooltip
         statusIconLabel.toolTipText = tooltip
         sourceIconLabel.toolTipText = tooltip
@@ -136,7 +136,7 @@ internal class QuotaIndicatorComponent(
     }
 
     override fun getToolTipText(event: MouseEvent?): String {
-        return ProviderUiRegistry.forType(data.type).tooltip(data.quota, data.error)
+        return ProviderUiRegistry.forType(data.type).tooltip(data.quota, data.error, data.accountId)
     }
 
     private fun showContent(component: JComponent) {
@@ -172,11 +172,11 @@ internal class QuotaIndicatorComponent(
     }
 
     private fun barDisplayText(): String {
-        return ProviderUiRegistry.forType(data.type).barText(data.quota, data.error)
+        return ProviderUiRegistry.forType(data.type).barText(data.quota, data.error, data.accountId)
     }
 
     private fun cakeIcon(): Icon {
-        val percent = ProviderUiRegistry.forType(data.type).cakePercent(data.quota, data.error)
+        val percent = ProviderUiRegistry.forType(data.type).cakePercent(data.quota, data.error, data.accountId)
         if (percent < 0) {
             return QuotaIcons.CAKE_UNKNOWN
         }
@@ -237,7 +237,7 @@ internal class QuotaIndicatorComponent(
     }
 
     private fun displayPercent(): Int {
-        return ProviderUiRegistry.forType(data.type).displayPercent(data.quota, data.error)
+        return ProviderUiRegistry.forType(data.type).displayPercent(data.quota, data.error, data.accountId)
     }
 
     private fun updatePercentageDisplay() {
@@ -469,7 +469,7 @@ internal fun openCodeIndicatorState(quota: OpenCodeQuota): OpenCodeIndicatorStat
 
     val window = windows.first()
     return OpenCodeIndicatorState(
-        percent = clampPercent(window.usagePercent),
+        percent = clampPercent(window.usagePercent.roundToInt()),
         resetInSec = window.resetInSec,
     )
 }

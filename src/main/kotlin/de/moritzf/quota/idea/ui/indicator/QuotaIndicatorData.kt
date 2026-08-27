@@ -7,4 +7,5 @@ internal data class QuotaIndicatorData(
     val type: QuotaProviderType,
     val quota: ProviderQuota?,
     val error: String?,
+    val accountId: String = type.id,
 )

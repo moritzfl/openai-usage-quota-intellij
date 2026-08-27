@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.seconds
 
 class QuotaUiUtilTest {
@@ -26,6 +27,14 @@ class QuotaUiUtilTest {
     @Test
     fun formatResetCompactReturnsNullForPastReset() {
         assertNull(QuotaUiUtil.formatResetCompact(Clock.System.now().minus(60.seconds)))
+    }
+
+    @Test
+    fun formatExpiryUsesExpiresNotResets() {
+        val formatted = QuotaUiUtil.formatExpiry(Clock.System.now().plus(120.seconds))
+        assertNotNull(formatted)
+        assertTrue(formatted.startsWith("Expires in "))
+        assertFalse(formatted.startsWith("Resets "))
     }
 
     @Test

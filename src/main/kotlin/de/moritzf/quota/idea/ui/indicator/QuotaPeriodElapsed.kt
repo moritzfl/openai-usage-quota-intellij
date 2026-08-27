@@ -4,8 +4,6 @@ import de.moritzf.quota.claude.ClaudeQuota
 import de.moritzf.quota.claude.ClaudeUsageWindow
 import de.moritzf.quota.cursor.CursorPlanUsage
 import de.moritzf.quota.cursor.CursorQuota
-import de.moritzf.quota.idea.auth.QuotaAuthService
-import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.github.GitHubQuota
 import de.moritzf.quota.github.GitHubUsageWindow
 import de.moritzf.quota.kimi.KimiQuota
@@ -148,8 +146,7 @@ internal fun indicatorPeriodElapsedFraction(data: QuotaIndicatorData): Double? {
 }
 
 internal fun openAiPeriodElapsedFraction(quota: OpenAiCodexQuota?, error: String?): Double? {
-    val authService = QuotaAuthService.getInstance()
-    if (!authService.isLoggedIn(QuotaProviderType.OPEN_AI) || error != null) {
+    if (error != null) {
         return null
     }
     val state = indicatorQuotaState(quota) ?: return null

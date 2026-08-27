@@ -216,7 +216,7 @@ class QuotaIndicatorComponentTest {
     @Test
     fun openCodeBarDisplayTextShowsPercentAndReset() {
         val quota = OpenCodeQuota(
-            rollingUsage = OpenCodeUsageWindow(usagePercent = 42, resetInSec = 3661),
+            rollingUsage = OpenCodeUsageWindow(usagePercent = 42.0, resetInSec = 3661),
         )
 
         val text = openCodeBarDisplayText(quota, error = null)
@@ -226,8 +226,8 @@ class QuotaIndicatorComponentTest {
     @Test
     fun openCodeBarDisplayTextUsesLongestExhaustedReset() {
         val quota = OpenCodeQuota(
-            rollingUsage = OpenCodeUsageWindow(usagePercent = 100, resetInSec = 5 * 60 * 60),
-            weeklyUsage = OpenCodeUsageWindow(usagePercent = 100, resetInSec = 2 * 24 * 60 * 60 + 4 * 60 * 60),
+            rollingUsage = OpenCodeUsageWindow(usagePercent = 100.0, resetInSec = 5 * 60 * 60),
+            weeklyUsage = OpenCodeUsageWindow(usagePercent = 100.0, resetInSec = 2 * 24 * 60 * 60 + 4 * 60 * 60),
         )
 
         assertEquals("100% • 2d 4h", openCodeBarDisplayText(quota, error = null))
@@ -273,7 +273,7 @@ class QuotaIndicatorComponentTest {
     @Test
     fun openCodeBarDisplayTextShowsRateLimited() {
         val quota = OpenCodeQuota(
-            rollingUsage = OpenCodeUsageWindow(usagePercent = 100, resetInSec = 3600, status = "rate-limited"),
+            rollingUsage = OpenCodeUsageWindow(usagePercent = 100.0, resetInSec = 3600, status = "rate-limited"),
         )
 
         val text = openCodeBarDisplayText(quota, error = null)
@@ -295,7 +295,7 @@ class QuotaIndicatorComponentTest {
     @Test
     fun openCodeBarDisplayTextReturnsErrorWhenErrorPresent() {
         val quota = OpenCodeQuota(
-            rollingUsage = OpenCodeUsageWindow(usagePercent = 42),
+            rollingUsage = OpenCodeUsageWindow(usagePercent = 42.0),
             availableBalance = 1_000_000_000L,
         )
 

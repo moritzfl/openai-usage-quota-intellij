@@ -11,12 +11,12 @@ import com.intellij.ui.components.JBLabel
 import com.intellij.util.messages.MessageBusConnection
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
-import de.moritzf.quota.idea.common.ProviderSnapshot
 import de.moritzf.quota.idea.common.QuotaProviderRegistry
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageListener
 import de.moritzf.quota.idea.common.QuotaUsageService
 import de.moritzf.quota.idea.common.QuotaUsageSnapshot
+import de.moritzf.quota.idea.settings.ProviderAccount
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.indicator.ProviderAuthState
@@ -77,7 +77,12 @@ internal object QuotaPopupSupport {
         }
         popupConnection.subscribe(QuotaUsageListener.TOPIC, object : QuotaUsageListener {
             override fun onQuotaUpdated(type: QuotaProviderType, quota: ProviderQuota?, error: String?) {
-                latestState = QuotaUsageSnapshot(latestState.entries + (type to ProviderSnapshot(quota, error)))
+                latestState = service.currentSnapshot()
+                scheduleRefresh()
+            }
+
+            override fun onQuotaUpdated(type: QuotaProviderType, quota: ProviderQuota?, error: String?, accountId: String) {
+                latestState = service.currentSnapshot()
                 scheduleRefresh()
             }
         })
@@ -156,10 +161,8 @@ private class QuotaPopupContentPanel(
         add(ActionLink("Open Settings") { openSettings(project, component) { onClosePopup() } }.apply { border = JBUI.Borders.emptyTop(3) })
     }
 
-    private val sections: Map<QuotaProviderType, ProviderPopupSection> =
-        QuotaProviderRegistry.defaultProviderOrder().associateWith { type ->
-            ProviderUiRegistry.forType(type).createPopupSection()
-        }
+    private val sections = linkedMapOf<String, ProviderPopupSection>()
+    private val sectionTypes = linkedMapOf<String, QuotaProviderType>()
 
     private val updatedAtSeparator = createSeparatedBlock()
     private val updatedAtRow = JPanel(FlowLayout(FlowLayout.LEFT, JBUI.scale(3), 0)).apply { isOpaque = false }
@@ -170,15 +173,9 @@ private class QuotaPopupContentPanel(
         add(header)
         add(notLoggedInPanel)
         add(allHiddenPanel)
-        val order = QuotaSettingsState.getInstance().providerOrderList()
-        order.forEach { id ->
-            sections[id]?.let { add(it) }
-        }
-        sections.keys.filter { it !in order }.forEach { id ->
-            sections[id]?.let { add(it) }
-        }
         add(updatedAtSeparator)
         add(updatedAtRow)
+        rebuildSections(QuotaSettingsState.getInstance())
     }
 
     override fun getPreferredSize(): Dimension {
@@ -188,23 +185,31 @@ private class QuotaPopupContentPanel(
 
     fun update(state: QuotaUsageSnapshot) {
         val settings = QuotaSettingsState.getInstance()
-        val authStates = ProviderUiRegistry.all.mapValues { (_, ui) -> ui.authState() }
-        val visibleSections = sections.keys.associateWith { type ->
-            authStates[type] != ProviderAuthState.UNAUTHENTICATED && !settings.isHiddenFromPopup(type)
-        }
+        rebuildSections(settings)
+        val visibleSections = sections.keys.associateWith { id -> isSectionVisible(settings, id) }
 
-        val notLoggedIn = authStates.values.all { it == ProviderAuthState.UNAUTHENTICATED }
-        val allHidden = visibleSections.values.none { it }
+        val notLoggedIn = visibleSections.isEmpty() || visibleSections.values.none { it } &&
+            sections.keys.all { id -> !isAccountAuthenticated(settings, id) }
+        val allHidden = sections.isNotEmpty() && visibleSections.values.none { it } &&
+            sections.keys.any { id -> isAccountAuthenticated(settings, id) }
 
         notLoggedInPanel.isVisible = notLoggedIn
         allHiddenPanel.isVisible = !notLoggedIn && allHidden
-        sections.forEach { (type, section) ->
-            val snapshot = state[type]
-            section.update(snapshot.quota, snapshot.error, visibleSections[type] == true)
+        sections.forEach { (id, section) ->
+            val type = sectionTypes[id]
+            val account = settings.account(id)
+            section.accountId = id
+            section.accountTitle = account?.let { acc ->
+                acc.providerType()?.let { type ->
+                    if (settings.accountTypeHasDuplicates(type)) acc.name else null
+                }
+            }
+            val snapshot = state.forAccount(id, type)
+            section.update(snapshot.quota, snapshot.error, visibleSections[id] == true)
         }
 
-        val showAnySection = !notLoggedIn && !allHidden
-        val updatedAtItems = if (showAnySection) buildUpdatedAtItems(state, visibleSections) else emptyList()
+        val showAnySection = visibleSections.values.any { it }
+        val updatedAtItems = if (showAnySection) buildUpdatedAtItems(state, visibleSections, settings) else emptyList()
 
         updatedAtSeparator.isVisible = updatedAtItems.isNotEmpty()
         updatedAtRow.isVisible = updatedAtItems.isNotEmpty()
@@ -226,15 +231,61 @@ private class QuotaPopupContentPanel(
         }
     }
 
+    private fun rebuildSections(settings: QuotaSettingsState) {
+        val desired = if (settings.accounts.isNotEmpty()) {
+            settings.accounts.mapNotNull { account ->
+                val type = account.providerType() ?: return@mapNotNull null
+                account.id to type
+            }
+        } else {
+            QuotaProviderRegistry.defaultProviderOrder().map { it.id to it }
+        }
+        if (desired.map { it.first } == sections.keys.toList()) {
+            return
+        }
+        sections.values.forEach(::remove)
+        sections.clear()
+        sectionTypes.clear()
+        val insertAt = getComponentZOrder(updatedAtSeparator).takeIf { it >= 0 } ?: componentCount
+        desired.forEachIndexed { index, (id, type) ->
+            val section = ProviderUiRegistry.forType(type).createPopupSection()
+            sections[id] = section
+            sectionTypes[id] = type
+            add(section, insertAt + index)
+        }
+        revalidate()
+    }
+
+    private fun isSectionVisible(settings: QuotaSettingsState, id: String): Boolean {
+        val account = settings.account(id)
+        if (account?.hiddenFromPopup == true) return false
+        val type = sectionTypes[id] ?: account?.providerType() ?: QuotaProviderType.fromId(id)
+        if (type != null && account == null && settings.isHiddenFromPopup(type)) return false
+        return isAccountAuthenticated(settings, id)
+    }
+
+    private fun isAccountAuthenticated(settings: QuotaSettingsState, id: String): Boolean {
+        val type = sectionTypes[id] ?: settings.account(id)?.providerType() ?: QuotaProviderType.fromId(id)
+            ?: return false
+        return ProviderUiRegistry.forType(type).authState(id) != ProviderAuthState.UNAUTHENTICATED
+    }
+
     private fun buildUpdatedAtItems(
         state: QuotaUsageSnapshot,
-        visibleSections: Map<QuotaProviderType, Boolean>,
+        visibleSections: Map<String, Boolean>,
+        settings: QuotaSettingsState,
     ): List<UpdatedAtItem> {
-        val order = QuotaSettingsState.getInstance().providerOrderList()
-        val rawItems = order.mapNotNull { type ->
-            if (visibleSections[type] != true) return@mapNotNull null
+        val order = if (settings.accounts.isNotEmpty()) {
+            settings.accounts.map { it.id }
+        } else {
+            QuotaProviderRegistry.defaultProviderOrder().map { it.id }
+        }
+        val rawItems = order.mapNotNull { id ->
+            if (visibleSections[id] != true) return@mapNotNull null
+            val type = sectionTypes[id] ?: return@mapNotNull null
             val ui = ProviderUiRegistry.forType(type)
-            UpdatedAtRawItem(UpdatedAtIcon(ui.updatedAtLabel, ui.icon), state[type].quota?.fetchedAt)
+            val fetchedAt = state.forAccount(id, type).quota?.fetchedAt
+            UpdatedAtRawItem(UpdatedAtIcon(ui.updatedAtLabel, ui.icon), fetchedAt)
         }
         if (rawItems.isEmpty()) {
             return emptyList()

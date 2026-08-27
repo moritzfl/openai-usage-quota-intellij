@@ -48,7 +48,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = MISTRAL_LABEL
+                titleLabel.text = sectionTitle(MISTRAL_LABEL)
                 monthlyBlock.showLoading("Monthly")
                 tokenBlock.showLoading("Tokens / min")
                 requestBlock.showLoading("Requests / min")
@@ -62,7 +62,7 @@ internal class MistralPopupSection : ProviderPopupSection() {
                     errorLabel.text = "Mistral limit reached"
                 }
                 titleLabel.isVisible = true
-                titleLabel.text = MISTRAL_LABEL
+                titleLabel.text = sectionTitle(MISTRAL_LABEL)
                 quota.monthlyUsage?.let { monthlyBlock.updateMistral(it, "Monthly") } ?: monthlyBlock.clear()
                 quota.tokenUsage?.let { tokenBlock.updateMistral(it, "Tokens / min") } ?: tokenBlock.clear()
                 quota.requestUsage?.let { requestBlock.updateMistral(it, "Requests / min") } ?: requestBlock.clear()

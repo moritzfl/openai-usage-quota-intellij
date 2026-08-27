@@ -6,6 +6,7 @@ import de.moritzf.quota.idea.ui.indicator.clampPercent
 import de.moritzf.quota.opencode.OpenCodeQuota
 import de.moritzf.quota.opencode.OpenCodeUsageWindow
 import com.intellij.openapi.ui.VerticalFlowLayout
+import kotlin.math.roundToInt
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import de.moritzf.quota.shared.ProviderQuota
@@ -52,7 +53,7 @@ internal class OpenCodePopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = OPENCODE_GO_LABEL
+                titleLabel.text = sectionTitle(OPENCODE_GO_LABEL)
                 rollingBlock.showLoading("5h rolling")
                 weeklyBlock.showLoading("Weekly")
                 monthlyBlock.showLoading("Monthly")
@@ -65,7 +66,7 @@ internal class OpenCodePopupSection : ProviderPopupSection() {
                 }
 
                 titleLabel.isVisible = true
-                titleLabel.text = if (quota.hasUsageState()) OPENCODE_GO_LABEL else OPENCODE_ZEN_LABEL
+                titleLabel.text = sectionTitle(if (quota.hasUsageState()) OPENCODE_GO_LABEL else OPENCODE_ZEN_LABEL)
                 val balanceText = quota.availableBalance?.let(QuotaUiUtil::formatOpenCodeBalance)
                 balanceLabel.isVisible = balanceText != null
                 if (balanceText != null) {
@@ -96,7 +97,7 @@ internal class OpenCodePopupSection : ProviderPopupSection() {
     }
 
     private fun WindowBlockPanel.updateOpenCode(window: OpenCodeUsageWindow, label: String) {
-        val percent = clampPercent(window.usagePercent)
+        val percent = clampPercent(window.usagePercent.roundToInt())
         val resetText = QuotaUiUtil.formatResetInSeconds(window.resetInSec)
         var info = "$percent% used"
         if (resetText != null) info += " - $resetText"

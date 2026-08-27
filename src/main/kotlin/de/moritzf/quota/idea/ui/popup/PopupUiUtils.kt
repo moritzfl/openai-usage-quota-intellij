@@ -101,7 +101,7 @@ internal fun createLoadingWindowBlock(label: String, top: Int): JComponent {
 }
 
 internal fun createOpenCodeWindowBlock(window: OpenCodeUsageWindow, label: String, top: Int): JComponent {
-    val percent = clampPercent(window.usagePercent)
+    val percent = clampPercent(window.usagePercent.roundToInt())
     val resetText = QuotaUiUtil.formatResetInSeconds(window.resetInSec)
     var info = "$percent% used"
     if (window.isRateLimited) {

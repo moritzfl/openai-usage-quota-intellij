@@ -33,6 +33,22 @@ object QuotaUiUtil {
     }
 
     @JvmStatic
+    fun formatExpiry(expiresAt: Instant?): String? {
+        if (expiresAt == null) {
+            return null
+        }
+
+        val duration = Duration.ofMillis(expiresAt.toEpochMilliseconds() - Clock.System.now().toEpochMilliseconds())
+        val remaining = formatDuration(duration)
+        if (remaining != null) {
+            return "Expires $remaining"
+        }
+
+        val at = formatAbsoluteInstant(expiresAt)
+        return "Expires at $at"
+    }
+
+    @JvmStatic
     fun formatResetCompact(resetsAt: Instant?): String? {
         if (resetsAt == null) {
             return null

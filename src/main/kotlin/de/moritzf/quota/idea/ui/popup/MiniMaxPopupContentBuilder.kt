@@ -44,7 +44,7 @@ internal class MiniMaxPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = "MiniMax"
+                titleLabel.text = sectionTitle("MiniMax")
                 sessionBlock.showLoading("Session")
             }
             else -> {
@@ -55,7 +55,7 @@ internal class MiniMaxPopupSection : ProviderPopupSection() {
                 }
 
                 titleLabel.isVisible = true
-                titleLabel.text = quota.plan.ifBlank { "MiniMax Coding Plan (${quota.region})" }
+                titleLabel.text = sectionTitle("MiniMax", quota.plan.ifBlank { "MiniMax Coding Plan (${quota.region})" })
                 quota.sessionUsage?.let { sessionBlock.updateMiniMax(it, "Session") } ?: sessionBlock.clear()
             }
         }

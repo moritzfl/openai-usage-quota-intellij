@@ -50,7 +50,7 @@ internal class ZaiPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = ZAI_LABEL
+                titleLabel.text = sectionTitle(ZAI_LABEL)
                 sessionBlock.showLoading("Session")
                 weeklyBlock.showLoading("Weekly")
                 webSearchBlock.showLoading("Web searches")
@@ -64,9 +64,8 @@ internal class ZaiPopupSection : ProviderPopupSection() {
                     errorLabel.text = "Z.ai limit reached"
                 }
 
-                val label = quota.plan.takeIf { it.isNotBlank() }?.let { "$ZAI_LABEL ($it)" } ?: ZAI_LABEL
                 titleLabel.isVisible = true
-                titleLabel.text = label
+                titleLabel.text = sectionTitle(ZAI_LABEL, quota.plan.takeIf { it.isNotBlank() })
                 quota.sessionUsage?.let { sessionBlock.updateZai(it, "Session") } ?: sessionBlock.clear()
                 quota.weeklyUsage?.let { weeklyBlock.updateZai(it, "Weekly") } ?: weeklyBlock.clear()
                 quota.webSearchUsage?.let { webSearchBlock.updateZaiCount(it, "Web searches") } ?: webSearchBlock.clear()

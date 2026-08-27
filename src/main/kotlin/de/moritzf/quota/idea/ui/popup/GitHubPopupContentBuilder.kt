@@ -52,7 +52,7 @@ internal class GitHubPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = "GitHub Copilot"
+                titleLabel.text = sectionTitle("GitHub Copilot")
                 premiumBlock.showLoading("Premium requests")
             }
 
@@ -63,7 +63,7 @@ internal class GitHubPopupSection : ProviderPopupSection() {
                     errorLabel.isVisible = true
                     errorLabel.text = inactiveMessage
                     titleLabel.isVisible = true
-                    titleLabel.text = quota.plan.ifBlank { "GitHub Copilot" }
+                    titleLabel.text = sectionTitle("GitHub Copilot", quota.plan.takeIf { it.isNotBlank() })
                     return
                 }
 
@@ -74,7 +74,7 @@ internal class GitHubPopupSection : ProviderPopupSection() {
                 }
 
                 titleLabel.isVisible = true
-                titleLabel.text = quota.plan.ifBlank { "GitHub Copilot" }
+                titleLabel.text = sectionTitle("GitHub Copilot", quota.plan.takeIf { it.isNotBlank() })
                 bindWindow(premiumBlock, quota.premiumInteractions)
                 bindWindow(chatBlock, quota.chat)
                 bindWindow(completionsBlock, quota.completions)

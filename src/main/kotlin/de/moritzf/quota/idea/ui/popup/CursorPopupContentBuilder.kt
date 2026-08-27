@@ -60,7 +60,7 @@ internal class CursorPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = CURSOR_LABEL
+                titleLabel.text = sectionTitle(CURSOR_LABEL)
                 includedSpendBlock.showLoading("Included spend")
                 includedUsageBlock.showLoading("Included")
                 autoBlock.showLoading("Auto")
@@ -80,7 +80,7 @@ internal class CursorPopupSection : ProviderPopupSection() {
                 val planTitle = quota.planName.takeIf { it.isNotBlank() }
                     ?: quota.membershipType.takeIf { it.isNotBlank() }
                 titleLabel.isVisible = true
-                titleLabel.text = if (planTitle != null) "$CURSOR_LABEL ($planTitle)" else CURSOR_LABEL
+                titleLabel.text = sectionTitle(CURSOR_LABEL, planTitle)
 
                 planUsage?.let { includedSpendBlock.updateIncludedSpend(it) } ?: includedSpendBlock.clear()
                 if (requestUsage != null) {

@@ -80,7 +80,7 @@ internal class OpenAiPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = "Codex"
+                titleLabel.text = sectionTitle("Codex")
                 primaryBlock.showLoading("5h")
                 secondaryBlock.showLoading("Weekly")
                 creditsBlock.showLoading("Assigned credits")
@@ -97,7 +97,7 @@ internal class OpenAiPopupSection : ProviderPopupSection() {
                 titleLabel.isVisible = hasMainData
                 if (hasMainData) {
                     val planLabel = quota.planType?.toDisplayLabel()
-                    titleLabel.text = if (!planLabel.isNullOrBlank()) "Codex ($planLabel)" else "Codex"
+                    titleLabel.text = sectionTitle("Codex", planLabel)
                 }
 
                 quota.primary?.let { primaryBlock.updateWindow(it, "Primary") } ?: primaryBlock.clear()
@@ -193,10 +193,12 @@ internal class OpenAiPopupSection : ProviderPopupSection() {
             return
         }
 
+        val nextExpiry = resetCredits.mapNotNull { it.expiresAt }.minOrNull()
+        val expiryText = nextExpiry?.let { QuotaUiUtil.formatExpiry(it) }
         resetCreditsPanel.add(JLabel("Resets available: $availableCount"))
         resetCreditsPanel.add(ActionLink("Reset") { confirmAndReset(resetCredits.firstOrNull()?.creditId) }.apply {
             icon = AllIcons.Actions.Restart
-            toolTipText = "Redeem one Codex reset"
+            toolTipText = expiryText?.let { "Redeem one Codex reset. $it" } ?: "Redeem one Codex reset"
             cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         })
         resetCreditsPanel.isVisible = true
@@ -216,7 +218,12 @@ internal class OpenAiPopupSection : ProviderPopupSection() {
 
         resetCreditsPanel.components.filterIsInstance<ActionLink>().forEach { it.isEnabled = false }
         ApplicationManager.getApplication().executeOnPooledThread {
-            runCatching { QuotaUsageService.getInstance().consumeOpenAiResetCredit(creditId) }
+            runCatching {
+                QuotaUsageService.getInstance().consumeOpenAiResetCredit(
+                    creditId,
+                    accountId ?: de.moritzf.quota.idea.common.QuotaProviderType.OPEN_AI.id,
+                )
+            }
                 .onFailure { exception ->
                     ApplicationManager.getApplication().invokeLater {
                         Messages.showErrorDialog(

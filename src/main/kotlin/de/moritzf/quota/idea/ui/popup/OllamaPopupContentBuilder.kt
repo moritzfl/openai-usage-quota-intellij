@@ -46,7 +46,7 @@ internal class OllamaPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = OLLAMA_LABEL
+                titleLabel.text = sectionTitle(OLLAMA_LABEL)
                 sessionBlock.showLoading("Session")
                 weeklyBlock.showLoading("Weekly")
             }
@@ -59,7 +59,7 @@ internal class OllamaPopupSection : ProviderPopupSection() {
                 }
 
                 titleLabel.isVisible = true
-                titleLabel.text = OLLAMA_LABEL
+                titleLabel.text = sectionTitle(OLLAMA_LABEL)
                 quota.sessionUsage?.let {
                     sessionBlock.updateOllama(it, "Session", QuotaPeriodDurations.ROLLING_5H)
                 } ?: sessionBlock.clear()

@@ -9,6 +9,7 @@ import de.moritzf.quota.idea.cursor.CursorCredentialsStore
 import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.kimi.KimiCredentialsStore
 import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
+import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.mistral.MistralSessionCookieStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
@@ -54,19 +55,27 @@ internal interface ProviderUi {
     /** Label used in the popup "Updated:" row. */
     val updatedAtLabel: String get() = type.displayName
 
-    fun tooltip(quota: ProviderQuota?, error: String?): String =
-        buildIndicatorTooltip(type, quota, error, authState())
+    fun tooltip(quota: ProviderQuota?, error: String?, accountId: String = type.id): String =
+        buildIndicatorTooltip(type, quota, error, authState(accountId))
 
     fun barText(quota: ProviderQuota?, error: String?): String
+
+    fun barText(quota: ProviderQuota?, error: String?, accountId: String): String = barText(quota, error)
 
     /** Percent for the bar indicator, or -1 when unknown. */
     fun displayPercent(quota: ProviderQuota?, error: String?): Int
 
+    fun displayPercent(quota: ProviderQuota?, error: String?, accountId: String): Int = displayPercent(quota, error)
+
     /** Percent for the cake icon, or -1 for the unknown icon. */
     fun cakePercent(quota: ProviderQuota?, error: String?): Int = displayPercent(quota, error)
 
+    fun cakePercent(quota: ProviderQuota?, error: String?, accountId: String): Int =
+        displayPercent(quota, error, accountId)
+
     fun periodElapsedFraction(quota: ProviderQuota?, error: String?): Double?
-    fun authState(): ProviderAuthState
+    fun authState(): ProviderAuthState = authState(type.id)
+    fun authState(accountId: String): ProviderAuthState
     fun createPopupSection(): ProviderPopupSection
 }
 
@@ -86,14 +95,20 @@ internal object OpenAiUi : ProviderUi {
     override val icon: Icon get() = QuotaIcons.OPENAI
     override val updatedAtLabel = "Codex"
 
-    override fun barText(quota: ProviderQuota?, error: String?) =
-        indicatorBarDisplayText(quota as? OpenAiCodexQuota, error, isLoggedIn())
+    override fun barText(quota: ProviderQuota?, error: String?) = barText(quota, error, type.id)
 
-    override fun displayPercent(quota: ProviderQuota?, error: String?) =
-        indicatorDisplayPercent(quota as? OpenAiCodexQuota, error, isLoggedIn())
+    override fun barText(quota: ProviderQuota?, error: String?, accountId: String) =
+        indicatorBarDisplayText(quota as? OpenAiCodexQuota, error, isLoggedIn(accountId))
 
-    override fun cakePercent(quota: ProviderQuota?, error: String?): Int {
-        if (!isLoggedIn() || error != null) return -1
+    override fun displayPercent(quota: ProviderQuota?, error: String?) = displayPercent(quota, error, type.id)
+
+    override fun displayPercent(quota: ProviderQuota?, error: String?, accountId: String) =
+        indicatorDisplayPercent(quota as? OpenAiCodexQuota, error, isLoggedIn(accountId))
+
+    override fun cakePercent(quota: ProviderQuota?, error: String?): Int = cakePercent(quota, error, type.id)
+
+    override fun cakePercent(quota: ProviderQuota?, error: String?, accountId: String): Int {
+        if (!isLoggedIn(accountId) || error != null) return -1
         val state = indicatorQuotaState(quota as? OpenAiCodexQuota) ?: return -1
         if (state.limitReached) return 100
         return state.window?.let { clampPercent(it.usedPercent.roundToInt()) } ?: -1
@@ -102,12 +117,12 @@ internal object OpenAiUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         openAiPeriodElapsedFraction(quota as? OpenAiCodexQuota, error)
 
-    override fun authState() =
-        if (isLoggedIn()) ProviderAuthState.AUTHENTICATED else ProviderAuthState.UNAUTHENTICATED
+    override fun authState(accountId: String) =
+        if (isLoggedIn(accountId)) ProviderAuthState.AUTHENTICATED else ProviderAuthState.UNAUTHENTICATED
 
     override fun createPopupSection() = OpenAiPopupSection()
 
-    private fun isLoggedIn() = QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.OPEN_AI)
+    private fun isLoggedIn(accountId: String) = QuotaAuthService.getInstance().isLoggedIn(accountId, QuotaProviderType.OPEN_AI)
 }
 
 internal object OpenCodeUi : ProviderUi {
@@ -123,8 +138,8 @@ internal object OpenCodeUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         openCodePeriodElapsedFraction(quota as? OpenCodeQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        return if (OpenCodeSessionCookieStore.getInstance().load() != null) {
+    override fun authState(accountId: String): ProviderAuthState {
+        return if (OpenCodeSessionCookieStore.forAccount(accountId).load() != null) {
             ProviderAuthState.AUTHENTICATED
         } else {
             ProviderAuthState.UNAUTHENTICATED
@@ -147,8 +162,8 @@ internal object OllamaUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         ollamaPeriodElapsedFraction(quota as? OllamaQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = OllamaApiKeyStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val store = OllamaApiKeyStore.forAccount(accountId)
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             store.load() != null -> ProviderAuthState.AUTHENTICATED
@@ -172,8 +187,8 @@ internal object ZaiUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         zaiPeriodElapsedFraction(quota as? ZaiQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = ZaiApiKeyStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val store = ZaiApiKeyStore.forAccount(accountId)
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             store.load() != null -> ProviderAuthState.AUTHENTICATED
@@ -197,8 +212,8 @@ internal object MiniMaxUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         miniMaxPeriodElapsedFraction(quota as? MiniMaxQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = MiniMaxApiKeyStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val store = MiniMaxApiKeyStore.forAccount(accountId)
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             !store.load().isNullOrBlank() -> ProviderAuthState.AUTHENTICATED
@@ -222,11 +237,12 @@ internal object MistralUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         mistralPeriodElapsedFraction(quota as? MistralQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = MistralSessionCookieStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val cookies = MistralSessionCookieStore.forAccount(accountId)
+        val apiKey = MistralApiKeyStore.forAccount(accountId)
         return when {
-            !store.isLoaded() -> ProviderAuthState.UNKNOWN
-            !store.load().isNullOrBlank() -> ProviderAuthState.AUTHENTICATED
+            !cookies.isLoaded() && !apiKey.isLoaded() -> ProviderAuthState.UNKNOWN
+            !cookies.load().isNullOrBlank() || !apiKey.load().isNullOrBlank() -> ProviderAuthState.AUTHENTICATED
             else -> ProviderAuthState.UNAUTHENTICATED
         }
     }
@@ -247,8 +263,8 @@ internal object KimiUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         kimiPeriodElapsedFraction(quota as? KimiQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = KimiCredentialsStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val store = KimiCredentialsStore.forAccount(accountId)
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             store.load()?.isUsable() == true -> ProviderAuthState.AUTHENTICATED
@@ -272,8 +288,8 @@ internal object GitHubUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         gitHubPeriodElapsedFraction(quota as? GitHubQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = GitHubCredentialsStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val store = GitHubCredentialsStore.forAccount(accountId)
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             store.load()?.isUsable() == true -> ProviderAuthState.AUTHENTICATED
@@ -297,8 +313,8 @@ internal object CursorUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         cursorPeriodElapsedFraction(quota as? CursorQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        val store = CursorCredentialsStore.getInstance()
+    override fun authState(accountId: String): ProviderAuthState {
+        val store = CursorCredentialsStore.forAccount(accountId)
         return when {
             !store.isLoaded() -> ProviderAuthState.UNKNOWN
             store.hasCredentials() -> ProviderAuthState.AUTHENTICATED
@@ -322,8 +338,8 @@ internal object SuperGrokUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         superGrokPeriodElapsedFraction(quota as? SuperGrokQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        return if (QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.SUPERGROK)) {
+    override fun authState(accountId: String): ProviderAuthState {
+        return if (QuotaAuthService.getInstance().isLoggedIn(accountId, QuotaProviderType.SUPERGROK)) {
             ProviderAuthState.AUTHENTICATED
         } else {
             ProviderAuthState.UNAUTHENTICATED
@@ -346,8 +362,8 @@ internal object ClaudeUi : ProviderUi {
     override fun periodElapsedFraction(quota: ProviderQuota?, error: String?) =
         claudePeriodElapsedFraction(quota as? ClaudeQuota, error)
 
-    override fun authState(): ProviderAuthState {
-        return if (QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.CLAUDE)) {
+    override fun authState(accountId: String): ProviderAuthState {
+        return if (QuotaAuthService.getInstance().isLoggedIn(accountId, QuotaProviderType.CLAUDE)) {
             ProviderAuthState.AUTHENTICATED
         } else {
             ProviderAuthState.UNAUTHENTICATED

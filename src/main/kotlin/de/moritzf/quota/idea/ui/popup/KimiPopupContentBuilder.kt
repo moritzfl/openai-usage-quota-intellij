@@ -49,7 +49,7 @@ internal class KimiPopupSection : ProviderPopupSection() {
             quota == null -> {
                 hideAll()
                 titleLabel.isVisible = true
-                titleLabel.text = "Kimi Code"
+                titleLabel.text = sectionTitle("Kimi Code")
                 sessionBlock.showLoading("Session")
                 overallBlock.showLoading("Overall")
             }
@@ -63,7 +63,7 @@ internal class KimiPopupSection : ProviderPopupSection() {
                 }
 
                 titleLabel.isVisible = true
-                titleLabel.text = quota.plan.ifBlank { "Kimi Code" }
+                titleLabel.text = sectionTitle("Kimi Code", quota.plan.takeIf { it.isNotBlank() })
                 quota.sessionUsage?.let { sessionBlock.updateKimi(it, "Session") } ?: sessionBlock.clear()
                 quota.totalUsage?.let { overallBlock.updateKimi(it, "Overall") } ?: overallBlock.clear()
             }
