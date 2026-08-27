@@ -1,5 +1,9 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+- Mistral Tokens/min and Requests/min stay visible when a refresh gets monthly usage but misses the per-minute headers.
+
 ## [1.10.0] - 2026-08-27
 
 - Provider settings is now an account list. Add or remove logins, including more than one of the same type. Each account has its own name, credentials, and quota. Names appear in settings, the popup, and the status-bar tooltip only when that type has two or more logins. Add, remove, default, standby, host/region, and OpenCode workspace edits wait until you Apply; Cancel drops unapplied changes.
