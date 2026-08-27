@@ -1,5 +1,6 @@
 package de.moritzf.quota.openai.dto
 
+import de.moritzf.quota.shared.lenientDoubleOrNull
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
@@ -10,7 +11,6 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
@@ -39,9 +39,7 @@ object FlexibleIndividualLimitSerializer : KSerializer<FlexibleIndividualLimit?>
         return when (element) {
             is JsonNull -> null
             is JsonPrimitive -> {
-                if (element.booleanOrNull != null) return null
-                val amount = element.doubleOrNull ?: element.contentOrNull?.toDoubleOrNull()
-                amount?.let { FlexibleIndividualLimit(amount = it) }
+                element.lenientDoubleOrNull()?.let { FlexibleIndividualLimit(amount = it) }
             }
             is JsonObject -> FlexibleIndividualLimit(
                 amount = element.flexibleDouble("limit"),
@@ -56,10 +54,7 @@ object FlexibleIndividualLimitSerializer : KSerializer<FlexibleIndividualLimit?>
         }
     }
 
-    private fun JsonObject.flexibleDouble(name: String): Double? {
-        val value = this[name] as? JsonPrimitive ?: return null
-        return value.doubleOrNull ?: value.contentOrNull?.toDoubleOrNull()
-    }
+    private fun JsonObject.flexibleDouble(name: String): Double? = this[name]?.lenientDoubleOrNull()
 
     private fun JsonObject.flexibleLong(name: String): Long? {
         val value = this[name] as? JsonPrimitive ?: return null

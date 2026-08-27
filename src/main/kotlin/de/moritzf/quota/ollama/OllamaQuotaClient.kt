@@ -1,20 +1,12 @@
 package de.moritzf.quota.ollama
 
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
 import kotlin.time.Clock
 import kotlin.time.Instant
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -141,25 +133,7 @@ open class OllamaQuotaClient(
 
 @Serializable
 private data class OllamaLimitWindowDto(
-    @Serializable(with = LenientUsageSerializer::class)
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val usage: Double? = null,
     @SerialName("resets_at") val resetsAt: String? = null,
 )
-
-/**
- * Usage values arrive as decimals (`0.046`), integers, or numeric strings depending on the backend
- * variant. Anything non-numeric is treated as absent instead of failing the window.
- */
-private object LenientUsageSerializer : KSerializer<Double?> {
-    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("OllamaLenientUsage")
-
-    override fun deserialize(decoder: Decoder): Double? {
-        val jsonDecoder = decoder as? JsonDecoder ?: error("LenientUsageSerializer requires JsonDecoder")
-        val primitive = jsonDecoder.decodeJsonElement() as? JsonPrimitive ?: return null
-        return primitive.doubleOrNull ?: primitive.contentOrNull?.toDoubleOrNull()
-    }
-
-    override fun serialize(encoder: Encoder, value: Double?) {
-        error("Serialization of Ollama usage values is not supported")
-    }
-}

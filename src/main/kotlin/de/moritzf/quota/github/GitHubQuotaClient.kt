@@ -1,6 +1,7 @@
 package de.moritzf.quota.github
 
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
@@ -219,7 +220,9 @@ private data class GitHubQuotaSnapshotDto(
     @SerialName("quota_total") val quotaTotal: Double? = null,
     val remaining: Double? = null,
     @SerialName("quota_remaining") val quotaRemaining: Double? = null,
-    @SerialName("percent_remaining") val percentRemaining: Double? = null,
+    @SerialName("percent_remaining")
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
+    val percentRemaining: Double? = null,
     val unlimited: Boolean? = null,
 )
 

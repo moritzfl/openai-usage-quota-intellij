@@ -1,5 +1,6 @@
 package de.moritzf.quota.opencode
 
+import de.moritzf.quota.shared.LenientDoubleSerializer
 import de.moritzf.quota.shared.ProviderQuota
 import kotlin.time.Instant
 import kotlinx.serialization.Serializable
@@ -27,9 +28,9 @@ data class OpenCodeQuota(
 
     override fun usageFraction(): Double? {
         val windows = listOfNotNull(
-            rollingUsage?.usagePercent?.toDouble(),
-            weeklyUsage?.usagePercent?.toDouble(),
-            monthlyUsage?.usagePercent?.toDouble(),
+            rollingUsage?.usagePercent,
+            weeklyUsage?.usagePercent,
+            monthlyUsage?.usagePercent,
         )
         return windows.maxOrNull()?.let { it / 100.0 }
     }
@@ -54,7 +55,8 @@ data class OpenCodeQuota(
 data class OpenCodeUsageWindow(
     val status: String = "ok",
     val resetInSec: Long = 0,
-    val usagePercent: Int = 0,
+    @Serializable(with = LenientDoubleSerializer::class)
+    val usagePercent: Double = 0.0,
 ) {
     val isRateLimited: Boolean get() = status == "rate-limited"
 }

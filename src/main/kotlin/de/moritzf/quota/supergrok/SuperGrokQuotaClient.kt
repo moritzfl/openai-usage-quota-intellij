@@ -1,6 +1,8 @@
 package de.moritzf.quota.supergrok
 
+import com.intellij.openapi.diagnostic.Logger
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.lenientDoubleOrNull
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.json.JsonArray
@@ -10,7 +12,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import java.io.IOException
@@ -27,6 +28,8 @@ open class SuperGrokQuotaClient(
     private val resetListUri: URI = DEFAULT_RESET_LIST_URI,
     private val resetRedeemUri: URI = DEFAULT_RESET_REDEEM_URI,
 ) {
+    private val logger = Logger.getInstance(SuperGrokQuotaClient::class.java)
+
     open fun fetchQuota(accessToken: String?): SuperGrokQuota {
         val token = accessToken?.trim()?.takeIf { it.isNotBlank() }
             ?: throw SuperGrokQuotaException("Grok login required. Log in from SuperGrok settings.")
@@ -119,6 +122,7 @@ open class SuperGrokQuotaClient(
             .header("Authorization", "Bearer $accessToken")
             .header("Accept", "*/*")
             .header("Content-Type", GRPC_WEB_CONTENT_TYPE)
+            .header("connect-protocol-version", "1")
             .header("Origin", "https://grok.com")
             .header("Referer", "https://grok.com/?_s=usage")
             .header("x-grpc-web", "1")
@@ -129,6 +133,7 @@ open class SuperGrokQuotaClient(
         val response = sendBytes(request)
         val status = response.statusCode()
         val payload = response.body()
+        logger.debug("SuperGrok reset response: status=$status, bodySize=${payload.size}")
         if (status == 401 || status == 403) {
             throw SuperGrokQuotaException(
                 "Grok auth expired. Log in to SuperGrok again from settings.",
@@ -137,12 +142,14 @@ open class SuperGrokQuotaClient(
         }
         if (status !in 200..299) {
             if (!required) return emptyList()
+            logger.warn("SuperGrok reset HTTP error: $status, body=${String(payload.copyOfRange(0, payload.size.coerceAtMost(200)))}")
             throw SuperGrokQuotaException("Grok reset request failed (HTTP $status). Try again later.", status)
         }
         val headers = response.headers().map()
         val (grpcStatus, grpcMessage) = SuperGrokResetCodec.grpcStatus(payload, headers)
         if (grpcStatus != 0) {
             if (!required) return emptyList()
+            logger.warn("SuperGrok reset gRPC error: status=$grpcStatus, message=$grpcMessage, bodySize=${payload.size}")
             val detail = grpcMessage?.takeIf { it.isNotBlank() } ?: "status $grpcStatus"
             throw SuperGrokQuotaException("Grok reset request failed ($detail).", status)
         }
@@ -294,9 +301,7 @@ open class SuperGrokQuotaClient(
 
         private fun JsonObject.booleanValue(name: String): Boolean? = (this[name] as? JsonPrimitive)?.booleanOrNull
 
-        private fun JsonObject.doubleValue(name: String): Double? {
-            return (this[name] as? JsonPrimitive)?.doubleOrNull?.takeIf { it.isFinite() }
-        }
+        private fun JsonObject.doubleValue(name: String): Double? = this[name]?.lenientDoubleOrNull()
 
         private fun JsonObject.unitValue(name: String): Long? {
             val value = this[name]

@@ -1,6 +1,7 @@
 package de.moritzf.quota.zai
 
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.Serializable
@@ -221,6 +222,7 @@ private data class ZaiLimitDto(
     val usage: Long? = null,
     val currentValue: Long? = null,
     val remaining: Long? = null,
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val percentage: Double? = null,
     val nextResetTime: Long? = null,
 )

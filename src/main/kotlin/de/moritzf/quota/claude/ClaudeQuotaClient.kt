@@ -1,6 +1,7 @@
 package de.moritzf.quota.claude
 
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
 import kotlin.math.roundToLong
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -268,6 +269,7 @@ private data class ClaudeUsageResponseDto(
 
 @Serializable
 private data class ClaudeUsageWindowDto(
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val utilization: Double? = null,
     @SerialName("resets_at") val resetsAt: String? = null,
 )
@@ -276,6 +278,7 @@ private data class ClaudeUsageWindowDto(
 private data class ClaudeLimitDto(
     val kind: String? = null,
     val group: String? = null,
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val percent: Double? = null,
     @SerialName("resets_at") val resetsAt: String? = null,
     val scope: ClaudeLimitScopeDto? = null,
@@ -302,6 +305,7 @@ private data class ClaudeExtraUsageDto(
     @SerialName("used_credits")
     @Serializable(with = LenientCreditsSerializer::class)
     val usedCredits: Long? = null,
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val utilization: Double? = null,
     val currency: String? = null,
 )

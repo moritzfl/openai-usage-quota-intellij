@@ -38,15 +38,37 @@ class OpenCodeQuotaClientTest {
         assertTrue(quota.mine)
         assertEquals(false, quota.useBalance)
 
-        assertEquals(1, quota.rollingUsage?.usagePercent)
+        assertEquals(1.0, quota.rollingUsage?.usagePercent)
         assertEquals(17999L, quota.rollingUsage?.resetInSec)
         assertEquals("ok", quota.rollingUsage?.status)
 
-        assertEquals(6, quota.weeklyUsage?.usagePercent)
+        assertEquals(6.0, quota.weeklyUsage?.usagePercent)
         assertEquals(545090L, quota.weeklyUsage?.resetInSec)
 
-        assertEquals(24, quota.monthlyUsage?.usagePercent)
+        assertEquals(24.0, quota.monthlyUsage?.usagePercent)
         assertEquals(2503851L, quota.monthlyUsage?.resetInSec)
+    }
+
+    @Test
+    fun parsesFractionalUsagePercentAndRegionArray() {
+        val body = ";0x000001b4;((self.\$R=self.\$R||{})[\"server-fn:1\"]=[]," +
+            "(\$R=>\$R[0]={mine:!0,useBalance:!1,allowTraining:!1," +
+            "region:\$R[1]=[\"us\",\"eu\",\"sg\"]," +
+            "rollingUsage:\$R[2]={status:\"ok\",resetInSec:18000,usagePercent:0,usage:0,limit:1200000000}," +
+            "weeklyUsage:\$R[3]={status:\"ok\",resetInSec:317561,usagePercent:15.2,usage:456329164,limit:3000000000}," +
+            "monthlyUsage:\$R[4]={status:\"ok\",resetInSec:2066078,usagePercent:8.4,usage:506438552,limit:6000000000}})" +
+            "(\$R[\"server-fn:1\"]))"
+
+        val quota = OpenCodeQuotaClient.parseQuotaResponse(body)
+
+        assertTrue(quota.mine)
+        assertEquals(false, quota.useBalance)
+        assertEquals(0.0, quota.rollingUsage?.usagePercent)
+        assertEquals(18000L, quota.rollingUsage?.resetInSec)
+        assertEquals(15.2, quota.weeklyUsage?.usagePercent)
+        assertEquals(317561L, quota.weeklyUsage?.resetInSec)
+        assertEquals(8.4, quota.monthlyUsage?.usagePercent)
+        assertEquals(2066078L, quota.monthlyUsage?.resetInSec)
     }
 
     @Test
@@ -62,8 +84,8 @@ class OpenCodeQuotaClientTest {
         val rollingUsage = quota.rollingUsage!!
 
         assertTrue(rollingUsage.isRateLimited)
-        assertEquals(100, rollingUsage.usagePercent)
-        assertEquals(50, quota.weeklyUsage?.usagePercent)
+        assertEquals(100.0, rollingUsage.usagePercent)
+        assertEquals(50.0, quota.weeklyUsage?.usagePercent)
     }
 
     @Test
@@ -78,7 +100,7 @@ class OpenCodeQuotaClientTest {
         val quota = OpenCodeQuotaClient.parseQuotaResponse(body)
 
         assertEquals("ok {still-json}", quota.rollingUsage?.status)
-        assertEquals(1, quota.rollingUsage?.usagePercent)
+        assertEquals(1.0, quota.rollingUsage?.usagePercent)
     }
 
     @Test

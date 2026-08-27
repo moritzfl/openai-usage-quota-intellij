@@ -1,6 +1,7 @@
 package de.moritzf.quota.openai.dto
 
 import de.moritzf.quota.openai.UsageWindow
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -12,9 +13,15 @@ import kotlin.math.roundToLong
  */
 @Serializable
 data class UsageWindowDto(
-    @SerialName("used_percent") val usedPercent: Double? = null,
-    @SerialName("limit_window_seconds") val limitWindowSeconds: Double? = null,
-    @SerialName("reset_at") val resetAt: Double? = null,
+    @SerialName("used_percent")
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
+    val usedPercent: Double? = null,
+    @SerialName("limit_window_seconds")
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
+    val limitWindowSeconds: Double? = null,
+    @SerialName("reset_at")
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
+    val resetAt: Double? = null,
 ) {
     fun toUsageWindow(): UsageWindow? {
         val rawUsedPercent = usedPercent ?: return null

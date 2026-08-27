@@ -70,6 +70,24 @@ class OpenAiCodexQuotaClientTest {
     }
 
     @Test
+    fun usedPercentAcceptsIntegerAndNumericString() {
+        @Language("JSON")
+        val json = """
+            {
+              "rate_limit": {
+                "primary_window": { "used_percent": 12, "limit_window_seconds": 18000 },
+                "secondary_window": { "used_percent": "45.6", "limit_window_seconds": 604800 }
+              }
+            }
+        """.trimIndent()
+
+        val quota = deserializeQuota(json)
+
+        assertEquals(12.0, quota.primary!!.usedPercent, 0.0001)
+        assertEquals(45.6, quota.secondary!!.usedPercent, 0.0001)
+    }
+
+    @Test
     fun customDeserializationClampsPercentValuesAndAllowsMissingOptionalWindowFields() {
         @Language("JSON")
         val json = """

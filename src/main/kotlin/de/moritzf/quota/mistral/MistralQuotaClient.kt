@@ -1,6 +1,7 @@
 package de.moritzf.quota.mistral
 
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
@@ -438,7 +439,9 @@ internal data class MistralVibeUsage(
 
 @Serializable
 internal data class MistralBillingDto(
-    @SerialName("vibe_usage") val vibeUsage: Double? = null,
+    @SerialName("vibe_usage")
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
+    val vibeUsage: Double? = null,
     @SerialName("start_date") val startDate: String? = null,
     @SerialName("end_date") val endDate: String? = null,
 )
@@ -460,6 +463,8 @@ private data class MistralVibeDataDto(
 
 @Serializable
 private data class MistralVibeJsonDto(
-    @SerialName("usage_percentage") val usagePercentage: Double? = null,
+    @SerialName("usage_percentage")
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
+    val usagePercentage: Double? = null,
     @SerialName("reset_at") val resetAt: String? = null,
 )

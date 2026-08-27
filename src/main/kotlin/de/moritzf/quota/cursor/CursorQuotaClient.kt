@@ -1,6 +1,8 @@
 package de.moritzf.quota.cursor
 
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.LenientDoubleOrNullSerializer
+import de.moritzf.quota.shared.LenientDoubleSerializer
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
@@ -416,8 +418,11 @@ private data class UsageSummaryPlanResponse(
     val limit: Double? = null,
     val remaining: Double? = null,
     val breakdown: UsageSummaryPlanBreakdownResponse? = null,
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val autoPercentUsed: Double? = null,
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val apiPercentUsed: Double? = null,
+    @Serializable(with = LenientDoubleOrNullSerializer::class)
     val totalPercentUsed: Double? = null,
 )
 
@@ -477,8 +482,11 @@ private data class PlanUsageResponse(
     val includedSpend: Double = 0.0,
     val bonusSpend: Double = 0.0,
     val limit: Double = 0.0,
+    @Serializable(with = LenientDoubleSerializer::class)
     val autoPercentUsed: Double = 0.0,
+    @Serializable(with = LenientDoubleSerializer::class)
     val apiPercentUsed: Double = 0.0,
+    @Serializable(with = LenientDoubleSerializer::class)
     val totalPercentUsed: Double = 0.0,
 )
 
