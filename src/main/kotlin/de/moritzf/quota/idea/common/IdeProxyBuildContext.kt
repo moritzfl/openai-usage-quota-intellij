@@ -42,12 +42,20 @@ internal data class IdeProxyBuildContext(
 internal object IdeProxyFactories {
     fun openAi(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return OpenAiCodexSubscriptionProxyProvider(
-            accessTokenProvider = { ctx.authService().getAccessTokenBlocking(QuotaProviderType.OPEN_AI) },
-            accountIdProvider = { ctx.authService().getAccountId(QuotaProviderType.OPEN_AI) },
+            accessTokenProvider = {
+                resolvedAccount(QuotaProviderType.OPEN_AI)?.let { account ->
+                    ctx.authService().getAccessTokenBlocking(account.id, QuotaProviderType.OPEN_AI)
+                }
+            },
+            accountIdProvider = {
+                resolvedAccount(QuotaProviderType.OPEN_AI)?.let { account ->
+                    ctx.authService().getAccountId(account.id, QuotaProviderType.OPEN_AI)
+                }
+            },
             // Upstream 401s route back to the IDE auth service, which owns refresh
             // and persistence; the stale token lets it dedupe concurrent refreshes.
             tokenRefresher = { staleToken ->
-                ctx.authService().forceRefreshBlocking(QuotaProviderType.OPEN_AI, staleToken)
+                refreshToken(ctx, QuotaProviderType.OPEN_AI, staleToken)
             },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
@@ -56,9 +64,13 @@ internal object IdeProxyFactories {
 
     fun superGrok(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return SuperGrokSubscriptionProxyProvider(
-            accessTokenProvider = { ctx.authService().getAccessTokenBlocking(QuotaProviderType.SUPERGROK) },
+            accessTokenProvider = {
+                resolvedAccount(QuotaProviderType.SUPERGROK)?.let { account ->
+                    ctx.authService().getAccessTokenBlocking(account.id, QuotaProviderType.SUPERGROK)
+                }
+            },
             tokenRefresher = { staleToken ->
-                ctx.authService().forceRefreshBlocking(QuotaProviderType.SUPERGROK, staleToken)
+                refreshToken(ctx, QuotaProviderType.SUPERGROK, staleToken)
             },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
@@ -67,8 +79,16 @@ internal object IdeProxyFactories {
 
     fun github(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return GitHubCopilotSubscriptionProxyProvider(
-            accessTokenProvider = { ctx.githubCredentials().loadBlocking()?.accessToken },
-            upstreamBaseUri = githubCopilotBaseUri(ctx.settings.githubEnterpriseHost),
+            accessTokenProvider = {
+                resolvedAccount(QuotaProviderType.GITHUB)?.let { account ->
+                    GitHubCredentialsStore.forAccount(account.id).loadBlocking()?.accessToken
+                }
+            },
+            upstreamBaseUri = githubCopilotBaseUri(
+                ctx.settings.githubHostFor(
+                    resolvedAccount(QuotaProviderType.GITHUB)?.id ?: QuotaProviderType.GITHUB.id,
+                ),
+            ),
             persistentModelCacheProvider = {
                 ctx.settings.subscriptionProxyModelCatalogJson(GitHubCopilotSubscriptionProxyProvider.ID)
             },
@@ -82,8 +102,16 @@ internal object IdeProxyFactories {
 
     fun kimi(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return KimiSubscriptionProxyProvider(
-            credentialsProvider = { ctx.kimiCredentials().loadBlocking() },
-            credentialsSaver = { credentials -> ctx.kimiCredentials().save(credentials) },
+            credentialsProvider = {
+                resolvedAccount(QuotaProviderType.KIMI)?.let { account ->
+                    KimiCredentialsStore.forAccount(account.id).loadBlocking()
+                }
+            },
+            credentialsSaver = { credentials ->
+                resolvedAccount(QuotaProviderType.KIMI)?.let { account ->
+                    KimiCredentialsStore.forAccount(account.id).save(credentials)
+                }
+            },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
@@ -91,8 +119,15 @@ internal object IdeProxyFactories {
 
     fun miniMax(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return MiniMaxSubscriptionProxyProvider(
-            apiKeyProvider = { ctx.miniMaxApiKey().loadBlocking() },
-            regionProvider = { miniMaxProxyRegion(ctx.settings.miniMaxRegionPreference()) },
+            apiKeyProvider = {
+                resolvedAccount(QuotaProviderType.MINIMAX)?.let { account ->
+                    MiniMaxApiKeyStore.forAccount(account.id).loadBlocking()
+                }
+            },
+            regionProvider = {
+                val account = resolvedAccount(QuotaProviderType.MINIMAX)
+                miniMaxProxyRegion(ctx.settings.miniMaxRegionFor(account?.id ?: QuotaProviderType.MINIMAX.id))
+            },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
@@ -100,7 +135,11 @@ internal object IdeProxyFactories {
 
     fun mistral(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return MistralSubscriptionProxyProvider(
-            apiKeyProvider = { ctx.mistralApiKey().loadBlocking() },
+            apiKeyProvider = {
+                resolvedAccount(QuotaProviderType.MISTRAL)?.let { account ->
+                    MistralApiKeyStore.forAccount(account.id).loadBlocking()
+                }
+            },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
@@ -108,7 +147,11 @@ internal object IdeProxyFactories {
 
     fun ollama(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return OllamaSubscriptionProxyProvider(
-            apiKeyProvider = { ctx.ollamaApiKey().loadBlocking() },
+            apiKeyProvider = {
+                resolvedAccount(QuotaProviderType.OLLAMA)?.let { account ->
+                    OllamaApiKeyStore.forAccount(account.id).loadBlocking()
+                }
+            },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
@@ -116,7 +159,11 @@ internal object IdeProxyFactories {
 
     fun openCode(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return OpenCodeZenSubscriptionProxyProvider(
-            apiKeyProvider = { ctx.openCodeApiKey().loadBlocking() },
+            apiKeyProvider = {
+                resolvedAccount(QuotaProviderType.OPEN_CODE)?.let { account ->
+                    OpenCodeApiKeyStore.forAccount(account.id).loadBlocking()
+                }
+            },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
@@ -124,10 +171,36 @@ internal object IdeProxyFactories {
 
     fun zai(ctx: IdeProxyBuildContext): SubscriptionProxyProvider {
         return ZaiSubscriptionProxyProvider(
-            apiKeyProvider = { ctx.zaiApiKey().loadBlocking() },
+            apiKeyProvider = {
+                resolvedAccount(QuotaProviderType.ZAI)?.let { account ->
+                    ZaiApiKeyStore.forAccount(account.id).loadBlocking()
+                }
+            },
             fullRequestLogging = ctx.logRequests,
             requestLogDir = ctx.requestLogDir,
         )
+    }
+
+    private fun resolvedAccount(type: QuotaProviderType): de.moritzf.quota.idea.settings.ProviderAccount? {
+        return de.moritzf.quota.idea.settings.AccountResolver.resolveOrNull(
+            type,
+            capability = de.moritzf.quota.idea.settings.AccountCapability.PROXY,
+        )
+    }
+
+    private fun refreshToken(
+        ctx: IdeProxyBuildContext,
+        type: QuotaProviderType,
+        staleToken: String?,
+    ): String? {
+        val auth = ctx.authService()
+        val owner = staleToken?.let { token ->
+            ctx.settings.accountsOf(type).firstOrNull { account ->
+                auth.peekAccessToken(account.id, type) == token
+            }
+        }
+        val account = owner ?: resolvedAccount(type) ?: return null
+        return auth.forceRefreshBlocking(account.id, type, staleToken)
     }
 
     fun githubCopilotBaseUri(enterpriseHost: String): URI {
