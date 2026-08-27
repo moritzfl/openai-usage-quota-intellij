@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.10.1] - 2026-08-27
 
 - Mistral Tokens/min and Requests/min stay visible when a refresh gets monthly usage but misses the per-minute headers.
 
