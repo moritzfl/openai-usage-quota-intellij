@@ -47,14 +47,17 @@ internal class SuperGrokSettingsPanel(
 
         loginButton.addActionListener {
             val authService = QuotaAuthService.getInstance()
-            if (authService.isLoggedIn(QuotaProviderType.SUPERGROK)) {
+            if (authService.isLoggedIn(accountId(), QuotaProviderType.SUPERGROK)) {
                 updateAuthUi()
                 return@addActionListener
             }
             loginButton.isEnabled = false
             authStatusMessage = AuthStatusMessage("Opening browser...", false, AuthStatusKind.PENDING)
             updateAuthUi()
-            authService.startLoginFlow(type = QuotaProviderType.SUPERGROK, callback = { result ->
+            authService.startLoginFlow(
+                accountId = accountId(),
+                type = QuotaProviderType.SUPERGROK,
+                callback = { result ->
                 ApplicationManager.getApplication().invokeLater({
                     authStatusMessage = if (result.success) {
                         AuthStatusMessage("Connected to xAI/Grok", false, AuthStatusKind.CONNECTED)
@@ -64,7 +67,7 @@ internal class SuperGrokSettingsPanel(
                     loginButton.isEnabled = true
                     updateAuthUi()
                     if (result.success) {
-                        QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.SUPERGROK)
+                        QuotaUsageService.getInstance().refreshAsync(accountId())
                     }
                 }, ModalityState.stateForComponent(this@SuperGrokSettingsPanel))
             }, onAuthUrl = { url ->
@@ -77,7 +80,7 @@ internal class SuperGrokSettingsPanel(
         }
 
         cancelLoginButton.addActionListener {
-            val aborted = QuotaAuthService.getInstance().abortLogin(QuotaProviderType.SUPERGROK, "Login canceled")
+            val aborted = QuotaAuthService.getInstance().abortLogin(accountId(), QuotaProviderType.SUPERGROK, "Login canceled")
             authStatusMessage = AuthStatusMessage(
                 if (aborted) "Login canceled" else "No login in progress",
                 false,
@@ -87,9 +90,9 @@ internal class SuperGrokSettingsPanel(
         }
 
         logoutButton.addActionListener {
-            val cleared = QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.SUPERGROK)
+            val cleared = QuotaAuthService.getInstance().clearCredentials(accountId(), QuotaProviderType.SUPERGROK)
             if (cleared) {
-                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.SUPERGROK)
+                QuotaUsageService.getInstance().clearUsageData(accountId())
             }
             authStatusMessage = if (cleared) {
                 AuthStatusMessage("Logged out of xAI/Grok", false, AuthStatusKind.DISCONNECTED)
@@ -100,9 +103,6 @@ internal class SuperGrokSettingsPanel(
         }
 
         val configPanel = panel {
-            row {
-                cell(popupVisibilityToggle)
-            }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
                 cell(copyUrlButton)
@@ -115,14 +115,13 @@ internal class SuperGrokSettingsPanel(
             row {
                 text("Uses plugin-managed xAI OAuth with the Grok CLI billing API. No local Grok CLI auth file is required.")
             }
-            separator()
         }
 
-        addToTop(configPanel)
-        addToCenter(createResponseSection(jsonViewer))
+        install(configPanel, createResponseSection(jsonViewer))
     }
 
     override fun updateFields() {
+        rememberAccount()
         updateAuthUi()
         updateResponseArea()
     }
@@ -133,10 +132,10 @@ internal class SuperGrokSettingsPanel(
 
     private fun updateAuthUi() {
         val authService = QuotaAuthService.getInstance()
-        val loggedIn = authService.isLoggedIn(QuotaProviderType.SUPERGROK)
-        val inProgress = authService.isLoginInProgress(QuotaProviderType.SUPERGROK)
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.SUPERGROK) as? SuperGrokQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.SUPERGROK)
+        val loggedIn = authService.isLoggedIn(accountId(), QuotaProviderType.SUPERGROK)
+        val inProgress = authService.isLoginInProgress(accountId(), QuotaProviderType.SUPERGROK)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountId()) as? SuperGrokQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountId())
         val uiState = QuotaSettingsAuthUiState.create(loggedIn, inProgress, authStatusMessage)
         loginButton.isEnabled = uiState.loginEnabled
         cancelLoginButton.isEnabled = uiState.cancelEnabled
@@ -158,9 +157,9 @@ internal class SuperGrokSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.SUPERGROK) as? SuperGrokQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.SUPERGROK)
-        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.SUPERGROK)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountId()) as? SuperGrokQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountId())
+        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(accountId())
         jsonViewer.text = when {
             error != null && !rawJson.isNullOrBlank() -> "Error: $error\n\n$rawJson"
             error != null -> "Error: $error"
@@ -173,6 +172,19 @@ internal class SuperGrokSettingsPanel(
     }
 
 
+
+    private var shownAccountId: String? = null
+
+    private fun accountId(): String = accountKey(QuotaProviderType.SUPERGROK)
+
+    private fun rememberAccount() {
+        val id = accountId()
+        if (shownAccountId != id) {
+            shownAccountId = id
+            authStatusMessage = null
+            authUrl = null
+        }
+    }
 
     private fun createActionLink(text: String): ActionLink {
         return ActionLink(text).apply { autoHideOnDisable = false }

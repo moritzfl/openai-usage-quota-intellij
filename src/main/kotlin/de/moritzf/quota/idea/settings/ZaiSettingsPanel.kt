@@ -35,9 +35,6 @@ internal class ZaiSettingsPanel(
     init {
         val configPanel = panel {
             row {
-                cell(popupVisibilityToggle)
-            }
-            row {
                 cell(zaiStatusLabel)
             }
             row("API key:") {
@@ -59,24 +56,22 @@ internal class ZaiSettingsPanel(
                     clearApiKeyNow()
                 }
             }
-            separator()
         }
 
-        addToTop(configPanel)
-        addToCenter(createResponseSection(zaiJsonViewer))
+        install(configPanel, createResponseSection(zaiJsonViewer))
     }
 
     override fun updateFields() {
-        val apiKey = ZaiApiKeyStore.getInstance().load(onLoaded = ::refreshAfterApiKeyLoad)
+        val apiKey = ZaiApiKeyStore.forAccount(accountKey(QuotaProviderType.ZAI)).load(onLoaded = ::refreshAfterApiKeyLoad)
         apiKeyField.text = if (apiKey.isNullOrBlank()) "" else API_KEY_PLACEHOLDER
         updateStatus()
     }
 
     override fun updateStatus() {
-        val apiKeyStore = ZaiApiKeyStore.getInstance()
+        val apiKeyStore = ZaiApiKeyStore.forAccount(accountKey(QuotaProviderType.ZAI))
         val apiKey = apiKeyStore.load(onLoaded = ::refreshAfterApiKeyLoad)
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.ZAI) as? ZaiQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.ZAI)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.ZAI)) as? ZaiQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.ZAI))
 
         when {
             !apiKeyStore.isLoaded() -> {
@@ -104,9 +99,9 @@ internal class ZaiSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.ZAI) as? ZaiQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.ZAI)
-        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.ZAI)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.ZAI)) as? ZaiQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.ZAI))
+        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.ZAI))
 
         zaiJsonViewer.text = when {
             error != null && !rawJson.isNullOrBlank() -> "Error: $error\n\n$rawJson"
@@ -129,13 +124,13 @@ internal class ZaiSettingsPanel(
 
     private fun saveApiKeyNow(apiKey: String) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            val result = runCatching { ZaiApiKeyStore.getInstance().save(apiKey) }
+            val result = runCatching { ZaiApiKeyStore.forAccount(accountKey(QuotaProviderType.ZAI)).save(apiKey) }
             ApplicationManager.getApplication().invokeLater({
                 result.fold(
                     onSuccess = {
                         apiKeyField.text = API_KEY_PLACEHOLDER
                         validateApiKeyNow(apiKey)
-                        QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.ZAI)
+                        QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.ZAI))
                     },
                     onFailure = { error ->
                         zaiStatusLabel.text = formatStatusText("Error: ${error.message ?: "Could not save API key"}", AuthStatusKind.DISCONNECTED)
@@ -149,10 +144,10 @@ internal class ZaiSettingsPanel(
 
     private fun clearApiKeyNow() {
         ApplicationManager.getApplication().executeOnPooledThread {
-            ZaiApiKeyStore.getInstance().clear()
+            ZaiApiKeyStore.forAccount(accountKey(QuotaProviderType.ZAI)).clear()
             ApplicationManager.getApplication().invokeLater({
                 updateStatus()
-                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.ZAI)
+                QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.ZAI))
             }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@ZaiSettingsPanel))
         }
     }

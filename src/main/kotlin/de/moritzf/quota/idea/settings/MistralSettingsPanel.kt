@@ -42,8 +42,7 @@ internal class MistralSettingsPanel(
     private val responseViewer = createResponseViewer()
 
     init {
-        addToTop(panel {
-            row { cell(popupVisibilityToggle) }
+        install(panel {
             row { cell(statusLabel) }
             row {
                 text("Quota cookies from admin.mistral.ai / console.mistral.ai → DevTools → Application → Cookies. Copy each name/value.")
@@ -56,16 +55,14 @@ internal class MistralSettingsPanel(
                 button("Save") { saveNow() }
                 button("Clear") { clearNow() }
             }
-            separator()
-        })
-        addToCenter(createResponseSection(responseViewer, "Last quota response (session + API key)"))
+        }, createResponseSection(responseViewer, "Last quota response (session + API key)"))
     }
 
     override fun updateFields() {
         val stored = MistralQuotaClient.storedSessionFields(
-            MistralSessionCookieStore.getInstance().load(onLoaded = ::refreshAfterLoad),
+            MistralSessionCookieStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).load(onLoaded = ::refreshAfterLoad),
         )
-        val apiKey = MistralApiKeyStore.getInstance().load(onLoaded = ::refreshAfterLoad)
+        val apiKey = MistralApiKeyStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).load(onLoaded = ::refreshAfterLoad)
         sessionNameField.text = stored?.sessionName.orEmpty()
         sessionValueField.text = if (stored?.sessionValue.isNullOrBlank()) "" else PLACEHOLDER
         csrfField.text = if (stored?.csrfToken.isNullOrBlank()) "" else PLACEHOLDER
@@ -74,10 +71,10 @@ internal class MistralSettingsPanel(
     }
 
     override fun updateStatus() {
-        val cookieStore = MistralSessionCookieStore.getInstance()
+        val cookieStore = MistralSessionCookieStore.forAccount(accountKey(QuotaProviderType.MISTRAL))
         val cookie = cookieStore.load(onLoaded = ::refreshAfterLoad)
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.MISTRAL) as? MistralQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.MISTRAL)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.MISTRAL)) as? MistralQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.MISTRAL))
         statusLabel.text = when {
             !cookieStore.isLoaded() -> formatStatusText("Loading credentials...", AuthStatusKind.PENDING)
             cookie.isNullOrBlank() -> formatStatusText("Mistral session cookie missing", AuthStatusKind.DISCONNECTED)
@@ -90,8 +87,8 @@ internal class MistralSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val raw = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.MISTRAL)
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.MISTRAL)
+        val raw = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.MISTRAL))
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.MISTRAL))
         responseViewer.text = when {
             error != null && !raw.isNullOrBlank() -> "Error: $error\n\n$raw"
             error != null -> "Error: $error"
@@ -102,8 +99,8 @@ internal class MistralSettingsPanel(
     }
 
     private fun saveNow() {
-        val current = MistralQuotaClient.storedSessionFields(MistralSessionCookieStore.getInstance().load())
-        val currentKey = MistralApiKeyStore.getInstance().load()
+        val current = MistralQuotaClient.storedSessionFields(MistralSessionCookieStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).load())
+        val currentKey = MistralApiKeyStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).load()
         val sessionName = sessionNameField.text
         val sessionValue = String(sessionValueField.password).let { value ->
             if (value == PLACEHOLDER) current?.sessionValue.orEmpty() else value
@@ -123,11 +120,11 @@ internal class MistralSettingsPanel(
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@MistralSettingsPanel))
                 return@executeOnPooledThread
             }
-            MistralSessionCookieStore.getInstance().save(encoded)
-            MistralApiKeyStore.getInstance().save(apiKey)
+            MistralSessionCookieStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).save(encoded)
+            MistralApiKeyStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).save(apiKey)
             ApplicationManager.getApplication().invokeLater({
                 updateFields()
-                QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.MISTRAL)
+                QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.MISTRAL))
             }, ModalityState.stateForComponent(modalityComponentProvider() ?: this@MistralSettingsPanel))
         }
     }
@@ -135,15 +132,15 @@ internal class MistralSettingsPanel(
     private fun clearNow() {
         setPending("Clearing credentials...")
         ApplicationManager.getApplication().executeOnPooledThread {
-            MistralSessionCookieStore.getInstance().clear()
-            MistralApiKeyStore.getInstance().clear()
+            MistralSessionCookieStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).clear()
+            MistralApiKeyStore.forAccount(accountKey(QuotaProviderType.MISTRAL)).clear()
             ApplicationManager.getApplication().invokeLater({
                 sessionNameField.text = ""
                 sessionValueField.text = ""
                 csrfField.text = ""
                 apiKeyField.text = ""
                 updateStatus()
-                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.MISTRAL)
+                QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.MISTRAL))
             }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
         }
     }

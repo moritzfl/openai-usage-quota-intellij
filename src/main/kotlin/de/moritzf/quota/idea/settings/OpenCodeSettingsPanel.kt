@@ -49,18 +49,18 @@ internal class OpenCodeSettingsPanel(
         workspaceComboBox.addActionListener {
             if (updatingWorkspaceComboBox) return@addActionListener
             val selected = workspaceComboBox.selectedItem as? OpenCodeWorkspace ?: return@addActionListener
+            val accountId = accountKey(QuotaProviderType.OPEN_CODE)
+            if (boundAccount?.extra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE) == selected.id) return@addActionListener
+            boundAccount?.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, selected.id)
             val state = QuotaSettingsState.getInstance()
-            if (state.openCodeWorkspaceId != selected.id) {
-                state.openCodeWorkspaceId = selected.id
-                QuotaUsageService.getInstance().resetOpenCodeWorkspaceCache()
-                QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.OPEN_CODE)
+            if (state.account(accountId) != null && state.openCodeWorkspaceIdFor(accountId) != selected.id) {
+                state.setOpenCodeWorkspaceIdFor(accountId, selected.id)
+                QuotaUsageService.getInstance().resetOpenCodeWorkspaceCache(accountId)
+                QuotaUsageService.getInstance().refreshAsync(accountId)
             }
         }
 
         val openCodeConfigPanel = panel {
-            row {
-                cell(popupVisibilityToggle)
-            }
             row {
                 cell(openCodeStatusLabel)
             }
@@ -76,23 +76,27 @@ internal class OpenCodeSettingsPanel(
                 button("Save") {
                     val cookie = String(openCodeCookieField.password)
                     if (cookie.isNotBlank() && cookie != OPENCODE_COOKIE_PLACEHOLDER) {
-                        OpenCodeSessionCookieStore.getInstance().save(cookie)
+                        OpenCodeSessionCookieStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE)).save(cookie)
                         openCodeCookieField.text = OPENCODE_COOKIE_PLACEHOLDER
                         setOpenCodePendingStatus("Validating session cookie...")
                         loadWorkspaces(cookie)
-                        QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.OPEN_CODE)
+                        QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.OPEN_CODE))
                     }
                 }
                 button("Clear") {
-                    OpenCodeSessionCookieStore.getInstance().clear()
+                    OpenCodeSessionCookieStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE)).clear()
                     openCodeCookieField.text = ""
-                    QuotaSettingsState.getInstance().openCodeWorkspaceId = null
+                    boundAccount?.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, null)
+                    val accountId = accountKey(QuotaProviderType.OPEN_CODE)
+                    if (QuotaSettingsState.getInstance().account(accountId) != null) {
+                        QuotaSettingsState.getInstance().setOpenCodeWorkspaceIdFor(accountId, null)
+                    }
                     workspaceComboBox.removeAllItems()
                     workspaceComboBox.isVisible = false
                     workspaceLabel.isVisible = false
                     workspaceLoadingLabel.isVisible = false
                     updateStatus()
-                    QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.OPEN_CODE)
+                    QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.OPEN_CODE))
                 }
             }
             row {
@@ -120,16 +124,14 @@ internal class OpenCodeSettingsPanel(
                     .resizableColumn()
                     .align(AlignX.FILL)
             }
-            separator()
         }
 
-        addToTop(openCodeConfigPanel)
-        addToCenter(createResponseSection(openCodeJsonViewer))
+        install(openCodeConfigPanel, createResponseSection(openCodeJsonViewer))
     }
 
     override fun updateFields() {
-        val apiKey = OpenCodeApiKeyStore.getInstance().load(onLoaded = ::refreshAfterApiKeyLoad)
-        val cookieStore = OpenCodeSessionCookieStore.getInstance()
+        val apiKey = OpenCodeApiKeyStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE)).load(onLoaded = ::refreshAfterApiKeyLoad)
+        val cookieStore = OpenCodeSessionCookieStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE))
         val cookie = cookieStore.load(onLoaded = ::refreshAfterCookieLoad)
         apiKeyField.text = if (apiKey.isNullOrBlank()) "" else API_KEY_PLACEHOLDER
         openCodeCookieField.text = if (cookie.isNullOrBlank()) "" else OPENCODE_COOKIE_PLACEHOLDER
@@ -150,12 +152,12 @@ internal class OpenCodeSettingsPanel(
     }
 
     override fun updateStatus() {
-        val apiKeyStore = OpenCodeApiKeyStore.getInstance()
-        val cookieStore = OpenCodeSessionCookieStore.getInstance()
+        val apiKeyStore = OpenCodeApiKeyStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE))
+        val cookieStore = OpenCodeSessionCookieStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE))
         val apiKey = apiKeyStore.load(onLoaded = ::refreshAfterApiKeyLoad)
         val cookie = cookieStore.load(onLoaded = ::refreshAfterCookieLoad)
-        val openCodeQuota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.OPEN_CODE) as? OpenCodeQuota
-        val openCodeError = QuotaUsageService.getInstance().getLastError(QuotaProviderType.OPEN_CODE)
+        val openCodeQuota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.OPEN_CODE)) as? OpenCodeQuota
+        val openCodeError = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.OPEN_CODE))
 
         when {
             !apiKeyStore.isLoaded() || !cookieStore.isLoaded() -> {
@@ -199,22 +201,22 @@ internal class OpenCodeSettingsPanel(
     private fun saveApiKeyNow() {
         val apiKey = String(apiKeyField.password).trim()
         if (apiKey.isNotBlank() && apiKey != API_KEY_PLACEHOLDER) {
-            OpenCodeApiKeyStore.getInstance().save(apiKey)
+            OpenCodeApiKeyStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE)).save(apiKey)
             apiKeyField.text = API_KEY_PLACEHOLDER
             updateStatus()
         }
     }
 
     private fun clearApiKeyNow() {
-        OpenCodeApiKeyStore.getInstance().clear()
+        OpenCodeApiKeyStore.forAccount(accountKey(QuotaProviderType.OPEN_CODE)).clear()
         apiKeyField.text = ""
         updateStatus()
     }
 
     override fun updateResponseArea() {
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.OPEN_CODE) as? OpenCodeQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.OPEN_CODE)
-        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.OPEN_CODE)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.OPEN_CODE)) as? OpenCodeQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.OPEN_CODE))
+        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.OPEN_CODE))
 
         openCodeJsonViewer.text = when {
             error != null && !rawJson.isNullOrBlank() -> "Error: $error\n\n$rawJson"
@@ -250,7 +252,9 @@ internal class OpenCodeSettingsPanel(
                     workspaceComboBox.removeAllItems()
                     workspaces.forEach { workspaceComboBox.addItem(it) }
 
-                    val storedId = QuotaSettingsState.getInstance().openCodeWorkspaceId
+                    val accountId = accountKey(QuotaProviderType.OPEN_CODE)
+                    val storedId = boundAccount?.extra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE)
+                        ?: QuotaSettingsState.getInstance().openCodeWorkspaceIdFor(accountId)
                     val preselected = workspaces.find { it.id == storedId }
                         ?: workspaces.firstOrNull { it.mine && it.hasGoSubscription }
                         ?: workspaces.firstOrNull { it.hasGoSubscription }
@@ -258,9 +262,13 @@ internal class OpenCodeSettingsPanel(
 
                     updatingWorkspaceComboBox = true
                     try {
-                        preselected?.let {
-                            workspaceComboBox.selectedItem = it
-                            QuotaSettingsState.getInstance().openCodeWorkspaceId = it.id
+                        preselected?.let { workspace ->
+                            workspaceComboBox.selectedItem = workspace
+                            boundAccount?.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, workspace.id)
+                            val state = QuotaSettingsState.getInstance()
+                            if (state.account(accountId) != null) {
+                                state.setOpenCodeWorkspaceIdFor(accountId, workspace.id)
+                            }
                         }
                     } finally {
                         updatingWorkspaceComboBox = false
@@ -294,6 +302,8 @@ internal class OpenCodeSettingsPanel(
             updateFields()
         }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
     }
+
+    fun selectedWorkspaceId(): String? = (workspaceComboBox.selectedItem as? OpenCodeWorkspace)?.id
 
     private fun refreshAfterApiKeyLoad() {
         updateFields()

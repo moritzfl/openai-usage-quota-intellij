@@ -37,9 +37,6 @@ internal class CursorSettingsPanel(
     init {
         val cursorConfigPanel = panel {
             row {
-                cell(popupVisibilityToggle)
-            }
-            row {
                 cell(cursorStatusLabel)
             }
             row {
@@ -59,29 +56,27 @@ internal class CursorSettingsPanel(
                 button("Save") {
                     val sessionCookie = String(sessionCookieField.password)
                     if (sessionCookie.isNotBlank() && sessionCookie != SESSION_COOKIE_PLACEHOLDER) {
-                        CursorCredentialsStore.getInstance().saveSessionCookie(sessionCookie)
+                        CursorCredentialsStore.forAccount(accountKey(QuotaProviderType.CURSOR)).saveSessionCookie(sessionCookie)
                         sessionCookieField.text = SESSION_COOKIE_PLACEHOLDER
                         setCursorPendingStatus("Validating session cookie...")
                         validateSessionCookieNow(sessionCookie)
-                        QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.CURSOR)
+                        QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.CURSOR))
                     }
                 }
                 button("Clear") {
-                    CursorCredentialsStore.getInstance().clearSessionCookie()
+                    CursorCredentialsStore.forAccount(accountKey(QuotaProviderType.CURSOR)).clearSessionCookie()
                     sessionCookieField.text = ""
                     updateStatus()
-                    QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.CURSOR)
+                    QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.CURSOR))
                 }
             }
-            separator()
         }
 
-        addToTop(cursorConfigPanel)
-        addToCenter(createResponseSection(cursorJsonViewer))
+        install(cursorConfigPanel, createResponseSection(cursorJsonViewer))
     }
 
     override fun updateFields() {
-        val store = CursorCredentialsStore.getInstance()
+        val store = CursorCredentialsStore.forAccount(accountKey(QuotaProviderType.CURSOR))
         store.load(onLoaded = ::refreshAfterCredentialLoad)
         sessionCookieField.text = when {
             !store.isLoaded() -> ""
@@ -93,10 +88,10 @@ internal class CursorSettingsPanel(
     }
 
     override fun updateStatus() {
-        val store = CursorCredentialsStore.getInstance()
+        val store = CursorCredentialsStore.forAccount(accountKey(QuotaProviderType.CURSOR))
         store.load(onLoaded = ::refreshAfterCredentialLoad)
-        val cursorQuota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.CURSOR) as? CursorQuota
-        val cursorError = QuotaUsageService.getInstance().getLastError(QuotaProviderType.CURSOR)
+        val cursorQuota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.CURSOR)) as? CursorQuota
+        val cursorError = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.CURSOR))
         updateAuthSourceLabel(store)
 
         when {
@@ -188,9 +183,9 @@ internal class CursorSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.CURSOR) as? CursorQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.CURSOR)
-        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.CURSOR)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.CURSOR)) as? CursorQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.CURSOR))
+        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.CURSOR))
 
         cursorJsonViewer.text = when {
             error != null && !rawJson.isNullOrBlank() -> "Error: $error\n\n$rawJson"

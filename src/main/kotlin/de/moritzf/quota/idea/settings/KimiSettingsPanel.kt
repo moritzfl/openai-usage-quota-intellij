@@ -46,7 +46,7 @@ internal class KimiSettingsPanel(
         }
 
         loginButton.addActionListener {
-            val authService: AuthService = KimiAuthService.getInstance()
+            val authService: AuthService = KimiAuthService.forAccount(accountKey(QuotaProviderType.KIMI))
             if (authService.isLoggedIn()) {
                 updateStatus()
                 return@addActionListener
@@ -64,7 +64,7 @@ internal class KimiSettingsPanel(
                     loginButton.isEnabled = true
                     updateStatus()
                     if (result.success) {
-                        QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.KIMI)
+                        QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.KIMI))
                     }
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
             }, onVerificationUrl = { url, userCode ->
@@ -81,7 +81,7 @@ internal class KimiSettingsPanel(
         }
 
         cancelLoginButton.addActionListener {
-            val aborted = (KimiAuthService.getInstance() as AuthService).abortLogin("Login canceled")
+            val aborted = (KimiAuthService.forAccount(accountKey(QuotaProviderType.KIMI)) as AuthService).abortLogin("Login canceled")
             authStatusMessage = AuthStatusMessage(
                 if (aborted) "Login canceled" else "No login in progress",
                 false,
@@ -93,17 +93,16 @@ internal class KimiSettingsPanel(
         logoutButton.addActionListener {
             setPending("Clearing credentials...")
             ApplicationManager.getApplication().executeOnPooledThread {
-                (KimiAuthService.getInstance() as AuthService).clearCredentials()
+                (KimiAuthService.forAccount(accountKey(QuotaProviderType.KIMI)) as AuthService).clearCredentials()
                 ApplicationManager.getApplication().invokeLater({
                     authStatusMessage = AuthStatusMessage("Logged out", false, AuthStatusKind.DISCONNECTED)
-                    QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.KIMI, "Not logged in")
+                    QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.KIMI), "Not logged in")
                     updateStatus()
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
             }
         }
 
-        addToTop(panel {
-            row { cell(popupVisibilityToggle) }
+        install(panel {
             row { cell(statusLabel).gap(RightGap.SMALL); cell(copyUrlButton) }
             row { cell(userCodeLabel) }
             row {
@@ -111,22 +110,21 @@ internal class KimiSettingsPanel(
                 cell(cancelLoginButton).gap(RightGap.SMALL)
                 cell(logoutButton)
             }
-            separator()
-        })
-        addToCenter(createResponseSection(responseViewer))
+        }, createResponseSection(responseViewer))
     }
 
     override fun updateFields() {
-        KimiCredentialsStore.getInstance().load(onLoaded = ::refreshAfterCredentialsLoad)
+        rememberAccount()
+        KimiCredentialsStore.forAccount(accountKey(QuotaProviderType.KIMI)).load(onLoaded = ::refreshAfterCredentialsLoad)
         updateStatus()
     }
 
     override fun updateStatus() {
-        val store = KimiCredentialsStore.getInstance()
+        val store = KimiCredentialsStore.forAccount(accountKey(QuotaProviderType.KIMI))
         val credentials = store.load(onLoaded = ::refreshAfterCredentialsLoad)
-        val inProgress = (KimiAuthService.getInstance() as AuthService).isLoginInProgress()
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.KIMI) as? KimiQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.KIMI)
+        val inProgress = (KimiAuthService.forAccount(accountKey(QuotaProviderType.KIMI)) as AuthService).isLoginInProgress()
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.KIMI)) as? KimiQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.KIMI))
         val fallbackMessage = when {
             !store.isLoaded() -> AuthStatusMessage("Loading credentials...", false, AuthStatusKind.PENDING)
             credentials?.isUsable() != true -> AuthStatusMessage("Not logged in", false, AuthStatusKind.DISCONNECTED)
@@ -150,8 +148,8 @@ internal class KimiSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val raw = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.KIMI)
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.KIMI)
+        val raw = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.KIMI))
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.KIMI))
         responseViewer.text = when {
             error != null && !raw.isNullOrBlank() -> "Error: $error\n\n$raw"
             error != null -> "Error: $error"
@@ -159,6 +157,16 @@ internal class KimiSettingsPanel(
             else -> raw
         }
         responseViewer.setCaretPosition(0)
+    }
+
+    private var shownAccountId: String? = null
+
+    private fun rememberAccount() {
+        val id = accountKey(QuotaProviderType.KIMI)
+        if (shownAccountId != id) {
+            shownAccountId = id
+            authStatusMessage = null
+        }
     }
 
     private fun refreshAfterCredentialsLoad() {

@@ -459,13 +459,25 @@ internal class ProviderReorderPanel(
         }
 
         internal fun statusSnapshot(type: QuotaProviderType): ProviderListStatusSnapshot {
-            val auth = runCatching { ProviderUiRegistry.forType(type).authState() }
+            return statusSnapshot(type, type.id)
+        }
+
+        internal fun statusSnapshot(account: de.moritzf.quota.idea.settings.ProviderAccount): ProviderListStatusSnapshot {
+            val type = account.providerType() ?: return ProviderListStatusSnapshot(
+                ProviderListStatus.NEVER_CONFIGURED,
+                ProviderListStatus.explain(ProviderListStatus.NEVER_CONFIGURED, null),
+            )
+            return statusSnapshot(type, account.id)
+        }
+
+        private fun statusSnapshot(type: QuotaProviderType, accountId: String): ProviderListStatusSnapshot {
+            val auth = runCatching { ProviderUiRegistry.forType(type).authState(accountId) }
                 .getOrDefault(ProviderAuthState.UNKNOWN)
             val service = runCatching { QuotaUsageService.getInstance() }.getOrNull()
-            val error = service?.getLastError(type)
+            val error = service?.getLastError(accountId)
             val status = ProviderListStatus.resolve(
                 auth = auth,
-                hasQuota = service?.getLastQuota(type) != null,
+                hasQuota = service?.getLastQuota(accountId) != null,
                 hasError = !error.isNullOrBlank(),
             )
             return ProviderListStatusSnapshot(status, ProviderListStatus.explain(status, error))

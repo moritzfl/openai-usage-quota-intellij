@@ -56,7 +56,7 @@ internal class OpenAiSettingsPanel(
 
         loginButton.addActionListener {
             val authService = QuotaAuthService.getInstance()
-            if (authService.isLoggedIn(QuotaProviderType.OPEN_AI)) {
+            if (authService.isLoggedIn(accountKey(), QuotaProviderType.OPEN_AI)) {
                 updateAuthUi()
                 return@addActionListener
             }
@@ -64,7 +64,10 @@ internal class OpenAiSettingsPanel(
             loginButton.isEnabled = false
             authStatusMessage = AuthStatusMessage("Opening browser...", false, AuthStatusKind.PENDING)
             updateAuthUi()
-            authService.startLoginFlow(type = QuotaProviderType.OPEN_AI, callback = { result ->
+            authService.startLoginFlow(
+                accountId = boundAccountId.ifBlank { QuotaProviderType.OPEN_AI.id },
+                type = QuotaProviderType.OPEN_AI,
+                callback = { result ->
                 ApplicationManager.getApplication().invokeLater({
                     authStatusMessage = if (result.success) {
                         AuthStatusMessage("Connected", false, AuthStatusKind.CONNECTED)
@@ -76,7 +79,7 @@ internal class OpenAiSettingsPanel(
                     updateAuthUi()
                     updateAccountFields()
                     if (result.success) {
-                        QuotaUsageService.getInstance().refreshNowAsync()
+                        QuotaUsageService.getInstance().refreshAsync(accountKey())
                     }
                 }, ModalityState.stateForComponent(this@OpenAiSettingsPanel))
             }, onAuthUrl = { url ->
@@ -90,7 +93,7 @@ internal class OpenAiSettingsPanel(
         }
 
         cancelLoginButton.addActionListener {
-            val aborted = QuotaAuthService.getInstance().abortLogin(QuotaProviderType.OPEN_AI, "Login canceled")
+            val aborted = QuotaAuthService.getInstance().abortLogin(accountKey(), QuotaProviderType.OPEN_AI, "Login canceled")
             authStatusMessage = AuthStatusMessage(
                 if (aborted) "Login canceled" else "No login in progress",
                 false,
@@ -101,9 +104,9 @@ internal class OpenAiSettingsPanel(
         }
 
         logoutButton.addActionListener {
-            val cleared = QuotaAuthService.getInstance().clearCredentials(QuotaProviderType.OPEN_AI)
+            val cleared = QuotaAuthService.getInstance().clearCredentials(accountKey(), QuotaProviderType.OPEN_AI)
             if (cleared) {
-                QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.OPEN_AI, "Not logged in")
+                QuotaUsageService.getInstance().clearUsageData(accountKey(), "Not logged in")
             }
             authStatusMessage = if (cleared) {
                 AuthStatusMessage("Logged out", false, AuthStatusKind.DISCONNECTED)
@@ -118,9 +121,6 @@ internal class OpenAiSettingsPanel(
         }
 
         val usageTrackingConfigPanel = panel {
-            row {
-                cell(popupVisibilityToggle)
-            }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
                 cell(copyUrlButton)
@@ -143,16 +143,11 @@ internal class OpenAiSettingsPanel(
             }
         }
 
-        val usageTrackingPanel = BorderLayoutPanel().apply {
-            isOpaque = false
-            addToTop(usageTrackingConfigPanel)
-            addToCenter(createResponseSection(codexResponseViewer))
-        }
-
-        addToCenter(usageTrackingPanel)
+        install(usageTrackingConfigPanel, createResponseSection(codexResponseViewer))
     }
 
     override fun updateFields() {
+        rememberAccount()
         updateAuthUi()
         updateAccountFields()
     }
@@ -164,8 +159,8 @@ internal class OpenAiSettingsPanel(
 
     fun updateAuthUi() {
         val authService = QuotaAuthService.getInstance()
-        val loggedIn = authService.isLoggedIn(QuotaProviderType.OPEN_AI)
-        val inProgress = authService.isLoginInProgress(QuotaProviderType.OPEN_AI)
+        val loggedIn = authService.isLoggedIn(accountKey(), QuotaProviderType.OPEN_AI)
+        val inProgress = authService.isLoginInProgress(accountKey(), QuotaProviderType.OPEN_AI)
         val uiState = QuotaSettingsAuthUiState.create(loggedIn, inProgress, authStatusMessage)
         loginButton.isEnabled = uiState.loginEnabled
         cancelLoginButton.isEnabled = uiState.cancelEnabled
@@ -180,12 +175,12 @@ internal class OpenAiSettingsPanel(
 
     fun updateAccountFields() {
         val authService = QuotaAuthService.getInstance()
-        accountIdField.text = authService.getAccountId(QuotaProviderType.OPEN_AI).orEmpty()
-        emailField.text = if (authService.isLoggedIn(QuotaProviderType.OPEN_AI)) (QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.OPEN_AI) as? OpenAiCodexQuota)?.email else null.orEmpty()
+        accountIdField.text = authService.getAccountId(accountKey(), QuotaProviderType.OPEN_AI).orEmpty()
+        emailField.text = if (authService.isLoggedIn(accountKey(), QuotaProviderType.OPEN_AI)) (QuotaUsageService.getInstance().getLastQuota(accountKey()) as? OpenAiCodexQuota)?.email else null.orEmpty()
     }
 
     override fun updateResponseArea() {
-        val json = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.OPEN_AI)
+        val json = QuotaUsageService.getInstance().getLastResponseJson(accountKey())
         codexResponseViewer.text = if (json.isNullOrBlank()) "No quota response yet." else json
         codexResponseViewer.setCaretPosition(0)
     }
@@ -195,6 +190,19 @@ internal class OpenAiSettingsPanel(
     private fun createActionLink(text: String): ActionLink {
         return ActionLink(text).apply {
             autoHideOnDisable = false
+        }
+    }
+
+    private var shownAccountId: String? = null
+
+    private fun accountKey(): String = boundAccountId.ifBlank { QuotaProviderType.OPEN_AI.id }
+
+    private fun rememberAccount() {
+        val id = accountKey()
+        if (shownAccountId != id) {
+            shownAccountId = id
+            authStatusMessage = null
+            authUrl = null
         }
     }
 

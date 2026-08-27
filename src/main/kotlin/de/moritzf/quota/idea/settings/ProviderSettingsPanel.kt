@@ -4,6 +4,8 @@ import com.intellij.icons.AllIcons
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.components.JBTextArea
+import com.intellij.ui.dsl.builder.AlignX
+import com.intellij.ui.dsl.builder.panel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.components.BorderLayoutPanel
 import java.awt.Cursor
@@ -21,6 +23,46 @@ import javax.swing.Timer
  */
 internal abstract class ProviderSettingsPanel : BorderLayoutPanel() {
     val popupVisibilityToggle = PopupVisibilityToggle()
+    var boundAccountId: String = ""
+    var boundAccount: ProviderAccount? = null
+    private val routingHost = BorderLayoutPanel().apply {
+        isOpaque = false
+        isVisible = false
+    }
+
+    protected fun accountKey(type: de.moritzf.quota.idea.common.QuotaProviderType): String =
+        boundAccountId.ifBlank { type.id }
+
+    fun showRouting(component: JComponent?) {
+        routingHost.removeAll()
+        if (component != null) {
+            routingHost.addToCenter(component)
+            routingHost.isVisible = true
+        } else {
+            routingHost.isVisible = false
+        }
+        routingHost.revalidate()
+        routingHost.repaint()
+    }
+
+    protected fun install(config: JComponent, response: JComponent) {
+        addToTop(
+            panel {
+                group("Connection") {
+                    row {
+                        cell(config).align(AlignX.FILL).resizableColumn()
+                    }
+                }
+            },
+        )
+        addToCenter(
+            BorderLayoutPanel().apply {
+                isOpaque = false
+                addToTop(routingHost)
+                addToCenter(response)
+            },
+        )
+    }
 
     override fun getPreferredSize(): Dimension {
         val size = super.getPreferredSize()

@@ -33,14 +33,18 @@ import de.moritzf.quota.idea.mcp.McpServerUrlResolver
 import de.moritzf.quota.idea.openai.OpenAiProxyService
 import de.moritzf.quota.idea.ui.QuotaUiUtil
 import de.moritzf.quota.idea.ui.indicator.*
+import de.moritzf.quota.idea.ui.settings.AccountListPanel
 import de.moritzf.quota.idea.ui.settings.ProviderListStatus
 import de.moritzf.quota.idea.ui.settings.ProviderReorderPanel
 import de.moritzf.quota.minimax.MiniMaxRegionPreference
 import de.moritzf.quota.shared.ProviderQuota
 import java.awt.CardLayout
+import java.awt.Component
 import java.awt.Dimension
+import javax.swing.DefaultListCellRenderer
 import javax.swing.Icon
 import javax.swing.JComponent
+import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.SwingConstants
 import javax.swing.Timer
@@ -62,7 +66,13 @@ class QuotaSettingsConfigurable : Configurable {
     private var displayModeComboBox: ComboBox<QuotaDisplayMode>? = null
     private var indicatorSourceComboBox: ComboBox<QuotaIndicatorSource>? = null
     private var displayModePreview: DisplayModePreviewComponent? = null
-    private var providerReorderPanel: ProviderReorderPanel? = null
+    private var accountListPanel: AccountListPanel? = null
+    private var accountNameField: com.intellij.ui.components.JBTextField? = null
+    private var routingPanel: JComponent? = null
+    private var visibilitySlot: BorderLayoutPanel? = null
+    private var primaryAccountCombo: ComboBox<ProviderAccount>? = null
+    private var standbyCheckBox: JBCheckBox? = null
+    private var updatingRouting: Boolean = false
     private var serviceCards: JPanel? = null
     private var serviceCardLayout: CardLayout? = null
     private var detailHeaderPanel: JComponent? = null
@@ -74,6 +84,7 @@ class QuotaSettingsConfigurable : Configurable {
     private var mcpServerStatusTimer: Timer? = null
     private var mcpSyncTargetsPanel: McpServerSyncTargetsPanel? = null
     private var proxySettingsPanel: SubscriptionProxySettingsPanel? = null
+    private var boundDetailAccountId: String? = null
 
     override fun getDisplayName(): String = "LLM Subscription Usage"
 
@@ -122,31 +133,42 @@ class QuotaSettingsConfigurable : Configurable {
             isOpaque = false
         }
 
-        providerReorderPanel = ProviderReorderPanel(
-            QuotaSettingsState.getInstance().providerOrderList(),
-            onOrderChanged = { },
-            onProviderSelected = { type -> showProviderDetail(type) },
+        accountNameField = com.intellij.ui.components.JBTextField()
+        primaryAccountCombo = ComboBox<ProviderAccount>().apply {
+            renderer = AccountNameRenderer()
+            prototypeDisplayValue = ProviderAccount(name = "OpenAI 2")
+            toolTipText = "Used first for MCP tools when no account is specified, and for the local proxy."
+        }
+        standbyCheckBox = JBCheckBox().apply {
+            toolTipText = "If this login is out of quota, MCP spend tools and the local proxy may use the other logins."
+        }
+        accountListPanel = AccountListPanel(
+            onAccountSelected = { account -> showAccountDetail(account) },
+            onAccountsChanged = {
+                showAccountDetail(accountListPanel?.selectedAccount())
+            },
+            onBeforeRemove = { flushVisibleAccountFields() },
         )
 
         rebuildServiceCards()
 
         panel = buildSettingsPanel()
         rootComponent = panel
-        showProviderDetail(providerReorderPanel?.getSelectedProvider())
+        showAccountDetail(accountListPanel?.selectedAccount())
 
         connection = ApplicationManager.getApplication().messageBus.connect()
         connection!!.subscribe(QuotaUsageListener.TOPIC, object : QuotaUsageListener {
-            override fun onQuotaUpdated(type: QuotaProviderType, quota: ProviderQuota?, error: String?) {
+            override fun onQuotaUpdated(type: QuotaProviderType, quota: ProviderQuota?, error: String?, accountId: String) {
                 val providerPanel = providerPanelsByType[type] ?: return
                 val currentPanel = rootComponent ?: panel ?: return
                 ApplicationManager.getApplication().invokeLater({
-                    providerPanel.updateResponseArea()
-                    providerPanel.updateStatus()
-                    providerReorderPanel?.refreshStatuses()
-                    val selected = providerReorderPanel?.getSelectedProvider()
-                    if (selected == type) {
+                    val selected = accountListPanel?.selectedAccount()
+                    if (selected != null && (selected.id == accountId || selected.providerType() == type)) {
+                        providerPanel.updateResponseArea()
+                        providerPanel.updateStatus()
                         updateDetailHeaderReason(selected)
                     }
+                    accountListPanel?.refreshStatuses()
                 }, ModalityState.stateForComponent(currentPanel))
             }
         })
@@ -164,6 +186,9 @@ class QuotaSettingsConfigurable : Configurable {
         mcpSyncTargetsPanel?.validationError()?.let { error ->
             throw ConfigurationException(error)
         }
+        if (accountListPanel?.hasDuplicateNames() ?: QuotaSettingsState.getInstance().hasDuplicateAccountNames()) {
+            throw ConfigurationException("Account names must be unique per provider and cannot be blank.")
+        }
         panel?.apply()
     }
 
@@ -171,7 +196,13 @@ class QuotaSettingsConfigurable : Configurable {
         panel?.reset()
     }
 
+    override fun cancel() {
+        accountListPanel?.discardPending()
+        super.cancel()
+    }
+
     override fun disposeUIResources() {
+        accountListPanel?.discardPending()
         connection?.disconnect()
         connection = null
         rootComponent = null
@@ -180,7 +211,13 @@ class QuotaSettingsConfigurable : Configurable {
         displayModeComboBox = null
         indicatorSourceComboBox = null
         displayModePreview = null
-        providerReorderPanel = null
+        accountListPanel = null
+        accountNameField = null
+        routingPanel = null
+        visibilitySlot = null
+        primaryAccountCombo = null
+        standbyCheckBox = null
+        updatingRouting = false
         serviceCards = null
         serviceCardLayout = null
         detailHeaderPanel = null
@@ -195,6 +232,7 @@ class QuotaSettingsConfigurable : Configurable {
         mcpServerStatusLabel = null
         mcpSyncTargetsPanel = null
         proxySettingsPanel = null
+        boundDetailAccountId = null
     }
 
     private fun startMcpServerStatusRefresh() {
@@ -260,15 +298,26 @@ class QuotaSettingsConfigurable : Configurable {
             cards.add(panel, type.id)
         }
         cards.add(createEmptyDetail(), EMPTY_CARD_ID)
-        val selectedProvider = providerReorderPanel?.getSelectedProvider()
-            ?: QuotaSettingsState.getInstance().providerOrderList().firstOrNull()
-            ?: QuotaProviderRegistry.defaultProviderOrder().first()
-        serviceCardLayout?.show(cards, selectedProvider.id)
+        val selected = accountListPanel?.selectedAccount()
+        if (selected == null) {
+            serviceCardLayout?.show(cards, EMPTY_CARD_ID)
+        } else {
+            serviceCardLayout?.show(cards, selected.typeId)
+        }
     }
 
-    private fun showProviderDetail(type: QuotaProviderType?) {
-        if (type == null) {
+    private fun showAccountDetail(account: ProviderAccount?) {
+        flushVisibleAccountFields()
+        boundDetailAccountId = account?.id
+        val type = account?.providerType()
+        if (account == null || type == null) {
+            providerPanelsByType.values.forEach { panel ->
+                panel.boundAccountId = ""
+                panel.boundAccount = null
+            }
             detailHeaderPanel?.isVisible = false
+            visibilitySlot?.removeAll()
+            setRoutingVisible(false)
             serviceCardLayout?.show(serviceCards, EMPTY_CARD_ID)
         } else {
             detailHeaderPanel?.isVisible = true
@@ -280,8 +329,13 @@ class QuotaSettingsConfigurable : Configurable {
                     iconLabel,
                 )
             }
-            detailHeaderName?.text = type.displayName
-            updateDetailHeaderReason(type)
+            detailHeaderName?.text = accountListPanel?.listLabel(account)
+                ?: QuotaSettingsState.getInstance().accountListLabel(account)
+            accountNameField?.text = account.name
+            updateRoutingControls(account)
+            updateDetailHeaderReason(account)
+            bindVisibilityToggle(type, account)
+            bindPanelsToAccount(account)
             serviceCardLayout?.show(serviceCards, type.id)
         }
         detailHeaderPanel?.revalidate()
@@ -289,9 +343,21 @@ class QuotaSettingsConfigurable : Configurable {
         serviceCards?.repaint()
     }
 
-    private fun updateDetailHeaderReason(type: QuotaProviderType) {
+    private fun bindPanelsToAccount(account: ProviderAccount) {
+        providerPanelsByType.values.forEach { panel ->
+            panel.boundAccountId = account.id
+            panel.boundAccount = account
+        }
+        providerPanelsByType[account.providerType()]?.let { panel ->
+            panel.updateFields()
+            panel.updateStatus()
+            panel.updateResponseArea()
+        }
+    }
+
+    private fun updateDetailHeaderReason(account: ProviderAccount) {
         val reason = detailHeaderReason ?: return
-        val snapshot = ProviderReorderPanel.statusSnapshot(type)
+        val snapshot = ProviderReorderPanel.statusSnapshot(account)
         if (snapshot.status == ProviderListStatus.WARNING || snapshot.status == ProviderListStatus.ERROR) {
             reason.text = "<html>${QuotaUiUtil.escapeHtml(snapshot.explanation)}</html>"
             reason.foreground = ProviderReorderPanel.statusColor(snapshot.status)
@@ -319,16 +385,71 @@ class QuotaSettingsConfigurable : Configurable {
             addToTop(name)
             addToCenter(reason)
         }
+        val nameField = accountNameField!!
+        val combo = primaryAccountCombo!!
+        combo.addActionListener {
+            if (updatingRouting) return@addActionListener
+            val selected = combo.selectedItem as? ProviderAccount ?: return@addActionListener
+            val typeId = selected.typeId
+            accountListPanel?.accounts()?.filter { it.typeId == typeId }?.forEach { sibling ->
+                sibling.isDefault = sibling.id == selected.id
+                if (sibling.isDefault) sibling.allowFailover = false
+            }
+            accountListPanel?.selectedAccount()?.let(::updateRoutingControls)
+        }
+        standbyCheckBox?.addActionListener {
+            if (updatingRouting) return@addActionListener
+            val account = accountListPanel?.selectedAccount() ?: return@addActionListener
+            val enabled = standbyCheckBox?.isSelected == true
+            accountListPanel?.accounts()?.filter { it.typeId == account.typeId }?.forEach { sibling ->
+                sibling.allowFailover = enabled && !sibling.isDefault
+            }
+        }
+        accountNameField?.document?.addDocumentListener(object : com.intellij.ui.DocumentAdapter() {
+            override fun textChanged(e: javax.swing.event.DocumentEvent) {
+                val account = accountListPanel?.selectedAccount() ?: return
+                account.name = accountNameField?.text.orEmpty()
+                refreshAccountNameDisplays(account)
+            }
+        })
+        val identity = BorderLayoutPanel().apply {
+            isOpaque = false
+            addToLeft(icon)
+            addToCenter(titles)
+        }
+        val visibility = BorderLayoutPanel().apply { isOpaque = false }
+        visibilitySlot = visibility
+        val accountGroup = panel {
+            group("Account") {
+                row("Name:") {
+                    cell(nameField).align(AlignX.FILL).resizableColumn()
+                }
+                row {
+                    cell(visibility).align(AlignX.FILL).resizableColumn()
+                }
+            }
+        }
+        routingPanel = panel {
+            group("MCP tools & local proxy") {
+                row {
+                    cell(combo)
+                }
+                row {
+                    cell(standbyCheckBox!!)
+                }
+            }
+        }
+        setRoutingVisible(false)
         return BorderLayoutPanel().apply {
             isOpaque = false
             border = JBUI.Borders.emptyBottom(10)
-            addToLeft(icon)
-            addToCenter(titles)
+            addToTop(identity)
+            addToCenter(accountGroup)
         }.also { detailHeaderPanel = it }
     }
 
     private fun createEmptyDetail(): JComponent {
-        return JBLabel("Select a provider on the left to configure").apply {
+        return JBLabel("Add a provider").apply {
             horizontalAlignment = SwingConstants.CENTER
             foreground = JBColor.GRAY
         }
@@ -369,11 +490,12 @@ class QuotaSettingsConfigurable : Configurable {
                 val locationChanged = selectedLocation != state.location()
                 val displayModeChanged = sanitizedDisplayMode != state.displayMode()
                 val sourceChanged = selectedSource != state.source()
-                val popupVisibilityChanged = popupVisibilityToggles().any { (type, toggle) ->
-                    toggle.isHidden != state.isHiddenFromPopup(type)
-                }
-                val miniMaxRegionChanged = miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference != state.miniMaxRegionPreference()
-                val providerOrderChanged = providerReorderPanel?.getOrder()?.joinToString(",") { it.id } != state.providerOrder
+                val selectedAccount = accountListPanel?.selectedAccount()
+                val popupVisibilityChanged = selectedAccount != null &&
+                    providerPanelsByType[selectedAccount.providerType()]?.popupVisibilityToggle?.isHidden != selectedAccount.hiddenFromPopup
+                val miniMaxRegionChanged = selectedAccount?.providerType() == QuotaProviderType.MINIMAX &&
+                    miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference != state.miniMaxRegionFor(selectedAccount.id)
+                val accountsChanged = accountListPanel?.isModifiedVs(state) == true
                 val normalizedMcpTargets = normalizeTargets(mcpSyncTargetsPanel?.targets().orEmpty())
                 val mcpSyncChanged = mcpSyncCheckBox?.isSelected != state.syncIntellijMcpServerUrl
                 val mcpTargetsChanged = normalizedMcpTargets != normalizeTargets(state.mcpServerSyncTargets)
@@ -384,7 +506,8 @@ class QuotaSettingsConfigurable : Configurable {
                 val proxyLogRequestsChanged = proxyPanel.isProxyLogRequestsModified()
                 val proxyProviderSelectionChanged = proxyPanel.isProviderSelectionModified()
                 val gitHubPanel = gitHubPanel()
-                val gitHubEnterpriseHostChanged = gitHubPanel.normalizedEnterpriseHostForStorage() != state.githubEnterpriseHost
+                val gitHubEnterpriseHostChanged = selectedAccount?.providerType() == QuotaProviderType.GITHUB &&
+                    gitHubPanel.normalizedEnterpriseHostForStorage() != state.githubHostFor(selectedAccount.id)
                 if (locationChanged) {
                     state.setLocation(selectedLocation)
                 }
@@ -394,24 +517,18 @@ class QuotaSettingsConfigurable : Configurable {
                 if (sourceChanged) {
                     state.setSource(selectedSource)
                 }
-                popupVisibilityToggles().forEach { (type, toggle) ->
-                    state.setHiddenFromPopup(type, toggle.isHidden)
-                }
-                state.minimaxRegionPreference = (miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference ?: MiniMaxRegionPreference.AUTO).name
-                if (providerOrderChanged) {
-                    state.providerOrder = providerReorderPanel?.getOrder()?.joinToString(",") { it.id } ?: state.providerOrder
-                }
+                    persistAccountRouting()
+                    accountListPanel?.applyPendingChanges(state)
                 state.syncIntellijMcpServerUrl = mcpSyncCheckBox?.isSelected == true
                 state.mcpServerSyncTargets = normalizedMcpTargets.toMutableList()
                 state.openAiProxyEnabled = proxyPanel.proxyEnabledCheckBox.isSelected
                 state.openAiProxyPort = OpenAiProxyService.sanitizePort(proxyPanel.proxyPort())
                 state.openAiProxyLogRequests = proxyPanel.proxyLogRequestsCheckBox.isSelected
                 proxyPanel.applyProviderSelections(state)
-                state.githubEnterpriseHost = gitHubPanel.normalizedEnterpriseHostForStorage()
                 if (proxyApiKeyChanged) {
                     proxyPanel.saveProxyApiKeyBlocking()
                 }
-                if (locationChanged || displayModeChanged || sourceChanged || popupVisibilityChanged || miniMaxRegionChanged || providerOrderChanged || mcpSyncChanged || mcpTargetsChanged || proxyEnabledChanged || proxyPortChanged || proxyApiKeyChanged || proxyLogRequestsChanged || proxyProviderSelectionChanged || gitHubEnterpriseHostChanged) {
+                if (locationChanged || displayModeChanged || sourceChanged || popupVisibilityChanged || miniMaxRegionChanged || accountsChanged || mcpSyncChanged || mcpTargetsChanged || proxyEnabledChanged || proxyPortChanged || proxyApiKeyChanged || proxyLogRequestsChanged || proxyProviderSelectionChanged || gitHubEnterpriseHostChanged) {
                     ApplicationManager.getApplication().messageBus
                         .syncPublisher(QuotaSettingsListener.TOPIC)
                         .onSettingsChanged()
@@ -427,23 +544,21 @@ class QuotaSettingsConfigurable : Configurable {
             }
 
             onReset {
+                boundDetailAccountId = null
                 locationComboBox?.selectedItem = QuotaSettingsState.getInstance().location()
                 updateDisplayModeChoices(QuotaSettingsState.getInstance().displayMode())
                 updateDisplayModePreview()
                 indicatorSourceComboBox?.selectedItem = QuotaSettingsState.getInstance().source()
-                popupVisibilityToggles().forEach { (type, toggle) ->
-                    toggle.isHidden = QuotaSettingsState.getInstance().isHiddenFromPopup(type)
-                }
-                gitHubPanel().enterpriseHostField.text = QuotaSettingsState.getInstance().githubEnterpriseHost
-                miniMaxPanel().regionComboBox.selectedItem = QuotaSettingsState.getInstance().miniMaxRegionPreference()
-                providerReorderPanel?.setOrder(QuotaSettingsState.getInstance().providerOrderList())
+                accountListPanel?.discardPending()
+                accountListPanel?.reloadFromSettings()
+                showAccountDetail(accountListPanel?.selectedAccount())
                 mcpSyncCheckBox?.isSelected = QuotaSettingsState.getInstance().syncIntellijMcpServerUrl
                 mcpSyncTargetsPanel?.setTargets(normalizeTargets(QuotaSettingsState.getInstance().mcpServerSyncTargets))
                 providerPanelsByType.values.forEach { providerPanel ->
                     providerPanel.updateFields()
                     providerPanel.updateResponseArea()
                 }
-                providerReorderPanel?.refreshStatuses()
+                accountListPanel?.refreshStatuses()
                 proxySettingsPanel?.updateFields()
             }
 
@@ -455,17 +570,16 @@ class QuotaSettingsConfigurable : Configurable {
                 selectedLocation != state.location() ||
                     QuotaDisplayMode.sanitizeFor(selectedLocation, selectedDisplayMode) != state.displayMode() ||
                     selectedSource != state.source() ||
-                    popupVisibilityToggles().any { (type, toggle) -> toggle.isHidden != state.isHiddenFromPopup(type) } ||
-                    miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference != state.miniMaxRegionPreference() ||
-                    providerReorderPanel?.getOrder()?.joinToString(",") { it.id } != state.providerOrder ||
+                    selectedAccountExtrasModified(state) ||
+                    accountListPanel?.isModifiedVs(state) == true ||
+                    accountListPanel?.hasDuplicateNames() == true ||
                     mcpSyncCheckBox?.isSelected != state.syncIntellijMcpServerUrl ||
                     normalizeTargets(mcpSyncTargetsPanel?.currentTargets().orEmpty()) != normalizeTargets(state.mcpServerSyncTargets) ||
                     proxySettingsPanel?.proxyEnabledCheckBox?.isSelected != state.openAiProxyEnabled ||
                     proxySettingsPanel?.isProxyPortModified() == true ||
                     proxySettingsPanel?.isProxyApiKeyModified() == true ||
                     proxySettingsPanel?.isProxyLogRequestsModified() == true ||
-                    proxySettingsPanel?.isProviderSelectionModified() == true ||
-                    gitHubPanel().normalizedEnterpriseHostForStorage() != state.githubEnterpriseHost
+                    proxySettingsPanel?.isProviderSelectionModified() == true
             }
         }.apply {
             preferredFocusedComponent = locationComboBox
@@ -481,7 +595,7 @@ class QuotaSettingsConfigurable : Configurable {
             addToCenter(serviceCards!!)
         }
         val splitter = OnePixelSplitter(false, 0.32f, 0.22f, 0.5f).apply {
-            firstComponent = providerReorderPanel
+            firstComponent = accountListPanel
             secondComponent = detail
             setHonorComponentsMinimumSize(false)
         }
@@ -546,16 +660,133 @@ class QuotaSettingsConfigurable : Configurable {
         }
     }
 
+    private fun flushVisibleAccountFields() {
+        val id = boundDetailAccountId ?: return
+        val account = accountListPanel?.accounts()?.firstOrNull { it.id == id } ?: return
+        persistAccountFields(account)
+    }
+
+    private fun refreshAccountNameDisplays(account: ProviderAccount) {
+        detailHeaderName?.text = accountListPanel?.listLabel(account)
+            ?: QuotaSettingsState.getInstance().accountListLabel(account)
+        accountListPanel?.refreshStatuses()
+        val combo = primaryAccountCombo ?: return
+        combo.revalidate()
+        combo.repaint()
+        combo.popup?.list?.repaint()
+    }
+
+    private fun updateRoutingControls(account: ProviderAccount) {
+        val type = account.providerType()
+        val siblings = accountListPanel?.accounts()?.filter { it.typeId == type?.id }.orEmpty()
+        if (type == null || siblings.size <= 1) {
+            setRoutingVisible(false)
+            return
+        }
+        setRoutingVisible(true)
+        updatingRouting = true
+        try {
+            val combo = primaryAccountCombo ?: return
+            combo.removeAllItems()
+            siblings.forEach(combo::addItem)
+            combo.selectedItem = siblings.firstOrNull { it.isDefault } ?: siblings.first()
+            standbyCheckBox?.text = "Also try my other ${type.displayName} logins if this one is exhausted"
+            standbyCheckBox?.isSelected = siblings.any { !it.isDefault && it.allowFailover }
+        } finally {
+            updatingRouting = false
+        }
+    }
+
+    private fun bindVisibilityToggle(type: QuotaProviderType, account: ProviderAccount) {
+        val toggle = providerPanelsByType[type]?.popupVisibilityToggle ?: return
+        toggle.isHidden = account.hiddenFromPopup
+        val slot = visibilitySlot ?: return
+        if (toggle.parent != slot) {
+            slot.removeAll()
+            slot.addToCenter(toggle)
+            slot.revalidate()
+            slot.repaint()
+        }
+    }
+
+    private fun setRoutingVisible(visible: Boolean) {
+        val routing = routingPanel
+        providerPanelsByType.values.forEach { it.showRouting(null) }
+        if (!visible || routing == null) {
+            routing?.isVisible = false
+            return
+        }
+        routing.isVisible = true
+        val type = accountListPanel?.selectedAccount()?.providerType()
+        if (type != null) {
+            providerPanelsByType[type]?.showRouting(routing)
+        }
+    }
+
+    private fun persistAccountRouting() {
+        val selected = accountListPanel?.selectedAccount() ?: return
+        selected.name = accountNameField?.text.orEmpty().trim()
+        persistAccountFields(selected)
+    }
+
+    private fun persistAccountFields(account: ProviderAccount) {
+        account.hiddenFromPopup = providerPanelsByType[account.providerType()]?.popupVisibilityToggle?.isHidden == true
+        when (account.providerType()) {
+            QuotaProviderType.GITHUB ->
+                account.setExtra(
+                    ProviderAccount.EXTRA_GITHUB_HOST,
+                    gitHubPanel().normalizedEnterpriseHostForStorage().ifEmpty { null },
+                )
+            QuotaProviderType.MINIMAX ->
+                (miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference)?.let {
+                    account.setExtra(ProviderAccount.EXTRA_MINIMAX_REGION, it.name)
+                }
+            QuotaProviderType.OPEN_CODE ->
+                account.setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, openCodePanel().selectedWorkspaceId())
+            else -> Unit
+        }
+    }
+
+    private fun selectedAccountExtrasModified(state: QuotaSettingsState): Boolean {
+        val selected = accountListPanel?.selectedAccount() ?: return false
+        val persisted = state.account(selected.id)
+        val toggle = providerPanelsByType[selected.providerType()]?.popupVisibilityToggle
+        if (toggle != null && toggle.isHidden != (persisted?.hiddenFromPopup ?: selected.hiddenFromPopup)) return true
+        return when (selected.providerType()) {
+            QuotaProviderType.GITHUB ->
+                gitHubPanel().normalizedEnterpriseHostForStorage() != state.githubHostFor(selected.id)
+            QuotaProviderType.MINIMAX ->
+                miniMaxPanel().regionComboBox.selectedItem as? MiniMaxRegionPreference != state.miniMaxRegionFor(selected.id)
+            QuotaProviderType.OPEN_CODE ->
+                openCodePanel().selectedWorkspaceId() != state.openCodeWorkspaceIdFor(selected.id)
+            else -> false
+        }
+    }
+
     private fun miniMaxPanel(): MiniMaxSettingsPanel = providerPanelsByType.getValue(QuotaProviderType.MINIMAX) as MiniMaxSettingsPanel
 
     private fun gitHubPanel(): GitHubSettingsPanel = providerPanelsByType.getValue(QuotaProviderType.GITHUB) as GitHubSettingsPanel
 
-    private fun popupVisibilityToggles(): Map<QuotaProviderType, PopupVisibilityToggle> {
-        return providerPanelsByType.mapValues { (_, panel) -> panel.popupVisibilityToggle }
-    }
+    private fun openCodePanel(): OpenCodeSettingsPanel =
+        providerPanelsByType.getValue(QuotaProviderType.OPEN_CODE) as OpenCodeSettingsPanel
 
     private fun normalizeTargets(targets: List<McpServerSyncTarget>): List<McpServerSyncTarget> {
         return targets.map { it.normalized() }
+    }
+
+    private class AccountNameRenderer : DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>,
+            value: Any?,
+            index: Int,
+            isSelected: Boolean,
+            cellHasFocus: Boolean,
+        ): Component {
+            val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            val account = value as? ProviderAccount
+            text = account?.name?.trim()?.ifEmpty { account.id } ?: ""
+            return component
+        }
     }
 
     companion object {

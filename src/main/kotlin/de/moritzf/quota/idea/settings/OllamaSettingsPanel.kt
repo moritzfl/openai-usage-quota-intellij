@@ -35,9 +35,6 @@ internal class OllamaSettingsPanel(
     init {
         val ollamaConfigPanel = panel {
             row {
-                cell(popupVisibilityToggle)
-            }
-            row {
                 cell(ollamaStatusLabel)
             }
             row {
@@ -56,25 +53,24 @@ internal class OllamaSettingsPanel(
                     clearApiKeyNow()
                 }
             }
-            separator()
         }
 
-        addToTop(ollamaConfigPanel)
-        addToCenter(createResponseSection(ollamaJsonViewer))
+        install(ollamaConfigPanel, createResponseSection(ollamaJsonViewer))
     }
 
     override fun updateFields() {
-        val apiKeyStore = OllamaApiKeyStore.getInstance()
-        val apiKey = apiKeyStore.load(onLoaded = ::refreshAfterCredentialLoad)
+        val id = accountKey(QuotaProviderType.OLLAMA)
+        val apiKeyStore = OllamaApiKeyStore.forAccount(id)
+        val apiKey = apiKeyStore.load(onLoaded = { if (accountKey(QuotaProviderType.OLLAMA) == id) refreshAfterCredentialLoad() })
         apiKeyField.text = if (apiKey.isNullOrBlank()) "" else API_KEY_PLACEHOLDER
         updateStatus()
     }
 
     override fun updateStatus() {
-        val apiKeyStore = OllamaApiKeyStore.getInstance()
+        val apiKeyStore = OllamaApiKeyStore.forAccount(accountKey(QuotaProviderType.OLLAMA))
         val apiKey = apiKeyStore.load(onLoaded = ::refreshAfterCredentialLoad)
-        val ollamaQuota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.OLLAMA) as? OllamaQuota
-        val ollamaError = QuotaUsageService.getInstance().getLastError(QuotaProviderType.OLLAMA)
+        val ollamaQuota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.OLLAMA)) as? OllamaQuota
+        val ollamaError = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.OLLAMA))
 
         when {
             !apiKeyStore.isLoaded() -> {
@@ -104,19 +100,19 @@ internal class OllamaSettingsPanel(
     private fun saveApiKeyNow() {
         val apiKey = String(apiKeyField.password).trim()
         if (apiKey.isNotBlank() && apiKey != API_KEY_PLACEHOLDER) {
-            OllamaApiKeyStore.getInstance().save(apiKey)
+            OllamaApiKeyStore.forAccount(accountKey(QuotaProviderType.OLLAMA)).save(apiKey)
             apiKeyField.text = API_KEY_PLACEHOLDER
             setOllamaPendingStatus()
             validateApiKeyNow(apiKey)
-            QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.OLLAMA)
+            QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.OLLAMA))
         }
     }
 
     private fun clearApiKeyNow() {
-        OllamaApiKeyStore.getInstance().clear()
+        OllamaApiKeyStore.forAccount(accountKey(QuotaProviderType.OLLAMA)).clear()
         apiKeyField.text = ""
         updateStatus()
-        QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.OLLAMA)
+        QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.OLLAMA))
     }
 
     private fun validateApiKeyNow(apiKey: String) {
@@ -158,9 +154,9 @@ internal class OllamaSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.OLLAMA) as? OllamaQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.OLLAMA)
-        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.OLLAMA)
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.OLLAMA)) as? OllamaQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.OLLAMA))
+        val rawJson = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.OLLAMA))
 
         ollamaJsonViewer.text = when {
             error != null && !rawJson.isNullOrBlank() -> "Error: $error\n\n$rawJson"

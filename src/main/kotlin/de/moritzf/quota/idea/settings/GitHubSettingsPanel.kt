@@ -60,15 +60,18 @@ internal class GitHubSettingsPanel(
         }
 
         loginButton.addActionListener {
-            val authService: AuthService = GitHubAuthService.getInstance()
+            val authService = GitHubAuthService.forAccount(accountKey(QuotaProviderType.GITHUB))
             if (authService.isLoggedIn()) {
                 updateStatus()
                 return@addActionListener
             }
+            val host = GitHubQuotaClient.normalizedEnterpriseHost(enterpriseHostField.text)
+            boundAccount?.setExtra(ProviderAccount.EXTRA_GITHUB_HOST, host.takeUnless { it == "github.com" })
             loginButton.isEnabled = false
             authStatusMessage = AuthStatusMessage("Requesting device code...", false, AuthStatusKind.PENDING)
             updateStatus()
-            authService.startLoginFlow(callback = { result ->
+            authService.startLoginFlow(
+                callback = { result ->
                 ApplicationManager.getApplication().invokeLater({
                     authStatusMessage = if (result.success) {
                         AuthStatusMessage("Connected", false, AuthStatusKind.CONNECTED)
@@ -78,7 +81,7 @@ internal class GitHubSettingsPanel(
                     loginButton.isEnabled = true
                     updateStatus()
                     if (result.success) {
-                        QuotaUsageService.getInstance().refreshAsync(QuotaProviderType.GITHUB)
+                        QuotaUsageService.getInstance().refreshAsync(accountKey(QuotaProviderType.GITHUB))
                     }
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
             }, onVerificationUrl = { url, code ->
@@ -92,12 +95,12 @@ internal class GitHubSettingsPanel(
                     authStatusMessage = AuthStatusMessage("Waiting for browser authorization...", false, AuthStatusKind.PENDING)
                     updateStatus()
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
-            })
+            }, enterpriseHost = host)
             updateStatus()
         }
 
         cancelLoginButton.addActionListener {
-            val aborted = (GitHubAuthService.getInstance() as AuthService).abortLogin("Login canceled")
+            val aborted = (GitHubAuthService.forAccount(accountKey(QuotaProviderType.GITHUB)) as AuthService).abortLogin("Login canceled")
             authStatusMessage = AuthStatusMessage(
                 if (aborted) "Login canceled" else "No login in progress",
                 false,
@@ -109,17 +112,16 @@ internal class GitHubSettingsPanel(
         logoutButton.addActionListener {
             setPending("Clearing credentials...")
             ApplicationManager.getApplication().executeOnPooledThread {
-                (GitHubAuthService.getInstance() as AuthService).clearCredentials()
+                (GitHubAuthService.forAccount(accountKey(QuotaProviderType.GITHUB)) as AuthService).clearCredentials()
                 ApplicationManager.getApplication().invokeLater({
                     authStatusMessage = AuthStatusMessage("Logged out", false, AuthStatusKind.DISCONNECTED)
-                    QuotaUsageService.getInstance().clearUsageData(QuotaProviderType.GITHUB, "Not logged in")
+                    QuotaUsageService.getInstance().clearUsageData(accountKey(QuotaProviderType.GITHUB), "Not logged in")
                     updateStatus()
                 }, ModalityState.stateForComponent(modalityComponentProvider() ?: this))
             }
         }
 
-        addToTop(panel {
-            row { cell(popupVisibilityToggle) }
+        install(panel {
             row("Enterprise host:") { cell(enterpriseHostField).resizableColumn().align(AlignX.FILL) }
             row {
                 cell(statusLabel).gap(RightGap.SMALL)
@@ -132,24 +134,25 @@ internal class GitHubSettingsPanel(
                 cell(cancelLoginButton).gap(RightGap.SMALL)
                 cell(logoutButton)
             }
-            separator()
-        })
-        addToCenter(createResponseSection(responseViewer))
+        }, createResponseSection(responseViewer))
     }
 
     override fun updateFields() {
-        GitHubCredentialsStore.getInstance().load(onLoaded = ::refreshAfterCredentialsLoad)
+        rememberAccount()
+        GitHubCredentialsStore.forAccount(accountKey(QuotaProviderType.GITHUB)).load(onLoaded = ::refreshAfterCredentialsLoad)
         val settings = QuotaSettingsState.getInstance()
-        enterpriseHostField.text = settings.githubEnterpriseHost
+        val accountId = accountKey(QuotaProviderType.GITHUB)
+        enterpriseHostField.text = boundAccount?.extra(ProviderAccount.EXTRA_GITHUB_HOST)
+            ?: settings.githubHostFor(accountId)
         updateStatus()
     }
 
     override fun updateStatus() {
-        val store = GitHubCredentialsStore.getInstance()
+        val store = GitHubCredentialsStore.forAccount(accountKey(QuotaProviderType.GITHUB))
         val credentials = store.load(onLoaded = ::refreshAfterCredentialsLoad)
-        val inProgress = (GitHubAuthService.getInstance() as AuthService).isLoginInProgress()
-        val quota = QuotaUsageService.getInstance().getLastQuota(QuotaProviderType.GITHUB) as? GitHubQuota
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.GITHUB)
+        val inProgress = (GitHubAuthService.forAccount(accountKey(QuotaProviderType.GITHUB)) as AuthService).isLoginInProgress()
+        val quota = QuotaUsageService.getInstance().getLastQuota(accountKey(QuotaProviderType.GITHUB)) as? GitHubQuota
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.GITHUB))
         val fallbackMessage = when {
             !store.isLoaded() -> AuthStatusMessage("Loading credentials...", false, AuthStatusKind.PENDING)
             credentials?.isUsable() != true -> AuthStatusMessage("Not logged in", false, AuthStatusKind.DISCONNECTED)
@@ -175,8 +178,8 @@ internal class GitHubSettingsPanel(
     }
 
     override fun updateResponseArea() {
-        val raw = QuotaUsageService.getInstance().getLastResponseJson(QuotaProviderType.GITHUB)
-        val error = QuotaUsageService.getInstance().getLastError(QuotaProviderType.GITHUB)
+        val raw = QuotaUsageService.getInstance().getLastResponseJson(accountKey(QuotaProviderType.GITHUB))
+        val error = QuotaUsageService.getInstance().getLastError(accountKey(QuotaProviderType.GITHUB))
         responseViewer.text = when {
             error != null && !raw.isNullOrBlank() -> "Error: $error\n\n$raw"
             error != null -> "Error: $error"
@@ -184,6 +187,16 @@ internal class GitHubSettingsPanel(
             else -> raw
         }
         responseViewer.setCaretPosition(0)
+    }
+
+    private var shownAccountId: String? = null
+
+    private fun rememberAccount() {
+        val id = accountKey(QuotaProviderType.GITHUB)
+        if (shownAccountId != id) {
+            shownAccountId = id
+            authStatusMessage = null
+        }
     }
 
     private fun refreshAfterCredentialsLoad() {
