@@ -1,0 +1,127 @@
+package de.moritzf.quota.idea.settings
+
+import de.moritzf.quota.idea.common.ProviderSnapshot
+import de.moritzf.quota.idea.common.QuotaProviderType
+import de.moritzf.quota.idea.common.QuotaUsageSnapshot
+import de.moritzf.quota.openai.OpenAiCodexQuota
+import de.moritzf.quota.openai.OpenAiCredits
+import de.moritzf.quota.openai.OpenAiSpendControl
+import de.moritzf.quota.shared.ProviderQuota
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+
+class AccountResolverTest {
+    @Test
+    fun snapshotUpdateKeepsOtherAccountEntries() {
+        val first = ProviderSnapshot(exhaustedOpenAi(), null)
+        val second = ProviderSnapshot(OpenAiCodexQuota(limitReached = false), null)
+        val snapshot = QuotaUsageSnapshot(
+            entries = mapOf(QuotaProviderType.OPEN_AI to first),
+            accountEntries = mapOf("openai" to first),
+            accountTypes = mapOf("openai" to QuotaProviderType.OPEN_AI),
+        ).updated("personal", QuotaProviderType.OPEN_AI, second)
+
+        assertEquals(first.quota, snapshot["openai"].quota)
+        assertEquals(second.quota, snapshot["personal"].quota)
+        assertEquals(second.quota, snapshot[QuotaProviderType.OPEN_AI].quota)
+        assertEquals(first.quota, snapshot.forAccount("openai", QuotaProviderType.OPEN_AI).quota)
+        assertEquals(second.quota, snapshot.forAccount("personal", QuotaProviderType.OPEN_AI).quota)
+    }
+
+    @Test
+    fun accountRowDoesNotFallBackToSiblingTypeSnapshot() {
+        val first = ProviderSnapshot(exhaustedOpenAi(), null)
+        val snapshot = QuotaUsageSnapshot(
+            entries = mapOf(QuotaProviderType.OPEN_AI to first),
+            accountEntries = mapOf("openai" to first),
+            accountTypes = mapOf(
+                "openai" to QuotaProviderType.OPEN_AI,
+                "personal" to QuotaProviderType.OPEN_AI,
+            ),
+        )
+
+        assertEquals(null, snapshot.forAccount("personal", QuotaProviderType.OPEN_AI).quota)
+        assertEquals(first.quota, snapshot.forAccount("openai", QuotaProviderType.OPEN_AI).quota)
+    }
+
+    @Test
+    fun pinnedAccountIgnoresFailover() {
+        val state = twoOpenAi()
+        val exhausted = mapOf("openai" to exhaustedOpenAi())
+        val resolved = AccountResolver.resolve(
+            QuotaProviderType.OPEN_AI,
+            accountParam = "Work",
+            capability = AccountCapability.PROXY,
+            settings = state,
+            quotaLookup = { exhausted[it] },
+        )
+        assertEquals("openai", resolved.id)
+    }
+
+    @Test
+    fun unpinnedSpendUsesFailoverWhenDefaultExhausted() {
+        val state = twoOpenAi()
+        val quotas = mapOf("openai" to exhaustedOpenAi())
+        val resolved = AccountResolver.resolve(
+            QuotaProviderType.OPEN_AI,
+            capability = AccountCapability.PROXY,
+            settings = state,
+            quotaLookup = { quotas[it] },
+        )
+        assertEquals("personal", resolved.id)
+    }
+
+    @Test
+    fun quotaCapabilityDoesNotFailover() {
+        val state = twoOpenAi()
+        val quotas = mapOf("openai" to exhaustedOpenAi())
+        val resolved = AccountResolver.resolve(
+            QuotaProviderType.OPEN_AI,
+            capability = AccountCapability.QUOTA,
+            settings = state,
+            quotaLookup = { quotas[it] },
+        )
+        assertEquals("openai", resolved.id)
+    }
+
+    @Test
+    fun resolveOrNullWhenNoAccounts() {
+        assertEquals(null, AccountResolver.resolveOrNull(QuotaProviderType.OPEN_AI, settings = QuotaSettingsState()))
+    }
+
+    @Test
+    fun missingPinListsNames() {
+        val state = twoOpenAi()
+        val error = assertFailsWith<AccountResolveException> {
+            AccountResolver.resolve(QuotaProviderType.OPEN_AI, accountParam = "Missing", settings = state)
+        }
+        assertTrue(error.message!!.contains("Work"))
+        assertTrue(error.message!!.contains("Personal"))
+    }
+
+    @Test
+    fun openAiSpendCapIsHardStop() {
+        assertTrue(AccountResolver.isHardStop(exhaustedOpenAi()))
+        assertFalse(AccountResolver.isHardStop(OpenAiCodexQuota(limitReached = false)))
+    }
+
+    private fun twoOpenAi(): QuotaSettingsState {
+        return QuotaSettingsState().apply {
+            accounts = mutableListOf(
+                ProviderAccount(id = "openai", typeId = "openai", name = "Work", isDefault = true),
+                ProviderAccount(id = "personal", typeId = "openai", name = "Personal", allowFailover = true),
+            )
+        }
+    }
+
+    private fun exhaustedOpenAi(): ProviderQuota {
+        return OpenAiCodexQuota(
+            limitReached = false,
+            credits = OpenAiCredits(hasCredits = false),
+            spendControl = OpenAiSpendControl(reached = true, individualLimit = 10.0, used = 10.0),
+        )
+    }
+}

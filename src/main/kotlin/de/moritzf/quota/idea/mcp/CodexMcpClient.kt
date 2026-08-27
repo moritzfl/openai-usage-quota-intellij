@@ -751,12 +751,39 @@ class CodexMcpClient(
 
         fun createDefault(): CodexMcpClient {
             return CodexMcpClient(
-                accessTokenProvider = { QuotaAuthService.getInstance().getAccessTokenBlocking(QuotaProviderType.OPEN_AI) },
-                accountIdProvider = { QuotaAuthService.getInstance().getAccountId(QuotaProviderType.OPEN_AI) },
+                accessTokenProvider = {
+                    resolvedOpenAiAccount()?.let { account ->
+                        QuotaAuthService.getInstance().getAccessTokenBlocking(account.id, QuotaProviderType.OPEN_AI)
+                    }
+                },
+                accountIdProvider = {
+                    resolvedOpenAiAccount()?.let { account ->
+                        QuotaAuthService.getInstance().getAccountId(account.id, QuotaProviderType.OPEN_AI)
+                    }
+                },
                 tokenRefresher = { staleToken ->
-                    QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.OPEN_AI, staleToken)
+                    refreshOpenAiToken(staleToken)
                 },
             )
+        }
+
+        private fun resolvedOpenAiAccount(): de.moritzf.quota.idea.settings.ProviderAccount? {
+            return de.moritzf.quota.idea.settings.AccountResolver.resolveOrNull(
+                QuotaProviderType.OPEN_AI,
+                capability = de.moritzf.quota.idea.settings.AccountCapability.WEB_SEARCH,
+            )
+        }
+
+        private fun refreshOpenAiToken(staleToken: String?): String? {
+            val auth = QuotaAuthService.getInstance()
+            val settings = runCatching { de.moritzf.quota.idea.settings.QuotaSettingsState.getInstance() }.getOrNull()
+            val owner = staleToken?.let { token ->
+                settings?.accountsOf(QuotaProviderType.OPEN_AI)?.firstOrNull { account ->
+                    auth.peekAccessToken(account.id, QuotaProviderType.OPEN_AI) == token
+                }
+            }
+            val account = owner ?: resolvedOpenAiAccount() ?: return null
+            return auth.forceRefreshBlocking(account.id, QuotaProviderType.OPEN_AI, staleToken)
         }
 
         private fun defaultHttpClient(): HttpClient {

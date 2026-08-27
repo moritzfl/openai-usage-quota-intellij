@@ -26,6 +26,10 @@ internal object McpJson {
         return JsonSupport.json.encodeToString(McpToolsStatusResponse(providers = providers))
     }
 
+    fun accountToolsStatus(accounts: List<McpAccountToolStatus>): String {
+        return JsonSupport.json.encodeToString(McpAccountsToolsStatusResponse(accounts = accounts))
+    }
+
 }
 
 @Serializable
@@ -34,6 +38,25 @@ internal data class McpWebSearchToolStatus(
     val provider: String,
     val configured: Boolean,
     val available: Boolean,
+    val reason: String? = null,
+)
+
+@Serializable
+internal data class McpAccountToolStatus(
+    val id: String,
+    val type: String,
+    val name: String,
+    val label: String,
+    @SerialName("default") val isDefault: Boolean,
+    @SerialName("allow_failover") val allowFailover: Boolean,
+    @SerialName("quota_configured") val quotaConfigured: Boolean,
+    @SerialName("web_search_available") val webSearchAvailable: Boolean,
+    @SerialName("web_search_type") val webSearchType: String? = null,
+    @SerialName("image_generation_available") val imageGenerationAvailable: Boolean,
+    @SerialName("video_generation_available") val videoGenerationAvailable: Boolean,
+    @SerialName("speech_to_text_available") val speechToTextAvailable: Boolean = false,
+    @SerialName("text_to_speech_available") val textToSpeechAvailable: Boolean = false,
+    @SerialName("document_to_markdown_available") val documentToMarkdownAvailable: Boolean = false,
     val reason: String? = null,
 )
 
@@ -74,4 +97,11 @@ private data class McpToolsStatusResponse(
     val check: String = "credentials",
     val note: String = "This status does not call provider APIs.",
     val providers: List<McpProviderToolStatus>,
+)
+
+@Serializable
+private data class McpAccountsToolsStatusResponse(
+    val check: String = "credentials",
+    val note: String = "This status does not call provider APIs.",
+    val accounts: List<McpAccountToolStatus>,
 )

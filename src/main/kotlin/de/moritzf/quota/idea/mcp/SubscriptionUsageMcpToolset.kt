@@ -13,6 +13,7 @@ import de.moritzf.quota.idea.minimax.MiniMaxApiKeyStore
 import de.moritzf.quota.idea.mistral.MistralApiKeyStore
 import de.moritzf.quota.idea.ollama.OllamaApiKeyStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
+import de.moritzf.quota.shared.McpAccountToolStatus
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 import de.moritzf.quota.kimi.KimiQuotaException
 import de.moritzf.quota.kimi.KimiWebSearchClient
@@ -74,39 +75,44 @@ class SubscriptionUsageMcpToolset(
     @McpDescription(description = "Returns the latest subscription quota response JSON for the selected provider.")
     fun subscription_quota(
         @McpDescription(description = "Provider to query. Supported providers are derived from the shared provider enum.") provider: QuotaProviderType,
+        @McpDescription(description = "Optional account name or id when more than one login of this type exists.") account: String? = null,
     ): String {
-        return quotaResult(provider)
+        return quotaResult(provider, account)
     }
 
     @McpTool(name = "subscription_tools_status")
     @McpDescription(description = "Returns per-provider status showing whether subscription quota access is configured and whether web search, image generation, video generation, speech-to-text, and text-to-speech are available. Does not call provider APIs.")
     fun subscription_tools_status(): String {
-        val statuses = ProviderCatalog.all.map { descriptor ->
-            val caps = descriptor.capabilities
-            val searchType = descriptor.webSearchType
-            val webSearchAvailable = searchType != null && descriptor.isWebSearchConfigured()
-            val quotaConfigured = descriptor.isQuotaConfigured()
-            val reason = if (searchType == null) {
-                "Web search is not offered for this provider."
-            } else if (!webSearchAvailable) {
-                descriptor.webSearchMissingReason
-            } else {
-                null
+        val settings = runCatching { QuotaSettingsState.getInstance() }.getOrNull()
+        val accounts = settings?.accounts.orEmpty()
+        val statuses = if (accounts.isEmpty() || settings == null) {
+            ProviderCatalog.all.map { descriptor ->
+                accountStatus(
+                    id = descriptor.type.id,
+                    type = descriptor.type,
+                    name = descriptor.type.displayName,
+                    label = descriptor.type.displayName,
+                    isDefault = true,
+                    allowFailover = false,
+                    descriptor = descriptor,
+                )
             }
-            McpProviderToolStatus(
-                provider = descriptor.type.displayName,
-                quotaConfigured = quotaConfigured,
-                webSearchAvailable = webSearchAvailable,
-                webSearchType = searchType,
-                imageGenerationAvailable = caps.imageGeneration && descriptor.isImageGenerationConfigured(),
-                videoGenerationAvailable = caps.videoGeneration && quotaConfigured,
-                speechToTextAvailable = caps.speechToText && descriptor.isVoiceConfigured(),
-                textToSpeechAvailable = caps.textToSpeech && descriptor.isVoiceConfigured(),
-                documentToMarkdownAvailable = caps.documentToMarkdown && descriptor.isDocumentConfigured(),
-                reason = reason,
-            )
+        } else {
+            accounts.mapNotNull { account ->
+                val type = account.providerType() ?: return@mapNotNull null
+                val descriptor = ProviderCatalog.get(type)
+                accountStatus(
+                    id = account.id,
+                    type = type,
+                    name = account.name,
+                    label = settings.accountListLabel(account),
+                    isDefault = account.isDefault,
+                    allowFailover = account.allowFailover,
+                    descriptor = descriptor,
+                )
+            }
         }
-        return McpJson.toolsStatus(statuses)
+        return McpJson.accountToolsStatus(statuses)
     }
 
     @McpTool(name = "codex_web_search")
@@ -360,21 +366,69 @@ class SubscriptionUsageMcpToolset(
         return superGrokVideoGeneration(prompt, model, duration, imageUrl, waitForCompletion, pollTimeoutSeconds)
     }
 
-    private fun quotaResult(type: QuotaProviderType): String {
+    private fun quotaResult(type: QuotaProviderType, accountParam: String? = null): String {
+        val account = try {
+            de.moritzf.quota.idea.settings.AccountResolver.resolve(
+                type,
+                accountParam,
+                de.moritzf.quota.idea.settings.AccountCapability.QUOTA,
+            )
+        } catch (exception: de.moritzf.quota.idea.settings.AccountResolveException) {
+            return errorResult(exception.message ?: "Account not found")
+        }
         val registration = UsageQuotaMcpRegistry.get(type)
         val usageService = QuotaUsageService.getInstance()
-        usageService.refreshBlocking(type)
+        usageService.refreshBlocking(account.id)
 
-        val error = usageService.getLastError(type)
+        val error = usageService.getLastError(account.id)
         if (!error.isNullOrBlank()) {
             return errorResult(error)
         }
 
-        val payload = registration.json(usageService, type)
+        val payload = usageService.getLastResponseJson(account.id) ?: registration.json(usageService, type)
         if (payload.isNullOrBlank()) {
             return errorResult(registration.emptyMessage)
         }
         return payload
+    }
+
+    private fun accountStatus(
+        id: String,
+        type: QuotaProviderType,
+        name: String,
+        label: String,
+        isDefault: Boolean,
+        allowFailover: Boolean,
+        descriptor: de.moritzf.quota.idea.common.ProviderDescriptor,
+    ): de.moritzf.quota.shared.McpAccountToolStatus {
+        val caps = descriptor.capabilities
+        val searchType = descriptor.webSearchType
+        val webSearchAvailable = searchType != null && descriptor.isWebSearchConfiguredForAccount(id)
+        val quotaConfigured = descriptor.isQuotaConfiguredForAccount(id)
+        val reason = if (searchType == null) {
+            "Web search is not offered for this provider."
+        } else if (!webSearchAvailable) {
+            descriptor.webSearchMissingReason
+        } else {
+            null
+        }
+        return de.moritzf.quota.shared.McpAccountToolStatus(
+            id = id,
+            type = type.id,
+            name = name,
+            label = label,
+            isDefault = isDefault,
+            allowFailover = allowFailover,
+            quotaConfigured = quotaConfigured,
+            webSearchAvailable = webSearchAvailable,
+            webSearchType = searchType,
+            imageGenerationAvailable = caps.imageGeneration && descriptor.isImageGenerationConfiguredForAccount(id),
+            videoGenerationAvailable = caps.videoGeneration && quotaConfigured,
+            speechToTextAvailable = caps.speechToText && descriptor.isVoiceConfiguredForAccount(id),
+            textToSpeechAvailable = caps.textToSpeech && descriptor.isVoiceConfiguredForAccount(id),
+            documentToMarkdownAvailable = caps.documentToMarkdown && descriptor.isDocumentConfiguredForAccount(id),
+            reason = reason,
+        )
     }
 
     private fun codexResult(response: CodexMcpClient.CodexMcpResponse): String {
@@ -481,7 +535,15 @@ class SubscriptionUsageMcpToolset(
 
     private fun withSuperGrokAuth(failureLabel: String, block: (String) -> String): String {
         val authService = QuotaAuthService.getInstance()
-        val token = authService.getAccessTokenBlocking(QuotaProviderType.SUPERGROK)
+        val account = try {
+            de.moritzf.quota.idea.settings.AccountResolver.resolve(
+                QuotaProviderType.SUPERGROK,
+                capability = de.moritzf.quota.idea.settings.AccountCapability.WEB_SEARCH,
+            )
+        } catch (exception: de.moritzf.quota.idea.settings.AccountResolveException) {
+            return searchError(exception.message ?: "Grok login required. Log in from SuperGrok settings.")
+        }
+        val token = authService.getAccessTokenBlocking(account.id, QuotaProviderType.SUPERGROK)
         if (token.isNullOrBlank()) {
             return searchError("Grok login required. Log in from SuperGrok settings.")
         }
@@ -489,7 +551,7 @@ class SubscriptionUsageMcpToolset(
             block(token)
         } catch (exception: SuperGrokQuotaException) {
             if (exception.statusCode == 401 || exception.statusCode == 403) {
-                val refreshed = authService.forceRefreshBlocking(QuotaProviderType.SUPERGROK, token)
+                val refreshed = authService.forceRefreshBlocking(account.id, QuotaProviderType.SUPERGROK, token)
                 if (!refreshed.isNullOrBlank()) {
                     return try {
                         block(refreshed)
@@ -507,7 +569,15 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun kimiWebSearch(query: String, limit: Int, includeContent: Boolean): String {
-        val store = KimiCredentialsStore.getInstance()
+        val account = try {
+            de.moritzf.quota.idea.settings.AccountResolver.resolve(
+                QuotaProviderType.KIMI,
+                capability = de.moritzf.quota.idea.settings.AccountCapability.WEB_SEARCH,
+            )
+        } catch (exception: de.moritzf.quota.idea.settings.AccountResolveException) {
+            return searchError(exception.message ?: "Kimi login required. Log in from settings.")
+        }
+        val store = KimiCredentialsStore.forAccount(account.id)
         val credentials = store.loadBlocking()
         if (credentials?.isUsable() != true) {
             return searchError("Kimi login required. Log in from settings.")
@@ -526,7 +596,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun zaiWebSearch(query: String, limit: Int, includeContent: Boolean): String {
-        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.ZAI) { ZaiApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return searchError("Z.ai API key missing. Add a Z.ai API key in settings.")
         }
@@ -540,7 +610,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun miniMaxWebSearch(query: String, limit: Int, includeContent: Boolean): String {
-        val apiKey = MiniMaxApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MINIMAX) { MiniMaxApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return searchError("MiniMax API key missing. Add a MiniMax API key in settings.")
         }
@@ -558,7 +628,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun mistralWebSearch(query: String, model: String, premium: Boolean): String {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MISTRAL) { MistralApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return searchError("Mistral API key missing. Add a Mistral API key in settings.")
         }
@@ -605,7 +675,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun zaiSpeechToText(localFile: String?, model: String): String {
-        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.ZAI) { ZaiApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
         }
@@ -625,7 +695,7 @@ class SubscriptionUsageMcpToolset(
         waitForCompletion: Boolean,
         pollTimeoutSeconds: Int,
     ): String {
-        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.ZAI) { ZaiApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
         }
@@ -639,7 +709,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun withMiniMaxKey(failureLabel: String, block: (String, MiniMaxRegion) -> String): String {
-        val apiKey = MiniMaxApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MINIMAX) { MiniMaxApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("MiniMax API key missing. Add a MiniMax API key in settings.")
         }
@@ -657,7 +727,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun zaiImageGeneration(prompt: String, targetFile: String?): String {
-        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.ZAI) { ZaiApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
         }
@@ -671,7 +741,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun mistralImageGeneration(prompt: String, targetFile: String?): String {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MISTRAL) { MistralApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
         }
@@ -691,7 +761,7 @@ class SubscriptionUsageMcpToolset(
         includeImages: Boolean,
         model: String,
     ): String {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MISTRAL) { MistralApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
         }
@@ -718,7 +788,7 @@ class SubscriptionUsageMcpToolset(
         includeImages: Boolean,
         model: String,
     ): String {
-        val apiKey = ZaiApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.ZAI) { ZaiApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
         }
@@ -745,7 +815,7 @@ class SubscriptionUsageMcpToolset(
         diarize: Boolean,
         model: String,
     ): String {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MISTRAL) { MistralApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
         }
@@ -773,7 +843,7 @@ class SubscriptionUsageMcpToolset(
         model: String,
         responseFormat: String,
     ): String {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MISTRAL) { MistralApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
         }
@@ -796,7 +866,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun mistralListVoices(): String {
-        val apiKey = MistralApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.MISTRAL) { MistralApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Mistral API key missing. Add a Mistral API key in settings.")
         }
@@ -818,7 +888,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun ollamaWebSearch(query: String, limit: Int, includeContent: Boolean): String {
-        val apiKey = OllamaApiKeyStore.getInstance().loadBlocking()
+        val apiKey = resolvedApiKey(QuotaProviderType.OLLAMA) { OllamaApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return searchError("Ollama API key missing. Add an Ollama API key in settings.")
         }
@@ -831,6 +901,18 @@ class SubscriptionUsageMcpToolset(
         }
     }
 
+    private fun resolvedApiKey(type: QuotaProviderType, load: (String) -> String?): String? {
+        val account = try {
+            de.moritzf.quota.idea.settings.AccountResolver.resolve(
+                type,
+                capability = de.moritzf.quota.idea.settings.AccountCapability.WEB_SEARCH,
+            )
+        } catch (_: de.moritzf.quota.idea.settings.AccountResolveException) {
+            return null
+        }
+        return load(account.id)
+    }
+
     private fun projectBaseDirectory(): Path? {
         return ProjectManager.getInstance().openProjects.firstOrNull()
             ?.basePath
@@ -838,7 +920,19 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun miniMaxSearchRegions(): List<MiniMaxRegion> {
-        return when (runCatching { QuotaSettingsState.getInstance().miniMaxRegionPreference() }.getOrDefault(MiniMaxRegionPreference.AUTO)) {
+        val settings = runCatching { QuotaSettingsState.getInstance() }.getOrNull()
+        val accountId = runCatching {
+            de.moritzf.quota.idea.settings.AccountResolver.resolve(
+                QuotaProviderType.MINIMAX,
+                capability = de.moritzf.quota.idea.settings.AccountCapability.WEB_SEARCH,
+            ).id
+        }.getOrNull()
+        val preference = when {
+            settings == null -> MiniMaxRegionPreference.AUTO
+            accountId != null -> settings.miniMaxRegionFor(accountId)
+            else -> settings.miniMaxRegionPreference()
+        }
+        return when (preference) {
             MiniMaxRegionPreference.GLOBAL -> listOf(MiniMaxRegion.GLOBAL)
             MiniMaxRegionPreference.CN -> listOf(MiniMaxRegion.CN)
             MiniMaxRegionPreference.AUTO -> listOf(MiniMaxRegion.GLOBAL, MiniMaxRegion.CN)
@@ -846,9 +940,16 @@ class SubscriptionUsageMcpToolset(
     }
 
     private fun searchError(message: String): String {
+        val settings = runCatching { QuotaSettingsState.getInstance() }.getOrNull()
         val available = mutableListOf<String>()
         for (descriptor in ProviderCatalog.all) {
-            if (descriptor.isWebSearchConfigured()) {
+            val accounts = settings?.accountsOf(descriptor.type).orEmpty()
+            val configured = if (accounts.isEmpty()) {
+                descriptor.isWebSearchConfigured()
+            } else {
+                accounts.any { descriptor.isWebSearchConfiguredForAccount(it.id) }
+            }
+            if (configured) {
                 available.add(descriptor.type.displayName)
             }
         }

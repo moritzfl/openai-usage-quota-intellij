@@ -80,7 +80,7 @@ class SubscriptionUsageMcpToolsetTest {
         }
 
         assertEquals(listOf("subscription_quota"), quotaToolNames)
-        assertEquals(listOf(QuotaProviderType::class.java), quotaTool.parameterTypes.toList())
+        assertEquals(listOf(QuotaProviderType::class.java, String::class.java), quotaTool.parameterTypes.toList())
     }
 
     @Test
