@@ -1,5 +1,16 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+- OpenCode Go quota parses the current opencode.ai response, including fractional usage percents such as `15.2`.
+- Quota percents accept integers, decimals, and numeric strings from every provider instead of failing when the JSON number type changes.
+- Provider settings is now an account list. Add or remove logins, including more than one of the same type. Each account has its own name, credentials, and quota. Names appear in settings and the popup only when that type has two or more logins. Add, remove, default, standby, and host/region edits wait until you Apply; Cancel drops unapplied adds and their stored logins.
+- When a type has two or more logins, pick which account MCP tools and the local proxy use first, and whether the others are tried if that quota is exhausted. Routing is one header line on that account’s settings page.
+- MCP `subscription_quota` accepts an optional account name. `subscription_tools_status` lists each account and which of its tools are configured. Unpinned spend tools and the local proxy use the Default account for that type, then standby logins when that quota is exhausted.
+- The quota popup shows one block per account. Status-bar Last used, GitHub enterprise host, MiniMax region, and reset redeem follow the account that was used. Last used looks at every login’s timestamp, not only the first account of a type.
+- Local proxy and Codex MCP refresh the login that owned the rejected token, instead of resolving again after a 401.
+- SuperGrok and Codex banked reset tokens show when that token expires. After you redeem one, that account’s quota is refreshed.
+
 ## [1.9.1] - 2026-08-26
 
 - Codex plan names are shown as title case with `self_serve` stripped, so `self_serve_business_prolite` appears as Business Prolite.
