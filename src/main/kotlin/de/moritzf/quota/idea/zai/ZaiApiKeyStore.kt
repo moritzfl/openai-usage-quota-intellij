@@ -17,8 +17,11 @@ import java.util.logging.Logger
  * Caches the value in memory to avoid calling PasswordSafe on the EDT.
  */
 @Service(Service.Level.APP)
-class ZaiApiKeyStore {
-    private val attributes = CredentialAttributes(SERVICE_NAME, USER_NAME)
+class ZaiApiKeyStore(
+    private val userName: String = USER_NAME,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedApiKey = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -84,7 +87,7 @@ class ZaiApiKeyStore {
     fun save(apiKey: String) {
         loadGeneration.incrementAndGet()
         try {
-            PasswordSafe.instance.set(attributes, Credentials(USER_NAME, apiKey))
+            PasswordSafe.instance.set(attributes, Credentials(userName, apiKey))
         } catch (exception: Exception) {
             throw IllegalStateException("Could not persist Z.ai API key", exception)
         }
@@ -124,8 +127,20 @@ class ZaiApiKeyStore {
         private val LOG = Logger.getLogger(ZaiApiKeyStore::class.java.name)
 
         @JvmStatic
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, ZaiApiKeyStore>()
+
         fun getInstance(): ZaiApiKeyStore {
             return ApplicationManager.getApplication().getService(ZaiApiKeyStore::class.java)
         }
+
+        fun forAccount(accountId: String): ZaiApiKeyStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.ZAI.id,
+                SERVICE_NAME,
+                USER_NAME,
+                extras,
+                ::getInstance,
+            ) { service, user -> ZaiApiKeyStore(userName = user, serviceName = service) }
     }
 }

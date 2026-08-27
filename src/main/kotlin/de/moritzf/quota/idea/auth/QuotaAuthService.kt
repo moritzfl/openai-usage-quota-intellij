@@ -43,12 +43,13 @@ class QuotaAuthService(
     private val tokenOperationsFactory: (QuotaProviderType, OAuthClientConfig) -> OAuthTokenOperations = { _, config ->
         OAuthTokenClient(httpClient, config)
     },
-    private val credentialStoreFactory: (QuotaProviderType) -> OAuthCredentialStore = { type ->
-        OAuthCredentialsStore.forProvider(type)
+    private val credentialStoreFactory: (String, QuotaProviderType) -> OAuthCredentialStore = { accountId, type ->
+        OAuthCredentialsStore.forAccount(accountId, type)
     },
     private val browserOpener: (String) -> Unit = BrowserUtil::browse,
 ) : Disposable {
-    private val providerStates = ConcurrentHashMap<QuotaProviderType, ProviderAuthState>()
+    private val providerStates = ConcurrentHashMap<String, ProviderAuthState>()
+    private val typeLoginLocks = ConcurrentHashMap<QuotaProviderType, Any>()
 
     private data class PendingCredentials(
         val credentials: OAuthCredentials,
@@ -61,14 +62,16 @@ class QuotaAuthService(
         val failedAtMs: Long,
     )
 
-    private fun stateFor(type: QuotaProviderType): ProviderAuthState {
-        return providerStates.computeIfAbsent(type) { ProviderAuthState(type) }
+    private fun stateFor(type: QuotaProviderType): ProviderAuthState = stateFor(type.id, type)
+
+    private fun stateFor(accountId: String, type: QuotaProviderType): ProviderAuthState {
+        return providerStates.computeIfAbsent(accountId) { ProviderAuthState(accountId, type) }
     }
 
-    private inner class ProviderAuthState(val type: QuotaProviderType) {
+    private inner class ProviderAuthState(val accountId: String, val type: QuotaProviderType) {
         val config = OAuthClientConfig.forProvider(type)
         val tokenOperations: OAuthTokenOperations = tokenOperationsFactory(type, config)
-        val credentialStore: OAuthCredentialStore = credentialStoreFactory(type)
+        val credentialStore: OAuthCredentialStore = credentialStoreFactory(accountId, type)
         
         val credentialsLock = Any()
         val refreshLock = Any()
@@ -94,12 +97,31 @@ class QuotaAuthService(
     }
 
     fun startLoginFlow(type: QuotaProviderType, callback: (LoginResult) -> Unit, onAuthUrl: ((String) -> Unit)? = null) {
-        val state = stateFor(type)
-        val loginGeneration = synchronized(state.credentialsLock) {
-            if (!state.authInProgress.compareAndSet(false, true)) {
-                null
-            } else {
-                state.loginGeneration.incrementAndGet()
+        startLoginFlow(type.id, type, callback, onAuthUrl)
+    }
+
+    fun startLoginFlow(
+        accountId: String,
+        type: QuotaProviderType,
+        callback: (LoginResult) -> Unit,
+        onAuthUrl: ((String) -> Unit)? = null,
+    ) {
+        val typeLock = typeLoginLocks.computeIfAbsent(type) { Any() }
+        val loginGeneration: Long?
+        val state: ProviderAuthState
+        synchronized(typeLock) {
+            val existing = providerStates.values.firstOrNull { it.type == type && it.authInProgress.get() }
+            if (existing != null && existing.accountId != accountId) {
+                callback(LoginResult.error("Finish or cancel the other ${type.displayName} login first."))
+                return
+            }
+            state = stateFor(accountId, type)
+            loginGeneration = synchronized(state.credentialsLock) {
+                if (!state.authInProgress.compareAndSet(false, true)) {
+                    null
+                } else {
+                    state.loginGeneration.incrementAndGet()
+                }
             }
         }
         if (loginGeneration == null) {
@@ -135,21 +157,30 @@ class QuotaAuthService(
         }
     }
 
-    fun isLoginInProgress(type: QuotaProviderType): Boolean = stateFor(type).authInProgress.get()
+    fun isLoginInProgress(type: QuotaProviderType): Boolean =
+        providerStates.values.any { it.type == type && it.authInProgress.get() }
+
+    fun isLoginInProgress(accountId: String, type: QuotaProviderType): Boolean =
+        stateFor(accountId, type).authInProgress.get()
 
     /**
      * Completes a paste-based OAuth callback (Claude/Anthropic).
      * Returns null when the paste was accepted and token exchange is starting.
      * Returns an error message when the paste is invalid or no login is waiting.
      */
-    fun completePastedCallback(type: QuotaProviderType, input: String): String? {
-        val flow = stateFor(type).pendingFlow.get()
+    fun completePastedCallback(type: QuotaProviderType, input: String): String? =
+        completePastedCallback(type.id, type, input)
+
+    fun completePastedCallback(accountId: String, type: QuotaProviderType, input: String): String? {
+        val flow = stateFor(accountId, type).pendingFlow.get()
             ?: return "No login in progress. Click Log In first."
         return flow.completeWithPastedCallback(input)
     }
 
-    fun abortLogin(type: QuotaProviderType, reason: String?): Boolean {
-        val state = stateFor(type)
+    fun abortLogin(type: QuotaProviderType, reason: String?): Boolean = abortLogin(type.id, type, reason)
+
+    fun abortLogin(accountId: String, type: QuotaProviderType, reason: String?): Boolean {
+        val state = stateFor(accountId, type)
         val flow = synchronized(state.credentialsLock) {
             if (!state.authInProgress.getAndSet(false)) {
                 return false
@@ -163,9 +194,11 @@ class QuotaAuthService(
         return true
     }
 
-    fun clearCredentials(type: QuotaProviderType): Boolean {
-        val state = stateFor(type)
-        abortLogin(type, "Logged out")
+    fun clearCredentials(type: QuotaProviderType): Boolean = clearCredentials(type.id, type)
+
+    fun clearCredentials(accountId: String, type: QuotaProviderType): Boolean {
+        val state = stateFor(accountId, type)
+        abortLogin(accountId, type, "Logged out")
         synchronized(state.credentialsLock) {
             try {
                 state.credentialStore.clear()
@@ -184,14 +217,19 @@ class QuotaAuthService(
         return true
     }
 
-    fun isLoggedIn(type: QuotaProviderType): Boolean {
-        val state = stateFor(type)
+    fun isLoggedIn(type: QuotaProviderType): Boolean = isLoggedIn(type.id, type)
+
+    fun isLoggedIn(accountId: String, type: QuotaProviderType): Boolean {
+        val state = stateFor(accountId, type)
         val credentials = cachedCredentialsOrScheduleLoad(state)
         return credentials?.accessToken?.isNotBlank() == true || state.credentialLoadFailed.get()
     }
 
-    fun getAccessTokenBlocking(type: QuotaProviderType = QuotaProviderType.OPEN_AI): String? {
-        val state = stateFor(type)
+    fun getAccessTokenBlocking(type: QuotaProviderType = QuotaProviderType.OPEN_AI): String? =
+        getAccessTokenBlocking(type.id, type)
+
+    fun getAccessTokenBlocking(accountId: String, type: QuotaProviderType): String? {
+        val state = stateFor(accountId, type)
         var credentials = getCredentialsBlocking(state) ?: return null
         if (isExpired(credentials)) {
             credentials = refreshCredentialsBlocking(state) ?: return null
@@ -199,8 +237,10 @@ class QuotaAuthService(
         return credentials.accessToken
     }
 
-    fun hasCredentialsBlocking(type: QuotaProviderType): Boolean {
-        val state = stateFor(type)
+    fun hasCredentialsBlocking(type: QuotaProviderType): Boolean = hasCredentialsBlocking(type.id, type)
+
+    fun hasCredentialsBlocking(accountId: String, type: QuotaProviderType): Boolean {
+        val state = stateFor(accountId, type)
         val credentials = getCredentialsBlocking(state)
         return credentials?.accessToken?.isNotBlank() == true || state.credentialLoadFailed.get()
     }
@@ -215,8 +255,14 @@ class QuotaAuthService(
     fun forceRefreshBlocking(
         type: QuotaProviderType = QuotaProviderType.OPEN_AI,
         staleAccessToken: String?,
+    ): String? = forceRefreshBlocking(type.id, type, staleAccessToken)
+
+    fun forceRefreshBlocking(
+        accountId: String,
+        type: QuotaProviderType,
+        staleAccessToken: String?,
     ): String? {
-        val state = stateFor(type)
+        val state = stateFor(accountId, type)
         synchronized(state.refreshLock) {
             val clearMarker = currentCredentialClearMarker(state)
             val latestCredentials = getCredentialsBlocking(state) ?: return null
@@ -231,13 +277,28 @@ class QuotaAuthService(
     }
 
     fun getAccountId(type: QuotaProviderType = QuotaProviderType.OPEN_AI): String? =
-        cachedCredentialsOrScheduleLoad(stateFor(type))?.accountId
+        getAccountId(type.id, type)
 
-    fun getHd(type: QuotaProviderType = QuotaProviderType.OPEN_AI): String? = 
+    fun getAccountId(accountId: String, type: QuotaProviderType): String? =
+        cachedCredentialsOrScheduleLoad(stateFor(accountId, type))?.accountId
+
+    fun getHd(type: QuotaProviderType = QuotaProviderType.OPEN_AI): String? =
         cachedCredentialsOrScheduleLoad(stateFor(type))?.hd
 
+    fun peekAccessToken(accountId: String, type: QuotaProviderType): String? {
+        return stateFor(accountId, type).cachedCredentials.get()?.accessToken
+    }
+
+    fun forgetAccount(accountId: String) {
+        providerStates.remove(accountId)
+    }
+
     fun refreshCacheAsync(type: QuotaProviderType) {
-        val state = stateFor(type)
+        refreshCacheAsync(type.id, type)
+    }
+
+    fun refreshCacheAsync(accountId: String, type: QuotaProviderType) {
+        val state = stateFor(accountId, type)
         if (!state.cacheLoading.compareAndSet(false, true)) {
             return
         }
@@ -346,7 +407,7 @@ class QuotaAuthService(
     private fun cachedCredentialsOrScheduleLoad(state: ProviderAuthState): OAuthCredentials? {
         state.cachedCredentials.get()?.let { return it }
         if (!state.cacheLoaded.get()) {
-            refreshCacheAsync(state.type)
+            refreshCacheAsync(state.accountId, state.type)
         }
         return null
     }

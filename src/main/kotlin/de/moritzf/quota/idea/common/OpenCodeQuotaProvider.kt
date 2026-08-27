@@ -11,8 +11,9 @@ import java.util.concurrent.atomic.AtomicReference
  * Fetches and caches OpenCode quota data.
  */
 class OpenCodeQuotaProvider(
+    override val accountId: String = QuotaProviderType.OPEN_CODE.id,
     private val openCodeClient: OpenCodeQuotaClient = OpenCodeQuotaClient(),
-    private val openCodeCookieProvider: () -> String? = { OpenCodeSessionCookieStore.getInstance().loadBlocking() },
+    private val openCodeCookieProvider: () -> String? = { OpenCodeSessionCookieStore.forAccount(accountId).loadBlocking() },
     private val settingsProvider: () -> QuotaSettingsState? = {
         runCatching { QuotaSettingsState.getInstance() }.getOrNull()
     },
@@ -92,7 +93,7 @@ class OpenCodeQuotaProvider(
         }
 
         val settings = settingsProvider()
-        val storedWorkspaceId = settings?.openCodeWorkspaceId
+        val storedWorkspaceId = settings?.openCodeWorkspaceIdFor(accountId)
         if (!storedWorkspaceId.isNullOrBlank()) {
             cachedWorkspaceId.set(storedWorkspaceId)
             cachedWorkspaceIdTimestamp.set(System.currentTimeMillis())
@@ -102,8 +103,8 @@ class OpenCodeQuotaProvider(
         val workspaceId = openCodeClient.discoverWorkspaceId(sessionCookie)
         cachedWorkspaceId.set(workspaceId)
         cachedWorkspaceIdTimestamp.set(System.currentTimeMillis())
-        if (settings != null && settings.openCodeWorkspaceId != workspaceId) {
-            settings.openCodeWorkspaceId = workspaceId
+        if (settings != null && settings.openCodeWorkspaceIdFor(accountId) != workspaceId) {
+            settings.setOpenCodeWorkspaceIdFor(accountId, workspaceId)
         }
         return workspaceId
     }

@@ -17,8 +17,11 @@ import java.util.logging.Logger
  * Caches the value in memory to avoid calling PasswordSafe on the EDT.
  */
 @Service(Service.Level.APP)
-class OpenCodeSessionCookieStore {
-    private val attributes = CredentialAttributes(SERVICE_NAME, USER_NAME)
+class OpenCodeSessionCookieStore(
+    private val userName: String = USER_NAME,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedCookie = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -94,7 +97,7 @@ class OpenCodeSessionCookieStore {
     fun save(cookie: String) {
         loadGeneration.incrementAndGet()
         try {
-            PasswordSafe.instance.set(attributes, Credentials(USER_NAME, cookie))
+            PasswordSafe.instance.set(attributes, Credentials(userName, cookie))
         } catch (exception: Exception) {
             throw IllegalStateException("Could not persist OpenCode session cookie", exception)
         }
@@ -135,8 +138,20 @@ class OpenCodeSessionCookieStore {
         private val LOG = Logger.getLogger(OpenCodeSessionCookieStore::class.java.name)
 
         @JvmStatic
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, OpenCodeSessionCookieStore>()
+
         fun getInstance(): OpenCodeSessionCookieStore {
             return ApplicationManager.getApplication().getService(OpenCodeSessionCookieStore::class.java)
         }
+
+        fun forAccount(accountId: String): OpenCodeSessionCookieStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.OPEN_CODE.id,
+                SERVICE_NAME,
+                USER_NAME,
+                extras,
+                ::getInstance,
+            ) { service, user -> OpenCodeSessionCookieStore(userName = user, serviceName = service) }
     }
 }

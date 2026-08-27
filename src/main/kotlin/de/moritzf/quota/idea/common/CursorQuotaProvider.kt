@@ -10,8 +10,9 @@ import de.moritzf.quota.idea.cursor.CursorCredentialsStore
  * Fetches and caches Cursor subscription usage data.
  */
 class CursorQuotaProvider(
+    override val accountId: String = QuotaProviderType.CURSOR.id,
     private val cursorClient: CursorQuotaClient = CursorQuotaClient(),
-    private val credentialsProvider: () -> CursorAuth? = { CursorCredentialsStore.getInstance().loadBlocking() },
+    private val credentialsProvider: () -> CursorAuth? = { CursorCredentialsStore.forAccount(accountId).loadBlocking() },
 ) : CachedQuotaProvider<CursorQuota>() {
     override val type = QuotaProviderType.CURSOR
     override val notConfiguredMessage = "No Cursor session cookie configured. Paste WorkosCursorSessionToken from cursor.com in settings."

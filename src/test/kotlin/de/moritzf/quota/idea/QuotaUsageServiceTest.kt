@@ -585,8 +585,8 @@ class QuotaUsageServiceTest {
                     QuotaSnapshotCache.encode(
                         QuotaProviderType.OPEN_CODE,
                         OpenCodeQuota(
-                            rollingUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 1000, usagePercent = 41),
-                            weeklyUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 10000, usagePercent = 97),
+                            rollingUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 1000, usagePercent = 41.0),
+                            weeklyUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 10000, usagePercent = 97.0),
                         ),
                     ),
                 ),
@@ -629,13 +629,13 @@ class QuotaUsageServiceTest {
     @Test
     fun openCodeWindowGrowthUpdatesLastActiveSource() {
         val settings = QuotaSettingsState().apply { setLastActiveProvider(QuotaProviderType.OPEN_AI) }
-        var rolling = 80
+        var rolling = 80.0
         val openCodeProvider = OpenCodeQuotaProvider(
             openCodeClient = object : OpenCodeQuotaClient() {
                 override fun discoverWorkspaceId(sessionCookie: String) = "wrk-1"
                 override fun fetchQuota(sessionCookie: String, workspaceId: String) = OpenCodeQuota(
                     rollingUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 1000, usagePercent = rolling),
-                    weeklyUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 10000, usagePercent = 50),
+                    weeklyUsage = OpenCodeUsageWindow(status = "ok", resetInSec = 10000, usagePercent = 50.0),
                 )
             },
             openCodeCookieProvider = { "cookie" },
@@ -647,7 +647,7 @@ class QuotaUsageServiceTest {
             service.refreshNowBlocking()
             assertEquals(QuotaProviderType.OPEN_AI, settings.lastActiveProvider())
 
-            rolling = 85
+            rolling = 85.0
             service.refreshNowBlocking()
             assertEquals(QuotaProviderType.OPEN_CODE, settings.lastActiveProvider())
 
@@ -762,6 +762,189 @@ class QuotaUsageServiceTest {
     }
 
     @Test
+    fun twoOllamaAccountsKeepDistinctSnapshotsAfterRefresh() {
+        val pro = OllamaQuotaProvider(
+            accountId = "ollama",
+            ollamaClient = object : de.moritzf.quota.ollama.OllamaQuotaClient() {
+                override fun fetchQuota(apiKey: String) = de.moritzf.quota.ollama.OllamaQuota(
+                    sessionUsage = de.moritzf.quota.ollama.OllamaUsageWindow(usagePercent = 42.0),
+                )
+            },
+            apiKeyProvider = { "pro-key" },
+        )
+        val free = OllamaQuotaProvider(
+            accountId = "ollama-free",
+            ollamaClient = object : de.moritzf.quota.ollama.OllamaQuotaClient() {
+                override fun fetchQuota(apiKey: String) = de.moritzf.quota.ollama.OllamaQuota(
+                    sessionUsage = de.moritzf.quota.ollama.OllamaUsageWindow(usagePercent = 0.0),
+                )
+            },
+            apiKeyProvider = { "free-key" },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(pro, free),
+            settingsProvider = { null },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+        try {
+            service.refreshNowBlocking()
+            val snapshot = service.currentSnapshot()
+            assertEquals(42.0, (snapshot.forAccount("ollama", QuotaProviderType.OLLAMA).quota as de.moritzf.quota.ollama.OllamaQuota).sessionUsage?.usagePercent)
+            assertEquals(0.0, (snapshot.forAccount("ollama-free", QuotaProviderType.OLLAMA).quota as de.moritzf.quota.ollama.OllamaQuota).sessionUsage?.usagePercent)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun lastUsedIndicatorUsesActiveAccountQuota() {
+        val settings = QuotaSettingsState().apply {
+            accounts = mutableListOf(
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "openai",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Work",
+                    isDefault = true,
+                ),
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "personal",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Personal",
+                ),
+            )
+            setSource(QuotaIndicatorSource.LAST_USED)
+            setLastActiveAccount("personal")
+        }
+        val work = OpenAiQuotaProvider(
+            accountId = "openai",
+            quotaFetcher = { _, _ ->
+                OpenAiCodexQuota(allowed = true).apply { primary = UsageWindow(usedPercent = 10.0) }
+            },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "work" },
+        )
+        val personal = OpenAiQuotaProvider(
+            accountId = "personal",
+            quotaFetcher = { _, _ ->
+                OpenAiCodexQuota(allowed = true).apply { primary = UsageWindow(usedPercent = 77.0) }
+            },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "personal" },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(work, personal),
+            settingsProvider = { settings },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+        try {
+            service.refreshNowBlocking()
+            val indicator = service.getEffectiveIndicatorData()
+            assertEquals(QuotaProviderType.OPEN_AI, indicator.type)
+            assertEquals("personal", indicator.accountId)
+            assertEquals(0.77, indicator.quota!!.usageFraction()!!, 0.0001)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun typeSnapshotPrefersDefaultAccount() {
+        val settings = QuotaSettingsState().apply {
+            accounts = mutableListOf(
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "openai",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Work",
+                    isDefault = true,
+                ),
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "personal",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Personal",
+                ),
+            )
+        }
+        val work = OpenAiQuotaProvider(
+            accountId = "openai",
+            quotaFetcher = { _, _ -> OpenAiCodexQuota(limitReached = true) },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "work" },
+        )
+        val personal = OpenAiQuotaProvider(
+            accountId = "personal",
+            quotaFetcher = { _, _ -> OpenAiCodexQuota(limitReached = false) },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "personal" },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(personal, work),
+            settingsProvider = { settings },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+        try {
+            service.refreshNowBlocking()
+            val snapshot = service.currentSnapshot()
+            assertEquals(true, (snapshot[QuotaProviderType.OPEN_AI].quota as OpenAiCodexQuota).limitReached)
+            assertEquals(true, (snapshot["openai"].quota as OpenAiCodexQuota).limitReached)
+            assertEquals(false, (snapshot["personal"].quota as OpenAiCodexQuota).limitReached)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
+    fun indicatorDoesNotMixSiblingQuotaAndError() {
+        val settings = QuotaSettingsState().apply {
+            accounts = mutableListOf(
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "openai",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Work",
+                    isDefault = true,
+                ),
+                de.moritzf.quota.idea.settings.ProviderAccount(
+                    id = "personal",
+                    typeId = QuotaProviderType.OPEN_AI.id,
+                    name = "Personal",
+                ),
+            )
+            setSource(QuotaIndicatorSource.OPEN_AI)
+        }
+        val work = OpenAiQuotaProvider(
+            accountId = "openai",
+            quotaFetcher = { _, _ -> throw OpenAiCodexQuotaException("work down", 500, "{}") },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "work" },
+        )
+        val personal = OpenAiQuotaProvider(
+            accountId = "personal",
+            quotaFetcher = { _, _ ->
+                OpenAiCodexQuota(allowed = true).apply { primary = UsageWindow(usedPercent = 10.0) }
+            },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "personal" },
+        )
+        val service = QuotaUsageService(
+            providers = listOf(work, personal),
+            settingsProvider = { settings },
+            updatePublisher = {},
+            scheduleOnInit = false,
+        )
+        try {
+            service.refreshNowBlocking()
+            val indicator = service.getEffectiveIndicatorData()
+            assertEquals("openai", indicator.accountId)
+            assertNull(indicator.quota)
+            assertEquals("work down", indicator.error)
+        } finally {
+            service.dispose()
+        }
+    }
+
+    @Test
     fun consumeOpenAiResetCreditCallsClientAndRefreshes() {
         var consumed = false
         val openAiProvider = OpenAiQuotaProvider(
@@ -803,6 +986,7 @@ class QuotaUsageServiceTest {
             settingsProvider = { null },
             updatePublisher = {},
             scheduleOnInit = false,
+            sleeper = {},
         )
 
         try {
@@ -838,7 +1022,7 @@ class QuotaUsageServiceTest {
                 rollingUsage = OpenCodeUsageWindow(
                     status = "ok",
                     resetInSec = 60,
-                    usagePercent = 10,
+                    usagePercent = 10.0,
                 ),
             )
         }

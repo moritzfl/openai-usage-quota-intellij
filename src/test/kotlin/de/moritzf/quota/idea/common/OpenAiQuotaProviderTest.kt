@@ -1,10 +1,13 @@
 package de.moritzf.quota.idea.common
 
 import de.moritzf.quota.openai.OpenAiCodexQuota
+import de.moritzf.quota.openai.UsageWindow
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 
 class OpenAiQuotaProviderTest {
     @Test
@@ -44,5 +47,28 @@ class OpenAiQuotaProviderTest {
 
         assertNull(provider.getLastQuota())
         assertEquals("Not logged in", provider.getLastError())
+    }
+
+    @Test
+    fun forceRefreshSkipsHysteresisAfterReset() {
+        val resetsAt = Clock.System.now() + 1.days
+        var percent = 100.0
+        val provider = OpenAiQuotaProvider(
+            quotaFetcher = { _, _ ->
+                OpenAiCodexQuota(limitReached = percent >= 100.0).apply {
+                    primary = UsageWindow(usedPercent = percent, resetsAt = resetsAt)
+                }
+            },
+            accessTokenProvider = { "token" },
+            accountIdProvider = { "account-1" },
+        )
+
+        provider.refresh()
+        percent = 99.2
+        provider.refresh()
+        assertEquals(100.0, provider.getLastQuota()!!.primary!!.usedPercent)
+
+        provider.refresh(forceUpdate = true)
+        assertEquals(99.2, provider.getLastQuota()!!.primary!!.usedPercent)
     }
 }

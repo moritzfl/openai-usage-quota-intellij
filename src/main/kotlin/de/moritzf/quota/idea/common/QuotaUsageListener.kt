@@ -9,6 +9,10 @@ import de.moritzf.quota.shared.ProviderQuota
 interface QuotaUsageListener {
     fun onQuotaUpdated(type: QuotaProviderType, quota: ProviderQuota?, error: String?) {}
 
+    fun onQuotaUpdated(type: QuotaProviderType, quota: ProviderQuota?, error: String?, accountId: String) {
+        onQuotaUpdated(type, quota, error)
+    }
+
     companion object {
         @JvmField
         val TOPIC: Topic<QuotaUsageListener> = Topic.create("LLM Subscription Usage Updated", QuotaUsageListener::class.java)

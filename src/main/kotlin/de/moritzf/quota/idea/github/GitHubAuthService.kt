@@ -9,6 +9,7 @@ import de.moritzf.quota.github.GitHubDeviceTokenPollResult
 import de.moritzf.quota.github.GitHubOAuthClient
 import de.moritzf.quota.idea.auth.AuthService
 import de.moritzf.quota.idea.auth.LoginResult
+import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -24,7 +25,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class GitHubAuthService(
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val oauthClientProvider: () -> GitHubOAuthClient = {
-        GitHubOAuthClient.forHost(QuotaSettingsState.getInstance().githubEnterpriseHost)
+        val settings = QuotaSettingsState.getInstance()
+        GitHubOAuthClient.forHost(settings.githubHostFor(QuotaProviderType.GITHUB.id))
     },
     private val credentialsStore: GitHubCredentialsStore = GitHubCredentialsStore.getInstance(),
     private val browserOpener: (String) -> Unit = BrowserUtil::browse,
@@ -32,13 +34,21 @@ class GitHubAuthService(
     private val loginInProgress = AtomicBoolean(false)
 
     override fun startLoginFlow(callback: (LoginResult) -> Unit, onVerificationUrl: ((String, String) -> Unit)?) {
+        startLoginFlow(callback, onVerificationUrl, enterpriseHost = null)
+    }
+
+    fun startLoginFlow(
+        callback: (LoginResult) -> Unit,
+        onVerificationUrl: ((String, String) -> Unit)?,
+        enterpriseHost: String?,
+    ) {
         if (!loginInProgress.compareAndSet(false, true)) {
             callback(LoginResult.error("Login already in progress"))
             return
         }
         scope.launch {
             val result = try {
-                runLoginFlow(onVerificationUrl)
+                runLoginFlow(onVerificationUrl, enterpriseHost)
             } catch (exception: Exception) {
                 LOG.warn("GitHub login failed", exception)
                 LoginResult.error(exception.message ?: "Login failed")
@@ -66,8 +76,15 @@ class GitHubAuthService(
         credentialsStore.clear()
     }
 
-    private fun runLoginFlow(onVerificationUrl: ((String, String) -> Unit)?): LoginResult {
-        val oauthClient = oauthClientProvider()
+    private fun runLoginFlow(
+        onVerificationUrl: ((String, String) -> Unit)?,
+        enterpriseHost: String?,
+    ): LoginResult {
+        val oauthClient = if (enterpriseHost != null) {
+            GitHubOAuthClient.forHost(enterpriseHost)
+        } else {
+            oauthClientProvider()
+        }
         val authorization = oauthClient.requestDeviceAuthorization()
         if (authorization.deviceCode.isBlank() || authorization.userCode.isBlank()) {
             return LoginResult.error("GitHub did not return a usable device code")
@@ -106,7 +123,26 @@ class GitHubAuthService(
     companion object {
         private val LOG = Logger.getInstance(GitHubAuthService::class.java)
 
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, GitHubAuthService>()
+
         @JvmStatic
         fun getInstance(): GitHubAuthService = ApplicationManager.getApplication().getService(GitHubAuthService::class.java)
+
+        fun forAccount(accountId: String): GitHubAuthService {
+            if (accountId == de.moritzf.quota.idea.common.QuotaProviderType.GITHUB.id) return getInstance()
+            return extras.computeIfAbsent(accountId) {
+                GitHubAuthService(
+                    oauthClientProvider = {
+                        val settings = QuotaSettingsState.getInstance()
+                        GitHubOAuthClient.forHost(settings.githubHostFor(accountId))
+                    },
+                    credentialsStore = GitHubCredentialsStore.forAccount(accountId),
+                )
+            }
+        }
+
+        fun forgetAccount(accountId: String) {
+            extras.remove(accountId)?.dispose()
+        }
     }
 }

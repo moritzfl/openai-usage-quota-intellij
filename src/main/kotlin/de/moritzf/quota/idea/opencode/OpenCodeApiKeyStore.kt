@@ -13,8 +13,11 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
 
 @Service(Service.Level.APP)
-class OpenCodeApiKeyStore {
-    private val attributes = CredentialAttributes(SERVICE_NAME, USER_NAME)
+class OpenCodeApiKeyStore(
+    private val userName: String = USER_NAME,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedApiKey = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -44,7 +47,7 @@ class OpenCodeApiKeyStore {
     fun save(apiKey: String?) {
         loadGeneration.incrementAndGet()
         try {
-            PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials(USER_NAME, it) })
+            PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials(userName, it) })
         } catch (exception: Exception) {
             throw IllegalStateException("Could not persist OpenCode API key", exception)
         }
@@ -104,8 +107,20 @@ class OpenCodeApiKeyStore {
         private val LOG = Logger.getLogger(OpenCodeApiKeyStore::class.java.name)
 
         @JvmStatic
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, OpenCodeApiKeyStore>()
+
         fun getInstance(): OpenCodeApiKeyStore {
             return ApplicationManager.getApplication().getService(OpenCodeApiKeyStore::class.java)
         }
+
+        fun forAccount(accountId: String): OpenCodeApiKeyStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.OPEN_CODE.id,
+                SERVICE_NAME,
+                USER_NAME,
+                extras,
+                ::getInstance,
+            ) { service, user -> OpenCodeApiKeyStore(userName = user, serviceName = service) }
     }
 }

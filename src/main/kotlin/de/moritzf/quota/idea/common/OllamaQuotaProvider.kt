@@ -9,8 +9,9 @@ import de.moritzf.quota.ollama.OllamaQuotaException
  * Fetches and caches Ollama Cloud quota data via the official usage API.
  */
 class OllamaQuotaProvider(
+    override val accountId: String = QuotaProviderType.OLLAMA.id,
     private val ollamaClient: OllamaQuotaClient = OllamaQuotaClient(),
-    private val apiKeyProvider: () -> String? = { OllamaApiKeyStore.getInstance().loadBlocking() },
+    private val apiKeyProvider: () -> String? = { OllamaApiKeyStore.forAccount(accountId).loadBlocking() },
 ) : CachedQuotaProvider<OllamaQuota>() {
     override val type = QuotaProviderType.OLLAMA
     override val notConfiguredMessage = "No Ollama API key configured"

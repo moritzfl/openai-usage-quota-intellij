@@ -89,16 +89,21 @@ class OAuthCredentialsStore(
         private const val CLEARED_MARKER = "__llm_subscription_usage_oauth_cleared__"
         private val LOG = Logger.getInstance(OAuthCredentialsStore::class.java)
 
-        fun forProvider(type: QuotaProviderType): OAuthCredentialsStore {
-            val userName = "${type.id}-oauth"
+        fun forProvider(type: QuotaProviderType): OAuthCredentialsStore = forAccount(type.id, type)
+
+        fun forAccount(accountId: String, type: QuotaProviderType): OAuthCredentialsStore {
+            val userName = "$accountId-oauth"
+            val migrated = accountId == type.id
             return OAuthCredentialsStore(
-                serviceName = serviceNameForProvider(type),
+                serviceName = serviceNameForAccount(accountId),
                 userName = userName,
-                legacyServiceName = LEGACY_SERVICE_NAME,
-                legacyUserName = userName,
+                legacyServiceName = if (migrated) LEGACY_SERVICE_NAME else null,
+                legacyUserName = if (migrated) userName else null,
             )
         }
 
-        internal fun serviceNameForProvider(type: QuotaProviderType): String = "$LEGACY_SERVICE_NAME (${type.id})"
+        internal fun serviceNameForProvider(type: QuotaProviderType): String = serviceNameForAccount(type.id)
+
+        internal fun serviceNameForAccount(accountId: String): String = "$LEGACY_SERVICE_NAME ($accountId)"
     }
 }

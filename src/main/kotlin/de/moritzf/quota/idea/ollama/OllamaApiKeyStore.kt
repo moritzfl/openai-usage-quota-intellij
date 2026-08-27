@@ -13,8 +13,11 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.logging.Logger
 
 @Service(Service.Level.APP)
-class OllamaApiKeyStore {
-    private val attributes = CredentialAttributes(SERVICE_NAME, USER_NAME)
+class OllamaApiKeyStore(
+    private val userName: String = USER_NAME,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedApiKey = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -53,7 +56,7 @@ class OllamaApiKeyStore {
     fun save(apiKey: String?) {
         loadGeneration.incrementAndGet()
         try {
-            PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials(USER_NAME, it) })
+            PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials(userName, it) })
         } catch (exception: Exception) {
             throw IllegalStateException("Could not persist Ollama API key", exception)
         }
@@ -117,9 +120,21 @@ class OllamaApiKeyStore {
         private const val USER_NAME = "ollama-api-key"
         private val LOG = Logger.getLogger(OllamaApiKeyStore::class.java.name)
 
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, OllamaApiKeyStore>()
+
         @JvmStatic
         fun getInstance(): OllamaApiKeyStore {
             return ApplicationManager.getApplication().getService(OllamaApiKeyStore::class.java)
         }
+
+        fun forAccount(accountId: String): OllamaApiKeyStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.OLLAMA.id,
+                SERVICE_NAME,
+                USER_NAME,
+                extras,
+                ::getInstance,
+            ) { service, user -> OllamaApiKeyStore(userName = user, serviceName = service) }
     }
 }

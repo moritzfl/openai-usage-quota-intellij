@@ -18,8 +18,11 @@ import java.util.logging.Logger
  * Resolves Cursor credentials from a browser session cookie.
  */
 @Service(Service.Level.APP)
-class CursorCredentialsStore {
-    private val sessionAttributes = CredentialAttributes(SESSION_SERVICE_NAME, SESSION_USER_NAME)
+class CursorCredentialsStore(
+    private val userName: String = SESSION_USER_NAME,
+    serviceName: String = SESSION_SERVICE_NAME,
+) {
+    private val sessionAttributes = CredentialAttributes(serviceName, userName)
     private val cachedSessionCookie = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -71,7 +74,7 @@ class CursorCredentialsStore {
             "Could not parse WorkosCursorSessionToken cookie"
         }
         try {
-            PasswordSafe.instance.set(sessionAttributes, Credentials(SESSION_USER_NAME, normalized))
+            PasswordSafe.instance.set(sessionAttributes, Credentials(userName, normalized))
         } catch (exception: Exception) {
             throw IllegalStateException("Could not persist Cursor session cookie", exception)
         }
@@ -145,8 +148,20 @@ class CursorCredentialsStore {
         private val LOG = Logger.getLogger(CursorCredentialsStore::class.java.name)
 
         @JvmStatic
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, CursorCredentialsStore>()
+
         fun getInstance(): CursorCredentialsStore {
             return ApplicationManager.getApplication().getService(CursorCredentialsStore::class.java)
         }
+
+        fun forAccount(accountId: String): CursorCredentialsStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.CURSOR.id,
+                SESSION_SERVICE_NAME,
+                SESSION_USER_NAME,
+                extras,
+                ::getInstance,
+            ) { service, user -> CursorCredentialsStore(userName = user, serviceName = service) }
     }
 }

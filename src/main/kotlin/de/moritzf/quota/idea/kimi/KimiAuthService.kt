@@ -96,7 +96,20 @@ class KimiAuthService(
     companion object {
         private val LOG = Logger.getInstance(KimiAuthService::class.java)
 
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, KimiAuthService>()
+
         @JvmStatic
         fun getInstance(): KimiAuthService = ApplicationManager.getApplication().getService(KimiAuthService::class.java)
+
+        fun forAccount(accountId: String): KimiAuthService {
+            if (accountId == de.moritzf.quota.idea.common.QuotaProviderType.KIMI.id) return getInstance()
+            return extras.computeIfAbsent(accountId) {
+                KimiAuthService(credentialsStore = KimiCredentialsStore.forAccount(accountId))
+            }
+        }
+
+        fun forgetAccount(accountId: String) {
+            extras.remove(accountId)?.dispose()
+        }
     }
 }

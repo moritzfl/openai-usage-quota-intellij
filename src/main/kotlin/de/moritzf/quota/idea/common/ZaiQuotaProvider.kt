@@ -9,8 +9,9 @@ import de.moritzf.quota.zai.ZaiQuotaException
  * Fetches and caches Z.ai quota data.
  */
 class ZaiQuotaProvider(
+    override val accountId: String = QuotaProviderType.ZAI.id,
     private val zaiClient: ZaiQuotaClient = ZaiQuotaClient(),
-    private val apiKeyProvider: () -> String? = { ZaiApiKeyStore.getInstance().loadBlocking() },
+    private val apiKeyProvider: () -> String? = { ZaiApiKeyStore.forAccount(accountId).loadBlocking() },
 ) : CachedQuotaProvider<ZaiQuota>() {
     override val type = QuotaProviderType.ZAI
     override val notConfiguredMessage = "No Z.ai API key configured"

@@ -8,6 +8,7 @@ import de.moritzf.quota.shared.ProviderQuota
  */
 interface QuotaProvider {
     val type: QuotaProviderType
+    val accountId: String get() = type.id
 
     /** Error shown when no credentials are configured; also the default when clearing usage data. */
     val notConfiguredMessage: String? get() = null

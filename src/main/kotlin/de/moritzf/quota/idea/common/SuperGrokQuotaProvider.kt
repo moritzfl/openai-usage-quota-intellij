@@ -6,15 +6,16 @@ import de.moritzf.quota.supergrok.SuperGrokQuotaClient
 import de.moritzf.quota.supergrok.SuperGrokQuotaException
 
 class SuperGrokQuotaProvider(
+    override val accountId: String = QuotaProviderType.SUPERGROK.id,
     private val client: SuperGrokQuotaClient = SuperGrokQuotaClient(),
     private val tokenProvider: () -> String? = {
-        QuotaAuthService.getInstance().getAccessTokenBlocking(QuotaProviderType.SUPERGROK)
+        QuotaAuthService.getInstance().getAccessTokenBlocking(accountId, QuotaProviderType.SUPERGROK)
     },
     private val tokenRefresher: (staleAccessToken: String?) -> String? = { staleToken ->
-        QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.SUPERGROK, staleToken)
+        QuotaAuthService.getInstance().forceRefreshBlocking(accountId, QuotaProviderType.SUPERGROK, staleToken)
     },
     private val loggedInProvider: () -> Boolean = {
-        QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.SUPERGROK)
+        QuotaAuthService.getInstance().isLoggedIn(accountId, QuotaProviderType.SUPERGROK)
     },
     private val resetConsumer: (String, String) -> Unit = { accessToken, tokenId ->
         client.redeemReset(accessToken, tokenId)
@@ -24,6 +25,10 @@ class SuperGrokQuotaProvider(
     override val notConfiguredMessage = "Grok login required. Log in from SuperGrok settings."
 
     override fun refresh() {
+        refresh(forceUpdate = false)
+    }
+
+    fun refresh(forceUpdate: Boolean) {
         val accessToken = tokenProvider()
         if (accessToken.isNullOrBlank()) {
             storeMissingAccessToken(
@@ -37,7 +42,8 @@ class SuperGrokQuotaProvider(
             val quota = fetchQuotaWithAuthRetry(accessToken)
             // Config-only mid-period payloads used to wipe real %; keep last good reading
             // when the new value is only an inferred 0% for the same period window.
-            if (shouldKeepLastQuota(quota)) {
+            // Skip this check after a reset — the new value is the actual result, not an inference.
+            if (!forceUpdate && shouldKeepLastQuota(quota)) {
                 lastRawJsonRef.set(quota.rawJson)
                 return
             }

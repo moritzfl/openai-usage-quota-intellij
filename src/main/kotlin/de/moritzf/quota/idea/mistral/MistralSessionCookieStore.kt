@@ -12,8 +12,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 @Service(Service.Level.APP)
-class MistralSessionCookieStore {
-    private val attributes = CredentialAttributes("Mistral Session Cookie", "mistral-session-cookie")
+class MistralSessionCookieStore(
+    private val userName: String = DEFAULT_USER,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedCookie = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -42,7 +45,7 @@ class MistralSessionCookieStore {
 
     fun save(cookie: String?) {
         loadGeneration.incrementAndGet()
-        PasswordSafe.instance.set(attributes, cookie?.takeIf { it.isNotBlank() }?.let { Credentials("mistral-session-cookie", it) })
+        PasswordSafe.instance.set(attributes, cookie?.takeIf { it.isNotBlank() }?.let { Credentials(userName, it) })
         cachedCookie.set(cookie?.ifBlank { null })
         loaded.set(true)
         loading.set(false)
@@ -86,8 +89,22 @@ class MistralSessionCookieStore {
     }
 
     companion object {
+        private const val SERVICE_NAME = "Mistral Session Cookie"
+        private const val DEFAULT_USER = "mistral-session-cookie"
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, MistralSessionCookieStore>()
+
         @JvmStatic
         fun getInstance(): MistralSessionCookieStore =
             ApplicationManager.getApplication().getService(MistralSessionCookieStore::class.java)
+
+        fun forAccount(accountId: String): MistralSessionCookieStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.MISTRAL.id,
+                SERVICE_NAME,
+                DEFAULT_USER,
+                extras,
+                ::getInstance,
+            ) { service, user -> MistralSessionCookieStore(userName = user, serviceName = service) }
     }
 }

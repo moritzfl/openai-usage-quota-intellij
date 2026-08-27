@@ -12,17 +12,21 @@ internal data class QuotaProviderRegistration(
 internal object QuotaProviderRegistry {
     val all: List<QuotaProviderRegistration>
         get() = ProviderCatalog.all.map {
-            QuotaProviderRegistration(it.type, it.quotaFactory, it.snapshotCodec)
+            QuotaProviderRegistration(it.type, { it.quotaFactory(defaultAccount(it.type)) }, it.snapshotCodec)
         }
 
     fun get(type: QuotaProviderType): QuotaProviderRegistration {
         val descriptor = ProviderCatalog.get(type)
-        return QuotaProviderRegistration(descriptor.type, descriptor.quotaFactory, descriptor.snapshotCodec)
+        return QuotaProviderRegistration(descriptor.type, { descriptor.quotaFactory(defaultAccount(type)) }, descriptor.snapshotCodec)
     }
 
     fun getOrNull(type: QuotaProviderType): QuotaProviderRegistration? {
         val descriptor = ProviderCatalog.getOrNull(type) ?: return null
-        return QuotaProviderRegistration(descriptor.type, descriptor.quotaFactory, descriptor.snapshotCodec)
+        return QuotaProviderRegistration(descriptor.type, { descriptor.quotaFactory(defaultAccount(type)) }, descriptor.snapshotCodec)
+    }
+
+    private fun defaultAccount(type: QuotaProviderType): de.moritzf.quota.idea.settings.ProviderAccount {
+        return de.moritzf.quota.idea.settings.ProviderAccount.create(type, type.displayName, isFirstOfType = true)
     }
 
     fun createProviders(): List<QuotaProvider> = ProviderCatalog.createQuotaProviders()

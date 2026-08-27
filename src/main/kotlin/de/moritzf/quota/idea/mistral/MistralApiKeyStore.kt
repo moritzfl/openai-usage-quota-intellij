@@ -12,8 +12,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 @Service(Service.Level.APP)
-class MistralApiKeyStore {
-    private val attributes = CredentialAttributes("Mistral API Key", "mistral-api-key")
+class MistralApiKeyStore(
+    private val userName: String = DEFAULT_USER,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedApiKey = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -42,7 +45,7 @@ class MistralApiKeyStore {
 
     fun save(apiKey: String?) {
         loadGeneration.incrementAndGet()
-        PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials("mistral-api-key", it) })
+        PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials(userName, it) })
         cachedApiKey.set(apiKey?.ifBlank { null })
         loaded.set(true)
         loading.set(false)
@@ -86,7 +89,21 @@ class MistralApiKeyStore {
     }
 
     companion object {
+        private const val SERVICE_NAME = "Mistral API Key"
+        private const val DEFAULT_USER = "mistral-api-key"
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, MistralApiKeyStore>()
+
         @JvmStatic
         fun getInstance(): MistralApiKeyStore = ApplicationManager.getApplication().getService(MistralApiKeyStore::class.java)
+
+        fun forAccount(accountId: String): MistralApiKeyStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.MISTRAL.id,
+                SERVICE_NAME,
+                DEFAULT_USER,
+                extras,
+                ::getInstance,
+            ) { service, user -> MistralApiKeyStore(userName = user, serviceName = service) }
     }
 }

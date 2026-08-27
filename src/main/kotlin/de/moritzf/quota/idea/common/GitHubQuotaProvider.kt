@@ -7,13 +7,14 @@ import de.moritzf.quota.idea.github.GitHubCredentialsStore
 import de.moritzf.quota.idea.settings.QuotaSettingsState
 
 class GitHubQuotaProvider(
+    override val accountId: String = QuotaProviderType.GITHUB.id,
     private val client: GitHubQuotaClient = GitHubQuotaClient(),
 ) : CachedQuotaProvider<GitHubQuota>() {
     override val type = QuotaProviderType.GITHUB
     override val notConfiguredMessage = "GitHub login required. Log in from settings."
 
     override fun refresh() {
-        val credentials = GitHubCredentialsStore.getInstance().loadBlocking()
+        val credentials = GitHubCredentialsStore.forAccount(accountId).loadBlocking()
         if (credentials?.isUsable() != true) {
             clearData(notConfiguredMessage)
             return
@@ -22,7 +23,7 @@ class GitHubQuotaProvider(
             val settings = QuotaSettingsState.getInstance()
             val quota = client.fetchQuota(
                 credentials = credentials,
-                enterpriseHost = settings.githubEnterpriseHost,
+                enterpriseHost = settings.githubHostFor(accountId),
             )
             storeQuota(quota, quota.rawJson)
         } catch (exception: GitHubQuotaException) {

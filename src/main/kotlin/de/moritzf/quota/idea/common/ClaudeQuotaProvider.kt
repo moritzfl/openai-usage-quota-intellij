@@ -6,15 +6,16 @@ import de.moritzf.quota.claude.ClaudeQuotaException
 import de.moritzf.quota.idea.auth.QuotaAuthService
 
 class ClaudeQuotaProvider(
+    override val accountId: String = QuotaProviderType.CLAUDE.id,
     private val client: ClaudeQuotaClient = ClaudeQuotaClient(),
     private val tokenProvider: () -> String? = {
-        QuotaAuthService.getInstance().getAccessTokenBlocking(QuotaProviderType.CLAUDE)
+        QuotaAuthService.getInstance().getAccessTokenBlocking(accountId, QuotaProviderType.CLAUDE)
     },
     private val tokenRefresher: (staleAccessToken: String?) -> String? = { staleToken ->
-        QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.CLAUDE, staleToken)
+        QuotaAuthService.getInstance().forceRefreshBlocking(accountId, QuotaProviderType.CLAUDE, staleToken)
     },
     private val loggedInProvider: () -> Boolean = {
-        QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.CLAUDE)
+        QuotaAuthService.getInstance().isLoggedIn(accountId, QuotaProviderType.CLAUDE)
     },
 ) : CachedQuotaProvider<ClaudeQuota>() {
     override val type = QuotaProviderType.CLAUDE

@@ -14,8 +14,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 @Service(Service.Level.APP)
-class KimiCredentialsStore {
-    private val attributes = CredentialAttributes("Kimi Credentials", "kimi-credentials")
+class KimiCredentialsStore(
+    private val userName: String = DEFAULT_USER,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedCredentials = AtomicReference<KimiCredentials?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -45,7 +48,7 @@ class KimiCredentialsStore {
     fun save(credentials: KimiCredentials) {
         loadGeneration.incrementAndGet()
         val json = JsonSupport.json.encodeToString(KimiCredentials.serializer(), credentials)
-        PasswordSafe.instance.set(attributes, Credentials("kimi-credentials", json))
+        PasswordSafe.instance.set(attributes, Credentials(userName, json))
         cachedCredentials.set(credentials)
         loaded.set(true)
         loading.set(false)
@@ -91,7 +94,20 @@ class KimiCredentialsStore {
     }
 
     companion object {
-        @JvmStatic
+        private const val SERVICE_NAME = "Kimi Credentials"
+        private const val DEFAULT_USER = "kimi-credentials"
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, KimiCredentialsStore>()
+
         fun getInstance(): KimiCredentialsStore = ApplicationManager.getApplication().getService(KimiCredentialsStore::class.java)
+
+        fun forAccount(accountId: String): KimiCredentialsStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.KIMI.id,
+                SERVICE_NAME,
+                DEFAULT_USER,
+                extras,
+                ::getInstance,
+            ) { service, user -> KimiCredentialsStore(userName = user, serviceName = service) }
     }
 }

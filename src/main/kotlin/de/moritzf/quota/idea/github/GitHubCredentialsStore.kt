@@ -14,8 +14,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 @Service(Service.Level.APP)
-class GitHubCredentialsStore {
-    private val attributes = CredentialAttributes("GitHub Copilot Credentials", "github-copilot-credentials")
+class GitHubCredentialsStore(
+    private val userName: String = DEFAULT_USER,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedCredentials = AtomicReference<GitHubCredentials?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -45,7 +48,7 @@ class GitHubCredentialsStore {
     fun save(credentials: GitHubCredentials) {
         loadGeneration.incrementAndGet()
         val json = JsonSupport.json.encodeToString(GitHubCredentials.serializer(), credentials)
-        PasswordSafe.instance.set(attributes, Credentials("github-copilot-credentials", json))
+        PasswordSafe.instance.set(attributes, Credentials(userName, json))
         cachedCredentials.set(credentials)
         loaded.set(true)
         loading.set(false)
@@ -91,7 +94,20 @@ class GitHubCredentialsStore {
     }
 
     companion object {
-        @JvmStatic
+        private const val SERVICE_NAME = "GitHub Copilot Credentials"
+        private const val DEFAULT_USER = "github-copilot-credentials"
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, GitHubCredentialsStore>()
+
         fun getInstance(): GitHubCredentialsStore = ApplicationManager.getApplication().getService(GitHubCredentialsStore::class.java)
+
+        fun forAccount(accountId: String): GitHubCredentialsStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.GITHUB.id,
+                SERVICE_NAME,
+                DEFAULT_USER,
+                extras,
+                ::getInstance,
+            ) { service, user -> GitHubCredentialsStore(userName = user, serviceName = service) }
     }
 }

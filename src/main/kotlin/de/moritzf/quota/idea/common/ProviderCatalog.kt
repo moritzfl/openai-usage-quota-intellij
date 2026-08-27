@@ -76,7 +76,7 @@ internal data class ProviderCapabilities(
 internal data class ProviderDescriptor(
     val type: QuotaProviderType,
     val capabilities: ProviderCapabilities = ProviderCapabilities(),
-    val quotaFactory: () -> QuotaProvider,
+    val quotaFactory: (de.moritzf.quota.idea.settings.ProviderAccount) -> QuotaProvider,
     val snapshotCodec: QuotaCodec<out ProviderQuota>,
     val mcpQuota: UsageQuotaMcpRegistration,
     val settingsPanelFactory: (ProviderSettingsPanelContext) -> ProviderSettingsPanel,
@@ -87,6 +87,12 @@ internal data class ProviderDescriptor(
     val isImageGenerationConfigured: () -> Boolean = { false },
     val isVoiceConfigured: () -> Boolean = { false },
     val isDocumentConfigured: () -> Boolean = { false },
+    /** Per-account blocking credential checks; default delegates to the type-level (first-account) probe. */
+    val isQuotaConfiguredForAccount: (accountId: String) -> Boolean = { isQuotaConfigured() },
+    val isWebSearchConfiguredForAccount: (accountId: String) -> Boolean = { isWebSearchConfigured() },
+    val isImageGenerationConfiguredForAccount: (accountId: String) -> Boolean = { isImageGenerationConfigured() },
+    val isVoiceConfiguredForAccount: (accountId: String) -> Boolean = { isVoiceConfigured() },
+    val isDocumentConfiguredForAccount: (accountId: String) -> Boolean = { isDocumentConfigured() },
     /**
      * Proxy-credential check. [onCredentialsLoaded] is invoked when PasswordSafe finishes an async load
      * (settings UI refresh). Null for blocking-only callers.
@@ -112,16 +118,17 @@ internal object ProviderCatalog {
         descriptor(
             type = QuotaProviderType.CLAUDE,
             capabilities = ProviderCapabilities(oauth = true),
-            quotaFactory = ::ClaudeQuotaProvider,
+            quotaFactory = { ClaudeQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(ClaudeQuota.serializer()),
             mcpEmpty = "No Claude usage response available",
             settings = { ctx -> ClaudeSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = ClaudeUi,
             isQuotaConfigured = { oauthAccessTokenPresent(QuotaProviderType.CLAUDE) },
+            isQuotaConfiguredForAccount = { oauthAccessTokenPresent(QuotaProviderType.CLAUDE, it) },
         ),
         descriptor(
             type = QuotaProviderType.CURSOR,
-            quotaFactory = ::CursorQuotaProvider,
+            quotaFactory = { CursorQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(CursorQuota.serializer()),
             mcpQuota = UsageQuotaMcpRegistration(
                 emptyMessage = "No Cursor usage response available",
@@ -132,11 +139,14 @@ internal object ProviderCatalog {
             isQuotaConfigured = {
                 !CursorCredentialsStore.getInstance().loadBlocking()?.accessToken.isNullOrBlank()
             },
+            isQuotaConfiguredForAccount = { accountId ->
+                !CursorCredentialsStore.forAccount(accountId).loadBlocking()?.accessToken.isNullOrBlank()
+            },
         ),
         descriptor(
             type = QuotaProviderType.GITHUB,
             capabilities = ProviderCapabilities(subscriptionProxy = true),
-            quotaFactory = ::GitHubQuotaProvider,
+            quotaFactory = { GitHubQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(GitHubQuota.serializer()),
             mcpEmpty = "No GitHub usage response available",
             settings = { ctx -> GitHubSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
@@ -144,8 +154,13 @@ internal object ProviderCatalog {
             isQuotaConfigured = {
                 !GitHubCredentialsStore.getInstance().loadBlocking()?.accessToken.isNullOrBlank()
             },
+            isQuotaConfiguredForAccount = { accountId ->
+                !GitHubCredentialsStore.forAccount(accountId).loadBlocking()?.accessToken.isNullOrBlank()
+            },
             isProxyConfigured = { onLoaded ->
-                GitHubCredentialsStore.getInstance().load(onLoaded = onLoaded)?.isUsable() == true
+                anyAccount(QuotaProviderType.GITHUB) { id ->
+                    GitHubCredentialsStore.forAccount(id).load(onLoaded = onLoaded)?.isUsable() == true
+                }
             },
             ideProxyFactory = IdeProxyFactories::github,
         ),
@@ -155,7 +170,7 @@ internal object ProviderCatalog {
                 webSearch = WebSearchCapability.LIST,
                 subscriptionProxy = true,
             ),
-            quotaFactory = ::KimiQuotaProvider,
+            quotaFactory = { KimiQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(KimiQuota.serializer()),
             mcpEmpty = "No Kimi usage response available",
             settings = { ctx -> KimiSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
@@ -163,11 +178,19 @@ internal object ProviderCatalog {
             isQuotaConfigured = {
                 KimiCredentialsStore.getInstance().loadBlocking()?.isUsable() == true
             },
+            isQuotaConfiguredForAccount = { accountId ->
+                KimiCredentialsStore.forAccount(accountId).loadBlocking()?.isUsable() == true
+            },
             isWebSearchConfigured = {
                 KimiCredentialsStore.getInstance().loadBlocking()?.isUsable() == true
             },
+            isWebSearchConfiguredForAccount = { accountId ->
+                KimiCredentialsStore.forAccount(accountId).loadBlocking()?.isUsable() == true
+            },
             isProxyConfigured = { onLoaded ->
-                KimiCredentialsStore.getInstance().load(onLoaded = onLoaded)?.isUsable() == true
+                anyAccount(QuotaProviderType.KIMI) { id ->
+                    KimiCredentialsStore.forAccount(id).load(onLoaded = onLoaded)?.isUsable() == true
+                }
             },
             webSearchMissingReason = "Kimi login required. Log in from settings.",
             ideProxyFactory = IdeProxyFactories::kimi,
@@ -180,15 +203,23 @@ internal object ProviderCatalog {
                 textToSpeech = true,
                 subscriptionProxy = true,
             ),
-            quotaFactory = ::MiniMaxQuotaProvider,
+            quotaFactory = { MiniMaxQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(MiniMaxQuota.serializer()),
             mcpEmpty = "No MiniMax usage response available",
             settings = { ctx -> MiniMaxSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = MiniMaxUi,
             isQuotaConfigured = { !MiniMaxApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isQuotaConfiguredForAccount = { accountId ->
+                !MiniMaxApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isWebSearchConfigured = { !MiniMaxApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isWebSearchConfiguredForAccount = { accountId ->
+                !MiniMaxApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isProxyConfigured = { onLoaded ->
-                !MiniMaxApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
+                anyAccount(QuotaProviderType.MINIMAX) { id ->
+                    !MiniMaxApiKeyStore.forAccount(id).load(onLoaded = onLoaded).isNullOrBlank()
+                }
             },
             webSearchMissingReason = "MiniMax API key missing. Add a MiniMax API key in settings.",
             ideProxyFactory = IdeProxyFactories::miniMax,
@@ -203,18 +234,35 @@ internal object ProviderCatalog {
                 documentToMarkdown = true,
                 subscriptionProxy = true,
             ),
-            quotaFactory = ::MistralQuotaProvider,
+            quotaFactory = { MistralQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(MistralQuota.serializer()),
             mcpEmpty = "No Mistral usage response available",
             settings = { ctx -> MistralSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = MistralUi,
             isQuotaConfigured = { !MistralSessionCookieStore.getInstance().loadBlocking().isNullOrBlank() },
+            isQuotaConfiguredForAccount = { accountId ->
+                !MistralSessionCookieStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isWebSearchConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isWebSearchConfiguredForAccount = { accountId ->
+                !MistralApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isImageGenerationConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isImageGenerationConfiguredForAccount = { accountId ->
+                !MistralApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isVoiceConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isVoiceConfiguredForAccount = { accountId ->
+                !MistralApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isDocumentConfigured = { !MistralApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isDocumentConfiguredForAccount = { accountId ->
+                !MistralApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isProxyConfigured = { onLoaded ->
-                !MistralApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
+                anyAccount(QuotaProviderType.MISTRAL) { id ->
+                    !MistralApiKeyStore.forAccount(id).load(onLoaded = onLoaded).isNullOrBlank()
+                }
             },
             webSearchMissingReason = "Mistral API key missing. Add a Mistral API key in settings.",
             ideProxyFactory = IdeProxyFactories::mistral,
@@ -225,16 +273,24 @@ internal object ProviderCatalog {
                 webSearch = WebSearchCapability.LIST,
                 subscriptionProxy = true,
             ),
-            quotaFactory = ::OllamaQuotaProvider,
+            quotaFactory = { OllamaQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(OllamaQuota.serializer()),
             mcpEmpty = "No Ollama usage response available",
             settings = { ctx -> OllamaSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = OllamaUi,
             // Quota, proxy, and web search all use the Ollama API key.
             isQuotaConfigured = { !OllamaApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isQuotaConfiguredForAccount = { accountId ->
+                !OllamaApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isWebSearchConfigured = { !OllamaApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isWebSearchConfiguredForAccount = { accountId ->
+                !OllamaApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isProxyConfigured = { onLoaded ->
-                !OllamaApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
+                anyAccount(QuotaProviderType.OLLAMA) { id ->
+                    !OllamaApiKeyStore.forAccount(id).load(onLoaded = onLoaded).isNullOrBlank()
+                }
             },
             webSearchMissingReason = "Ollama API key missing. Add an Ollama API key in settings.",
             ideProxyFactory = IdeProxyFactories::ollama,
@@ -250,21 +306,25 @@ internal object ProviderCatalog {
                 subscriptionProxy = true,
                 oauth = true,
             ),
-            quotaFactory = ::OpenAiQuotaProvider,
+            quotaFactory = { OpenAiQuotaProvider(accountId = it.id) },
             snapshotCodec = OpenAiQuotaCodec,
             mcpEmpty = "No usage response available",
             settings = { ctx -> OpenAiSettingsPanel(ctx.modalityComponentProvider) },
             ui = OpenAiUi,
             isQuotaConfigured = { oauthAccessTokenPresent(QuotaProviderType.OPEN_AI) },
+            isQuotaConfiguredForAccount = { oauthAccessTokenPresent(QuotaProviderType.OPEN_AI, it) },
             isWebSearchConfigured = { oauthAccessTokenPresent(QuotaProviderType.OPEN_AI) },
-            isProxyConfigured = { _ -> QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.OPEN_AI) },
+            isWebSearchConfiguredForAccount = { oauthAccessTokenPresent(QuotaProviderType.OPEN_AI, it) },
+            isProxyConfigured = { _ ->
+                anyAccount(QuotaProviderType.OPEN_AI) { oauthAccessTokenPresent(QuotaProviderType.OPEN_AI, it) }
+            },
             webSearchMissingReason = "OpenAI login required. Log in from settings.",
             ideProxyFactory = IdeProxyFactories::openAi,
         ),
         descriptor(
             type = QuotaProviderType.OPEN_CODE,
             capabilities = ProviderCapabilities(subscriptionProxy = true),
-            quotaFactory = ::OpenCodeQuotaProvider,
+            quotaFactory = { OpenCodeQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(OpenCodeQuota.serializer()),
             mcpQuota = UsageQuotaMcpRegistration(
                 emptyMessage = "No OpenCode usage response available",
@@ -279,8 +339,13 @@ internal object ProviderCatalog {
             isQuotaConfigured = {
                 !OpenCodeSessionCookieStore.getInstance().loadBlocking().isNullOrBlank()
             },
+            isQuotaConfiguredForAccount = { accountId ->
+                !OpenCodeSessionCookieStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isProxyConfigured = { onLoaded ->
-                !OpenCodeApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
+                anyAccount(QuotaProviderType.OPEN_CODE) { id ->
+                    !OpenCodeApiKeyStore.forAccount(id).load(onLoaded = onLoaded).isNullOrBlank()
+                }
             },
             ideProxyFactory = IdeProxyFactories::openCode,
         ),
@@ -296,14 +361,18 @@ internal object ProviderCatalog {
                 subscriptionProxy = true,
                 oauth = true,
             ),
-            quotaFactory = ::SuperGrokQuotaProvider,
+            quotaFactory = { SuperGrokQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(SuperGrokQuota.serializer()),
             mcpEmpty = "No SuperGrok usage response available",
             settings = { ctx -> SuperGrokSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = SuperGrokUi,
             isQuotaConfigured = { oauthAccessTokenPresent(QuotaProviderType.SUPERGROK) },
+            isQuotaConfiguredForAccount = { oauthAccessTokenPresent(QuotaProviderType.SUPERGROK, it) },
             isWebSearchConfigured = { oauthAccessTokenPresent(QuotaProviderType.SUPERGROK) },
-            isProxyConfigured = { _ -> QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.SUPERGROK) },
+            isWebSearchConfiguredForAccount = { oauthAccessTokenPresent(QuotaProviderType.SUPERGROK, it) },
+            isProxyConfigured = { _ ->
+                anyAccount(QuotaProviderType.SUPERGROK) { oauthAccessTokenPresent(QuotaProviderType.SUPERGROK, it) }
+            },
             webSearchMissingReason = "Grok login required. Log in from SuperGrok settings.",
             ideProxyFactory = IdeProxyFactories::superGrok,
         ),
@@ -317,15 +386,23 @@ internal object ProviderCatalog {
                 documentToMarkdown = true,
                 subscriptionProxy = true,
             ),
-            quotaFactory = ::ZaiQuotaProvider,
+            quotaFactory = { ZaiQuotaProvider(accountId = it.id) },
             snapshotCodec = EnvelopeQuotaCodec(ZaiQuota.serializer()),
             mcpEmpty = "No Z.ai usage response available",
             settings = { ctx -> ZaiSettingsPanel(ctx.modalityComponentProvider, ctx.statusLabelDefaultForeground) },
             ui = ZaiUi,
             isQuotaConfigured = { !ZaiApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isQuotaConfiguredForAccount = { accountId ->
+                !ZaiApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isWebSearchConfigured = { !ZaiApiKeyStore.getInstance().loadBlocking().isNullOrBlank() },
+            isWebSearchConfiguredForAccount = { accountId ->
+                !ZaiApiKeyStore.forAccount(accountId).loadBlocking().isNullOrBlank()
+            },
             isProxyConfigured = { onLoaded ->
-                !ZaiApiKeyStore.getInstance().load(onLoaded = onLoaded).isNullOrBlank()
+                anyAccount(QuotaProviderType.ZAI) { id ->
+                    !ZaiApiKeyStore.forAccount(id).load(onLoaded = onLoaded).isNullOrBlank()
+                }
             },
             webSearchMissingReason = "Z.ai API key missing. Add a Z.ai API key in settings.",
             ideProxyFactory = IdeProxyFactories::zai,
@@ -351,7 +428,20 @@ internal object ProviderCatalog {
 
     fun getOrNull(type: QuotaProviderType): ProviderDescriptor? = byType[type]
 
-    fun createQuotaProviders(): List<QuotaProvider> = all.map { it.quotaFactory() }
+    fun createQuotaProviders(): List<QuotaProvider> = all.map { descriptor ->
+        descriptor.quotaFactory(defaultAccount(descriptor.type))
+    }
+
+    fun createAccountProviders(accounts: List<de.moritzf.quota.idea.settings.ProviderAccount>): List<QuotaProvider> {
+        return accounts.mapNotNull { account ->
+            val type = account.providerType() ?: return@mapNotNull null
+            getOrNull(type)?.quotaFactory?.invoke(account)
+        }
+    }
+
+    private fun defaultAccount(type: QuotaProviderType): de.moritzf.quota.idea.settings.ProviderAccount {
+        return de.moritzf.quota.idea.settings.ProviderAccount.create(type, type.displayName, isFirstOfType = true)
+    }
 
     fun defaultProviderOrder(): List<QuotaProviderType> = all.map { it.type }.sortedBy { it.displayName }
 
@@ -410,10 +500,24 @@ internal object ProviderCatalog {
         return QuotaAuthService.getInstance().hasCredentialsBlocking(type)
     }
 
+    private fun oauthAccessTokenPresent(type: QuotaProviderType, accountId: String): Boolean {
+        return QuotaAuthService.getInstance().hasCredentialsBlocking(accountId, type)
+    }
+
+    private fun accountIds(type: QuotaProviderType): List<String> {
+        val accounts = runCatching {
+            de.moritzf.quota.idea.settings.QuotaSettingsState.getInstance().accountsOf(type)
+        }.getOrNull().orEmpty()
+        return if (accounts.isEmpty()) listOf(type.id) else accounts.map { it.id }
+    }
+
+    private fun anyAccount(type: QuotaProviderType, probe: (String) -> Boolean): Boolean =
+        accountIds(type).any(probe)
+
     private fun descriptor(
         type: QuotaProviderType,
         capabilities: ProviderCapabilities = ProviderCapabilities(),
-        quotaFactory: () -> QuotaProvider,
+        quotaFactory: (de.moritzf.quota.idea.settings.ProviderAccount) -> QuotaProvider,
         snapshotCodec: QuotaCodec<out ProviderQuota>,
         mcpEmpty: String? = null,
         mcpQuota: UsageQuotaMcpRegistration? = null,
@@ -427,7 +531,13 @@ internal object ProviderCatalog {
         isProxyConfigured: (onCredentialsLoaded: (() -> Unit)?) -> Boolean = { _ -> false },
         webSearchMissingReason: String? = null,
         ideProxyFactory: ((IdeProxyBuildContext) -> SubscriptionProxyProvider)? = null,
+        isQuotaConfiguredForAccount: ((accountId: String) -> Boolean)? = null,
+        isWebSearchConfiguredForAccount: ((accountId: String) -> Boolean)? = null,
+        isImageGenerationConfiguredForAccount: ((accountId: String) -> Boolean)? = null,
+        isVoiceConfiguredForAccount: ((accountId: String) -> Boolean)? = null,
+        isDocumentConfiguredForAccount: ((accountId: String) -> Boolean)? = null,
     ): ProviderDescriptor {
+        val quotaForAccount = isQuotaConfiguredForAccount ?: { isQuotaConfigured() }
         return ProviderDescriptor(
             type = type,
             capabilities = capabilities,
@@ -444,6 +554,16 @@ internal object ProviderCatalog {
                 ?: { (capabilities.speechToText || capabilities.textToSpeech) && isQuotaConfigured() },
             isDocumentConfigured = isDocumentConfigured
                 ?: { capabilities.documentToMarkdown && isQuotaConfigured() },
+            isQuotaConfiguredForAccount = quotaForAccount,
+            isWebSearchConfiguredForAccount = isWebSearchConfiguredForAccount ?: { isWebSearchConfigured() },
+            isImageGenerationConfiguredForAccount = isImageGenerationConfiguredForAccount
+                ?: { accountId -> capabilities.imageGeneration && quotaForAccount(accountId) },
+            isVoiceConfiguredForAccount = isVoiceConfiguredForAccount
+                ?: { accountId ->
+                    (capabilities.speechToText || capabilities.textToSpeech) && quotaForAccount(accountId)
+                },
+            isDocumentConfiguredForAccount = isDocumentConfiguredForAccount
+                ?: { accountId -> capabilities.documentToMarkdown && quotaForAccount(accountId) },
             isProxyConfigured = isProxyConfigured,
             webSearchMissingReason = webSearchMissingReason,
             ideProxyFactory = ideProxyFactory,

@@ -21,7 +21,7 @@ import java.util.concurrent.TimeUnit
  */
 @Service(Service.Level.APP)
 class QuotaUsageService(
-    providers: List<QuotaProvider> = QuotaProviderRegistry.createProviders(),
+    providers: List<QuotaProvider> = defaultProviders(),
     private val settingsProvider: () -> QuotaSettingsState? = {
         runCatching { QuotaSettingsState.getInstance() }.getOrNull()
     },
@@ -30,30 +30,33 @@ class QuotaUsageService(
         ApplicationManager.getApplication().invokeLater {
             val publisher = ApplicationManager.getApplication().messageBus
                 .syncPublisher(QuotaUsageListener.TOPIC)
-            snapshot.entries.forEach { (type, entry) ->
-                publisher.onQuotaUpdated(type, entry.quota, entry.error)
+            snapshot.accountEntries.forEach { (accountId, entry) ->
+                val type = snapshot.accountTypes[accountId] ?: return@forEach
+                publisher.onQuotaUpdated(type, entry.quota, entry.error, accountId)
             }
             ActivityTracker.getInstance().inc()
         }
     },
     scheduleOnInit: Boolean = true,
+    private val sleeper: (Long) -> Unit = { Thread.sleep(it) },
 ) : Disposable {
     private class ProviderState(val provider: QuotaProvider) {
         @Volatile var inFlight: CompletableFuture<Unit>? = null
         val lock = Any()
     }
 
-    private val states: Map<QuotaProviderType, ProviderState> =
-        providers.associateBy({ it.type }, ::ProviderState)
+    private val states = ConcurrentHashMap<String, ProviderState>().apply {
+        providers.forEach { provider -> put(provider.accountId, ProviderState(provider)) }
+    }
     /**
-     * Sticky per-provider, per-window activity baselines for "Last used" detection.
+     * Sticky per-account, per-window activity baselines for "Last used" detection.
      * Only move a window baseline on significant increase (marks last-used) or
      * significant decrease (reset/decay). Sub-threshold growth must NOT move the
      * baseline, otherwise slow usage never accumulates past [MIN_USAGE_INCREASE]
      * between polls. Windows are compared independently so decay in one limit
      * cannot cancel growth in another.
      */
-    private val activityBaselines = ConcurrentHashMap<QuotaProviderType, Map<String, Double>>()
+    private val activityBaselines = ConcurrentHashMap<String, Map<String, Double>>()
     private var scheduled: ScheduledFuture<*>? = null
 
     init {
@@ -63,13 +66,22 @@ class QuotaUsageService(
         }
     }
 
-    fun provider(type: QuotaProviderType): QuotaProvider? = states[type]?.provider
+    fun provider(type: QuotaProviderType): QuotaProvider? =
+        states[type.id]?.provider ?: states.values.firstOrNull { it.provider.type == type }?.provider
+
+    fun providerForAccount(accountId: String): QuotaProvider? = states[accountId]?.provider
 
     fun getLastQuota(type: QuotaProviderType): ProviderQuota? = provider(type)?.getLastQuota()
 
+    fun getLastQuota(accountId: String): ProviderQuota? = providerForAccount(accountId)?.getLastQuota()
+
     fun getLastError(type: QuotaProviderType): String? = provider(type)?.getLastError()
 
+    fun getLastError(accountId: String): String? = providerForAccount(accountId)?.getLastError()
+
     fun getLastResponseJson(type: QuotaProviderType): String? = provider(type)?.getLastRawJson()
+
+    fun getLastResponseJson(accountId: String): String? = providerForAccount(accountId)?.getLastRawJson()
 
     /**
      * The error the status bar and popup should show. A temporary failure is hidden while a
@@ -86,21 +98,42 @@ class QuotaUsageService(
     }
 
     fun currentSnapshot(): QuotaUsageSnapshot {
-        return QuotaUsageSnapshot(
-            states.mapValues { (_, state) ->
-                ProviderSnapshot(state.provider.getLastQuota(), displayError(state.provider))
-            },
-        )
+        val accountEntries = states.mapValues { (_, state) ->
+            ProviderSnapshot(state.provider.getLastQuota(), displayError(state.provider))
+        }
+        val accountTypes = states.mapValues { (_, state) -> state.provider.type }
+        val settings = settingsProvider()
+        val typeEntries = QuotaProviderType.entries.mapNotNull { type ->
+            val preferredId = settings?.defaultAccount(type)?.id
+                ?: settings?.accountsOf(type)?.firstOrNull()?.id
+                ?: type.id
+            val state = states[preferredId]
+                ?: states.values.firstOrNull { it.provider.type == type }
+                ?: return@mapNotNull null
+            type to ProviderSnapshot(state.provider.getLastQuota(), displayError(state.provider))
+        }.toMap()
+        return QuotaUsageSnapshot(typeEntries, accountEntries, accountTypes)
     }
 
     internal fun getEffectiveIndicatorData(): QuotaIndicatorData {
         val settings = settingsProvider()
-        val source = when (val configured = settings?.source() ?: QuotaIndicatorSource.OPEN_AI) {
+        val configured = settings?.source() ?: QuotaIndicatorSource.OPEN_AI
+        val source = when (configured) {
             QuotaIndicatorSource.LAST_USED -> resolveLastActiveSource(settings)
             else -> configured
         }
         val type = source.providerType ?: QuotaProviderType.OPEN_AI
-        return QuotaIndicatorData(type, getLastQuota(type), provider(type)?.let(::displayError))
+        val accountId = when (configured) {
+            QuotaIndicatorSource.LAST_USED -> settings?.lastActiveAccount()?.id ?: type.id
+            else -> settings?.defaultAccount(type)?.id ?: type.id
+        }
+        val accountProvider = providerForAccount(accountId) ?: provider(type)
+        return QuotaIndicatorData(
+            type,
+            accountProvider?.getLastQuota(),
+            accountProvider?.let(::displayError),
+            accountProvider?.accountId ?: accountId,
+        )
     }
 
     fun refreshNowAsync() {
@@ -112,38 +145,87 @@ class QuotaUsageService(
     }
 
     fun refreshAsync(type: QuotaProviderType) {
-        AppExecutorUtil.getAppExecutorService().execute { refreshProvider(type) }
+        AppExecutorUtil.getAppExecutorService().execute { refreshProvider(provider(type)?.accountId ?: type.id) }
+    }
+
+    fun refreshAsync(accountId: String) {
+        AppExecutorUtil.getAppExecutorService().execute { refreshProvider(accountId) }
     }
 
     fun refreshBlocking(type: QuotaProviderType) {
-        refreshProvider(type)
+        refreshProvider(provider(type)?.accountId ?: type.id)
+    }
+
+    fun refreshBlocking(accountId: String) {
+        refreshProvider(accountId)
     }
 
     fun clearAllUsageData(openAiError: String? = null) {
         clearUsageData(QuotaProviderType.OPEN_AI, openAiError)
-        states.keys.filter { it != QuotaProviderType.OPEN_AI }.forEach { clearUsageData(it) }
+        states.keys.filter { it != QuotaProviderType.OPEN_AI.id }.forEach { clearUsageData(it) }
     }
 
     fun clearUsageData(type: QuotaProviderType, error: String? = null) {
-        val provider = provider(type) ?: return
+        clearUsageData(provider(type)?.accountId ?: type.id, error)
+    }
+
+    fun clearUsageData(accountId: String, error: String? = null) {
+        val provider = providerForAccount(accountId) ?: return
         provider.clearData(error ?: provider.notConfiguredMessage)
-        activityBaselines.remove(type)
-        settingsProvider()?.setCachedQuotaJson(type, null)
+        activityBaselines.remove(accountId)
+        settingsProvider()?.setCachedQuotaJson(accountId, null)
         publishUpdate()
     }
 
-    fun resetOpenCodeWorkspaceCache() {
-        (provider(QuotaProviderType.OPEN_CODE) as? OpenCodeQuotaProvider)?.resetWorkspaceCache()
+    fun syncAccounts() {
+        val settings = settingsProvider() ?: return
+        val accounts = settings.accounts
+        if (accounts.isEmpty() && settings.settingsVersion >= 3) {
+            states.clear()
+            activityBaselines.clear()
+            publishUpdate()
+            return
+        }
+        if (accounts.isEmpty()) {
+            return
+        }
+        val desired = accounts.map { it.id }.toSet()
+        val added = mutableListOf<String>()
+        accounts.forEach { account ->
+            if (states.containsKey(account.id)) {
+                return@forEach
+            }
+            val type = account.providerType() ?: return@forEach
+            val provider = ProviderCatalog.get(type).quotaFactory(account)
+            provider.hydrateFromCache(settings)
+            states[account.id] = ProviderState(provider)
+            added += account.id
+        }
+        states.keys.filter { it !in desired }.forEach { id ->
+            states.remove(id)
+            activityBaselines.remove(id)
+        }
+        publishUpdate()
+        added.forEach(::refreshAsync)
     }
 
-    fun consumeOpenAiResetCredit(creditId: String?) {
-        (provider(QuotaProviderType.OPEN_AI) as? OpenAiQuotaProvider)?.consumeResetCredit(creditId)
-        refreshProvider(QuotaProviderType.OPEN_AI)
+    fun resetOpenCodeWorkspaceCache(accountId: String = QuotaProviderType.OPEN_CODE.id) {
+        (providerForAccount(accountId) as? OpenCodeQuotaProvider)?.resetWorkspaceCache()
     }
 
-    fun consumeSuperGrokReset(tokenId: String?) {
-        (provider(QuotaProviderType.SUPERGROK) as? SuperGrokQuotaProvider)?.consumeReset(tokenId)
-        refreshProvider(QuotaProviderType.SUPERGROK)
+    fun consumeOpenAiResetCredit(creditId: String?, accountId: String = QuotaProviderType.OPEN_AI.id) {
+        val provider = providerForAccount(accountId) as? OpenAiQuotaProvider
+            ?: provider(QuotaProviderType.OPEN_AI) as? OpenAiQuotaProvider
+        provider?.consumeResetCredit(creditId)
+        refreshProvider(provider?.accountId ?: accountId, forceUpdate = true)
+    }
+
+    fun consumeSuperGrokReset(tokenId: String?, accountId: String = QuotaProviderType.SUPERGROK.id) {
+        val provider = providerForAccount(accountId) as? SuperGrokQuotaProvider
+            ?: provider(QuotaProviderType.SUPERGROK) as? SuperGrokQuotaProvider
+        provider?.consumeReset(tokenId)
+        sleeper(SUPERGROK_RESET_PROPAGATION_MS)
+        refreshProvider(provider?.accountId ?: accountId, forceUpdate = true)
     }
 
     private fun scheduleRefresh() {
@@ -158,8 +240,8 @@ class QuotaUsageService(
 
     private fun refreshNow() {
         val executor = AppExecutorUtil.getAppExecutorService()
-        val futures = states.keys.map { type ->
-            executor.submit { refreshProvider(type) }
+        val futures = states.keys.map { accountId ->
+            executor.submit { refreshProvider(accountId) }
         }
         futures.forEach { future ->
             runCatching { future.get() }
@@ -167,58 +249,64 @@ class QuotaUsageService(
         }
     }
 
-    private fun refreshProvider(type: QuotaProviderType) {
-        val state = states[type] ?: return
-        val ownedFuture: CompletableFuture<Unit>?
-        val waitFuture: CompletableFuture<Unit>?
-        synchronized(state.lock) {
-            val existing = state.inFlight
-            if (existing != null) {
-                ownedFuture = null
-                waitFuture = existing
-            } else {
-                val created = CompletableFuture<Unit>()
-                state.inFlight = created
-                ownedFuture = created
-                waitFuture = null
-            }
-        }
-        if (waitFuture != null) {
-            runCatching { waitFuture.get() }
-            return
-        }
-        val future = ownedFuture ?: return
-
-        try {
-            val provider = state.provider
-            val settings = settingsProvider()
-            // Activity fractions sum all usage windows so growth in a small window
-            // (for example Claude's 5-hour limit) is not masked by a larger window's max.
-            // Baseline is sticky: compare against the last significant reading, not the
-            // display cache (which advances every poll and would erase slow growth).
-            provider.refresh()
-            noteActivity(type, provider, settings)
-
-            // Always persist successful snapshots so restarts do not lag behind slow usage growth.
-            if (provider.getLastQuota() != null) {
-                settings?.let(provider::persistToCache)
-            }
-            publishUpdate()
-            future.complete(Unit)
-        } catch (exception: Exception) {
-            future.completeExceptionally(exception)
-            throw exception
-        } finally {
+    private fun refreshProvider(accountId: String, forceUpdate: Boolean = false) {
+        while (true) {
+            val state = states[accountId] ?: return
+            val ownedFuture: CompletableFuture<Unit>?
+            val waitFuture: CompletableFuture<Unit>?
             synchronized(state.lock) {
-                if (state.inFlight === future) {
-                    state.inFlight = null
+                val existing = state.inFlight
+                if (existing != null) {
+                    ownedFuture = null
+                    waitFuture = existing
+                } else {
+                    val created = CompletableFuture<Unit>()
+                    state.inFlight = created
+                    ownedFuture = created
+                    waitFuture = null
                 }
             }
+            if (waitFuture != null) {
+                runCatching { waitFuture.get() }
+                if (!forceUpdate) return
+                continue
+            }
+            val future = ownedFuture ?: return
+
+            try {
+                val provider = state.provider
+                val settings = settingsProvider()
+                if (forceUpdate) {
+                    when (provider) {
+                        is SuperGrokQuotaProvider -> provider.refresh(forceUpdate = true)
+                        is OpenAiQuotaProvider -> provider.refresh(forceUpdate = true)
+                        else -> provider.refresh()
+                    }
+                } else {
+                    provider.refresh()
+                }
+                noteActivity(accountId, provider, settings)
+                if (provider.getLastQuota() != null) {
+                    settings?.let(provider::persistToCache)
+                }
+                publishUpdate()
+                future.complete(Unit)
+            } catch (exception: Exception) {
+                future.completeExceptionally(exception)
+                throw exception
+            } finally {
+                synchronized(state.lock) {
+                    if (state.inFlight === future) {
+                        state.inFlight = null
+                    }
+                }
+            }
+            return
         }
     }
 
     private fun noteActivity(
-        type: QuotaProviderType,
+        accountId: String,
         provider: QuotaProvider,
         settings: QuotaSettingsState?,
     ) {
@@ -226,10 +314,10 @@ class QuotaUsageService(
         val current = provider.currentActivityWindows()
         if (current.isEmpty()) return
 
-        val previous = activityBaselines[type]
+        val previous = activityBaselines[accountId]
             ?: provider.cachedActivityWindows(settings).takeIf { it.isNotEmpty() }
         if (previous == null) {
-            activityBaselines[type] = current
+            activityBaselines[accountId] = current
             return
         }
 
@@ -260,9 +348,9 @@ class QuotaUsageService(
             }
         }
         // Drop baselines for windows that disappeared from the payload.
-        activityBaselines[type] = nextBaseline
+        activityBaselines[accountId] = nextBaseline
         if (sawIncrease) {
-            settings.setLastActiveProvider(provider.type)
+            settings.setLastActiveAccount(accountId)
         }
     }
 
@@ -283,10 +371,23 @@ class QuotaUsageService(
     companion object {
         private val LOG = Logger.getInstance(QuotaUsageService::class.java)
         private const val MIN_USAGE_INCREASE = 0.005
+        private const val SUPERGROK_RESET_PROPAGATION_MS = 2_000L
 
         @JvmStatic
         fun getInstance(): QuotaUsageService {
             return ApplicationManager.getApplication().getService(QuotaUsageService::class.java)
+        }
+
+        private fun defaultProviders(): List<QuotaProvider> {
+            val settings = runCatching { QuotaSettingsState.getInstance() }.getOrNull()
+            val accounts = settings?.accounts.orEmpty()
+            if (accounts.isNotEmpty()) {
+                return ProviderCatalog.createAccountProviders(accounts)
+            }
+            if (settings != null && settings.settingsVersion >= 3 && accounts.isEmpty()) {
+                return emptyList()
+            }
+            return ProviderCatalog.createQuotaProviders()
         }
     }
 }

@@ -7,6 +7,7 @@ import de.moritzf.quota.mistral.MistralQuotaClient
 import de.moritzf.quota.mistral.MistralQuotaException
 
 class MistralQuotaProvider(
+    override val accountId: String = QuotaProviderType.MISTRAL.id,
     private val client: MistralQuotaClient = MistralQuotaClient(),
 ) : CachedQuotaProvider<MistralQuota>() {
     override val type = QuotaProviderType.MISTRAL
@@ -14,13 +15,13 @@ class MistralQuotaProvider(
         "Mistral session cookie missing. Add the ory_session_* cookie from admin.mistral.ai in settings."
 
     override fun refresh() {
-        val cookie = MistralSessionCookieStore.getInstance().loadBlocking()
+        val cookie = MistralSessionCookieStore.forAccount(accountId).loadBlocking()
         if (cookie.isNullOrBlank()) {
             clearData(notConfiguredMessage)
             return
         }
         try {
-            val quota = client.fetchQuota(cookie, MistralApiKeyStore.getInstance().loadBlocking())
+            val quota = client.fetchQuota(cookie, MistralApiKeyStore.forAccount(accountId).loadBlocking())
             storeQuota(quota, quota.rawJson)
         } catch (exception: MistralQuotaException) {
             storeFetchFailure(

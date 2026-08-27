@@ -12,8 +12,11 @@ import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
 @Service(Service.Level.APP)
-class MiniMaxApiKeyStore {
-    private val attributes = CredentialAttributes("MiniMax API Key", "minimax-api-key")
+class MiniMaxApiKeyStore(
+    private val userName: String = DEFAULT_USER,
+    serviceName: String = SERVICE_NAME,
+) {
+    private val attributes = CredentialAttributes(serviceName, userName)
     private val cachedApiKey = AtomicReference<String?>()
     private val loaded = AtomicBoolean(false)
     private val loading = AtomicBoolean(false)
@@ -42,7 +45,7 @@ class MiniMaxApiKeyStore {
 
     fun save(apiKey: String?) {
         loadGeneration.incrementAndGet()
-        PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials("minimax-api-key", it) })
+        PasswordSafe.instance.set(attributes, apiKey?.takeIf { it.isNotBlank() }?.let { Credentials(userName, it) })
         cachedApiKey.set(apiKey?.ifBlank { null })
         loaded.set(true)
         loading.set(false)
@@ -86,7 +89,21 @@ class MiniMaxApiKeyStore {
     }
 
     companion object {
+        private const val SERVICE_NAME = "MiniMax API Key"
+        private const val DEFAULT_USER = "minimax-api-key"
+        private val extras = java.util.concurrent.ConcurrentHashMap<String, MiniMaxApiKeyStore>()
+
         @JvmStatic
         fun getInstance(): MiniMaxApiKeyStore = ApplicationManager.getApplication().getService(MiniMaxApiKeyStore::class.java)
+
+        fun forAccount(accountId: String): MiniMaxApiKeyStore =
+            de.moritzf.quota.idea.settings.AccountCredentialKeys.store(
+                accountId,
+                de.moritzf.quota.idea.common.QuotaProviderType.MINIMAX.id,
+                SERVICE_NAME,
+                DEFAULT_USER,
+                extras,
+                ::getInstance,
+            ) { service, user -> MiniMaxApiKeyStore(userName = user, serviceName = service) }
     }
 }

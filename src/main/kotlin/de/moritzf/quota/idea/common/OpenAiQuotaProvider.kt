@@ -11,25 +11,34 @@ import kotlin.time.Clock
  * Fetches and caches OpenAI Codex quota data.
  */
 class OpenAiQuotaProvider(
-    private val quotaFetcher: (String, String?) -> OpenAiCodexQuota = { accessToken, accountId ->
-        OpenAiCodexQuotaClient().fetchQuota(accessToken, accountId)
+    override val accountId: String = QuotaProviderType.OPEN_AI.id,
+    private val quotaFetcher: (String, String?) -> OpenAiCodexQuota = { accessToken, chatgptAccountId ->
+        OpenAiCodexQuotaClient().fetchQuota(accessToken, chatgptAccountId)
     },
-    private val resetCreditConsumer: (String, String?, String?) -> Unit = { accessToken, accountId, creditId ->
-        OpenAiCodexQuotaClient().consumeResetCredit(accessToken, accountId, creditId)
+    private val resetCreditConsumer: (String, String?, String?) -> Unit = { accessToken, chatgptAccountId, creditId ->
+        OpenAiCodexQuotaClient().consumeResetCredit(accessToken, chatgptAccountId, creditId)
     },
-    private val accessTokenProvider: () -> String? = { QuotaAuthService.getInstance().getAccessTokenBlocking() },
-    private val accountIdProvider: () -> String? = { QuotaAuthService.getInstance().getAccountId() },
+    private val accessTokenProvider: () -> String? = {
+        QuotaAuthService.getInstance().getAccessTokenBlocking(accountId, QuotaProviderType.OPEN_AI)
+    },
+    private val accountIdProvider: () -> String? = {
+        QuotaAuthService.getInstance().getAccountId(accountId, QuotaProviderType.OPEN_AI)
+    },
     private val tokenRefresher: (staleAccessToken: String?) -> String? = { staleToken ->
-        QuotaAuthService.getInstance().forceRefreshBlocking(QuotaProviderType.OPEN_AI, staleToken)
+        QuotaAuthService.getInstance().forceRefreshBlocking(accountId, QuotaProviderType.OPEN_AI, staleToken)
     },
     private val loggedInProvider: () -> Boolean = {
-        QuotaAuthService.getInstance().isLoggedIn(QuotaProviderType.OPEN_AI)
+        QuotaAuthService.getInstance().isLoggedIn(accountId, QuotaProviderType.OPEN_AI)
     },
 ) : CachedQuotaProvider<OpenAiCodexQuota>() {
     override val type = QuotaProviderType.OPEN_AI
     override val notConfiguredMessage = "Not logged in"
 
     override fun refresh() {
+        refresh(forceUpdate = false)
+    }
+
+    fun refresh(forceUpdate: Boolean) {
         val accessToken = accessTokenProvider()
         if (accessToken.isNullOrBlank()) {
             storeMissingAccessToken(
@@ -41,7 +50,9 @@ class OpenAiQuotaProvider(
 
         try {
             val quota = fetchQuotaWithAuthRetry(accessToken)
-            applyHysteresis(lastQuotaRef.get(), quota)
+            if (!forceUpdate) {
+                applyHysteresis(lastQuotaRef.get(), quota)
+            }
             storeQuota(quota, quota.rawJson)
         } catch (exception: OpenAiCodexQuotaException) {
             val detail = exception.message?.takeIf { it.isNotBlank() && !it.startsWith("Request failed") }

@@ -636,7 +636,7 @@ class QuotaAuthServiceConcurrencyTest {
             QuotaProviderType.SUPERGROK to superGrokStore,
         )
         val service = createService(
-            credentialStoreFactory = { type -> stores[type] ?: InMemoryCredentialStore(null) },
+            credentialStoreFactory = { _, type -> stores[type] ?: InMemoryCredentialStore(null) },
             tokenOperations = TestTokenOperations(
                 onRefresh = { error("Refresh should not be called for valid credentials") },
             ),
@@ -917,18 +917,50 @@ class QuotaAuthServiceConcurrencyTest {
         }
     }
 
+    @Test
+    fun secondAccountOfSameTypeCannotStartLoginWhileFirstRuns() {
+        val service = createService(
+            store = InMemoryCredentialStore(null),
+            tokenOperations = TestTokenOperations(
+                onRefresh = { error("Refresh must not run") },
+            ),
+        )
+        val second = AtomicReference<LoginResult>()
+        try {
+            service.startLoginFlow(
+                accountId = QuotaProviderType.CLAUDE.id,
+                type = QuotaProviderType.CLAUDE,
+                callback = {},
+                onAuthUrl = {},
+            )
+            assertTrue(service.isLoginInProgress(QuotaProviderType.CLAUDE.id, QuotaProviderType.CLAUDE))
+            service.startLoginFlow(
+                accountId = "extra-claude",
+                type = QuotaProviderType.CLAUDE,
+                callback = { second.set(it) },
+                onAuthUrl = {},
+            )
+            assertFalse(second.get().success)
+            assertTrue(second.get().message!!.contains("Finish or cancel the other"))
+        } finally {
+            service.abortLogin(QuotaProviderType.CLAUDE.id, QuotaProviderType.CLAUDE, "test")
+            service.abortLogin("extra-claude", QuotaProviderType.CLAUDE, "test")
+            service.dispose()
+        }
+    }
+
     private fun createService(
         store: OAuthCredentialStore,
         tokenOperations: OAuthTokenOperations,
     ): QuotaAuthService {
         return createService(
-            credentialStoreFactory = { store },
+            credentialStoreFactory = { _, _ -> store },
             tokenOperations = tokenOperations,
         )
     }
 
     private fun createService(
-        credentialStoreFactory: (QuotaProviderType) -> OAuthCredentialStore,
+        credentialStoreFactory: (String, QuotaProviderType) -> OAuthCredentialStore,
         tokenOperations: OAuthTokenOperations,
     ): QuotaAuthService {
         val testScope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
