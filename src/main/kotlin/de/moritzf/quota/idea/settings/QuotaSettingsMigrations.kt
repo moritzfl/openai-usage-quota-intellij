@@ -32,11 +32,12 @@ internal interface QuotaSettingsMigration {
  */
 internal object QuotaSettingsMigrations {
     /** Raise by one whenever a migration is added, and tag the new migration with that value. */
-    const val CURRENT_VERSION: Int = 2
+    const val CURRENT_VERSION: Int = 3
 
     val ALL: List<QuotaSettingsMigration> = listOf(
         DropOllamaSessionCookieCredentials,
         NormalizeIndicatorSourceStorageIds,
+        CreateProviderAccounts,
     )
 
     fun run(state: QuotaSettingsState, migrations: List<QuotaSettingsMigration> = ALL) {
@@ -96,5 +97,46 @@ internal object NormalizeIndicatorSourceStorageIds : QuotaSettingsMigration {
                 .firstOrNull { it.name.equals(active, ignoreCase = true) }
                 ?.providerType
         state.lastActiveSource = provider?.id
+    }
+}
+
+internal object CreateProviderAccounts : QuotaSettingsMigration {
+    override val id = "create-provider-accounts"
+    override val version = 3
+
+    override fun apply(state: QuotaSettingsState) {
+        apply(state, TypeHasStoredCredentials::invoke)
+    }
+
+    fun apply(state: QuotaSettingsState, hasCredentials: (QuotaProviderType) -> Boolean) {
+        if (state.accounts.isNotEmpty()) return
+
+        val configured = QuotaProviderType.entries.filter { type ->
+            hasCredentials(type) || !state.cachedQuotaJson(type).isNullOrBlank()
+        }.toSet()
+        if (configured.isEmpty()) return
+
+        val storedTypes = state.providerOrder.split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .mapNotNull(QuotaProviderType::fromId)
+            .distinct()
+        val ordered = storedTypes.filter { it in configured } +
+            configured.filter { it !in storedTypes }.sortedBy { it.displayName }
+
+        state.accounts = ordered.map { type ->
+            ProviderAccount.create(type, type.displayName, isFirstOfType = true).apply {
+                hiddenFromPopup = state.isHiddenFromPopup(type)
+                when (type) {
+                    QuotaProviderType.OPEN_CODE ->
+                        setExtra(ProviderAccount.EXTRA_OPENCODE_WORKSPACE, state.openCodeWorkspaceId)
+                    QuotaProviderType.GITHUB ->
+                        setExtra(ProviderAccount.EXTRA_GITHUB_HOST, state.githubEnterpriseHost)
+                    QuotaProviderType.MINIMAX ->
+                        setExtra(ProviderAccount.EXTRA_MINIMAX_REGION, state.minimaxRegionPreference)
+                    else -> Unit
+                }
+            }
+        }.toMutableList()
     }
 }

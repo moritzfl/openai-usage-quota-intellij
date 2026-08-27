@@ -167,6 +167,55 @@ class QuotaSettingsMigrationsTest {
         assertNull(junk.lastActiveSource)
     }
 
+    @Test
+    fun createProviderAccountsMigratesConfiguredTypesOnly() {
+        val state = QuotaSettingsState().apply {
+            settingsVersion = 2
+            providerOrder = "openai,claude,mistral"
+            hiddenFromQuotaPopup = mutableListOf("claude")
+            cachedQuotaJsons = mutableMapOf("openai" to """{"ok":true}""")
+            githubEnterpriseHost = "ghe.example.com"
+            openCodeWorkspaceId = "ws-1"
+            minimaxRegionPreference = "CN"
+        }
+
+        CreateProviderAccounts.apply(state) { type ->
+            type == QuotaProviderType.CLAUDE || type == QuotaProviderType.GITHUB
+        }
+
+        assertEquals(
+            listOf("openai", "claude", "github"),
+            state.accounts.map { it.id },
+        )
+        assertEquals("OpenAI", state.accounts[0].name)
+        assertTrue(state.accounts[0].isDefault)
+        assertTrue(state.account("claude")!!.hiddenFromPopup)
+        assertEquals("ghe.example.com", state.account("github")!!.extra(ProviderAccount.EXTRA_GITHUB_HOST))
+        assertTrue(state.accounts.none { it.typeId == QuotaProviderType.MISTRAL.id })
+    }
+
+    @Test
+    fun createProviderAccountsIsIdempotentWhenAccountsExist() {
+        val state = QuotaSettingsState().apply {
+            settingsVersion = 2
+            accounts = mutableListOf(ProviderAccount.create(QuotaProviderType.ZAI, "Keep", isFirstOfType = true))
+        }
+
+        CreateProviderAccounts.apply(state) { true }
+
+        assertEquals(listOf("zai"), state.accounts.map { it.id })
+        assertEquals("Keep", state.accounts.single().name)
+    }
+
+    @Test
+    fun createProviderAccountsLeavesEmptyListWhenNothingConfigured() {
+        val state = QuotaSettingsState().apply { settingsVersion = 2 }
+
+        CreateProviderAccounts.apply(state) { false }
+
+        assertTrue(state.accounts.isEmpty())
+    }
+
     private class RecordingMigration(
         override val version: Int,
         private val onApply: () -> Unit = {},
