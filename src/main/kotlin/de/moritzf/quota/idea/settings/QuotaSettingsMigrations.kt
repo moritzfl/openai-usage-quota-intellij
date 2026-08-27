@@ -41,13 +41,18 @@ internal object QuotaSettingsMigrations {
     )
 
     fun run(state: QuotaSettingsState, migrations: List<QuotaSettingsMigration> = ALL) {
+        var failed = false
         migrations
             .filter { it.version > state.settingsVersion }
             .sortedBy { it.version }
             .forEach { migration ->
                 runCatching { migration.apply(state) }
-                    .onFailure { LOG.warn("Settings migration '${migration.id}' failed", it) }
+                    .onFailure { exception ->
+                        failed = true
+                        LOG.warn("Settings migration '${migration.id}' failed", exception)
+                    }
             }
+        if (failed) return
         // Settings written by a newer plugin keep their version, so its migrations are not
         // replayed once that plugin is used again.
         state.settingsVersion = maxOf(state.settingsVersion, CURRENT_VERSION)
@@ -105,6 +110,12 @@ internal object CreateProviderAccounts : QuotaSettingsMigration {
     override val version = 3
 
     override fun apply(state: QuotaSettingsState) {
+        if (ApplicationManager.getApplication() == null) return
+        runCatching {
+            PasswordSafe.instance.get(
+                CredentialAttributes("LLM Subscription Usage", "migration-probe"),
+            )
+        }.getOrThrow()
         apply(state, TypeHasStoredCredentials::invoke)
     }
 
@@ -138,5 +149,6 @@ internal object CreateProviderAccounts : QuotaSettingsMigration {
                 }
             }
         }.toMutableList()
+        state.hiddenFromQuotaPopup.clear()
     }
 }

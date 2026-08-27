@@ -80,7 +80,18 @@ class QuotaSettingsMigrationsTest {
 
         assertEquals(1, failing.applyCount)
         assertEquals(1, following.applyCount)
-        assertEquals(QuotaSettingsMigrations.CURRENT_VERSION, state.settingsVersion)
+        assertEquals(0, state.settingsVersion)
+    }
+
+    @Test
+    fun failedMigrationDoesNotAdvanceSettingsVersion() {
+        val state = QuotaSettingsState().apply { settingsVersion = 2 }
+        val failing = RecordingMigration(version = 3, onApply = { error("migration failed") })
+
+        QuotaSettingsMigrations.run(state, migrations = listOf(failing))
+
+        assertEquals(1, failing.applyCount)
+        assertEquals(2, state.settingsVersion)
     }
 
     @Test
@@ -190,6 +201,7 @@ class QuotaSettingsMigrationsTest {
         assertEquals("OpenAI", state.accounts[0].name)
         assertTrue(state.accounts[0].isDefault)
         assertTrue(state.account("claude")!!.hiddenFromPopup)
+        assertTrue(state.hiddenFromQuotaPopup.isEmpty())
         assertEquals("ghe.example.com", state.account("github")!!.extra(ProviderAccount.EXTRA_GITHUB_HOST))
         assertTrue(state.accounts.none { it.typeId == QuotaProviderType.MISTRAL.id })
     }

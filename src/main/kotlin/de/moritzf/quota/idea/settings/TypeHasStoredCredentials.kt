@@ -14,9 +14,7 @@ import de.moritzf.quota.idea.opencode.OpenCodeSessionCookieStore
 import de.moritzf.quota.idea.zai.ZaiApiKeyStore
 
 internal object TypeHasStoredCredentials {
-    operator fun invoke(type: QuotaProviderType): Boolean {
-        return runCatching { probe(type) }.getOrDefault(false)
-    }
+    operator fun invoke(type: QuotaProviderType): Boolean = probe(type)
 
     private fun probe(type: QuotaProviderType): Boolean {
         return when (type) {
@@ -46,12 +44,6 @@ internal object TypeHasStoredCredentials {
     }
 
     private fun hasOAuth(type: QuotaProviderType): Boolean {
-        return try {
-            OAuthCredentialsStore.forProvider(type).load() != null
-        } catch (_: IllegalStateException) {
-            true
-        } catch (_: Exception) {
-            false
-        }
+        return OAuthCredentialsStore.forProvider(type).load() != null
     }
 }
