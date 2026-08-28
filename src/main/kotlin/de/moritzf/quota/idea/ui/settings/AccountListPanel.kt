@@ -18,6 +18,8 @@ import java.awt.BorderLayout
 import java.awt.Component
 import java.awt.Dimension
 import javax.swing.DefaultListCellRenderer
+import javax.swing.Icon
+import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.ListSelectionModel
@@ -223,11 +225,7 @@ internal class AccountListPanel(
             val component = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
             val type = value as? QuotaProviderType ?: return component
             text = type.displayName
-            icon = ProviderReorderPanel.scaleToSize(
-                ProviderUiRegistry.forType(type).icon,
-                JBUI.scale(16),
-                this,
-            )
+            icon = scaledListIcon(type, this)
             border = JBUI.Borders.empty(2, 8)
             return component
         }
@@ -251,9 +249,21 @@ internal class AccountListPanel(
                 type?.displayName ?: account.name
             }
             if (type != null) {
-                icon = ProviderUiRegistry.forType(type).icon
+                icon = scaledListIcon(type, this)
             }
             return component
+        }
+    }
+
+    companion object {
+        private const val LIST_ICON_SIZE = 16
+
+        private fun scaledListIcon(type: QuotaProviderType, component: JComponent): Icon {
+            return ProviderReorderPanel.scaleToSize(
+                ProviderUiRegistry.forType(type).icon,
+                JBUI.scale(LIST_ICON_SIZE),
+                component,
+            )
         }
     }
 }

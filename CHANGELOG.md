@@ -1,5 +1,9 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+- Settings account list icons stay 16px when OpenAI/Codex or OpenCode is added. Those logos were 300px and were drawn at full size.
+
 ## [1.10.1] - 2026-08-27
 
 - Mistral Tokens/min and Requests/min stay visible when a refresh gets monthly usage but misses the per-minute headers.
