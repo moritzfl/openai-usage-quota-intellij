@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.10.2] - 2026-08-28
 
 - Settings account list icons stay 16px when OpenAI/Codex or OpenCode is added. Those logos were 300px and were drawn at full size.
 
