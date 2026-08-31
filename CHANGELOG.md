@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.10.5] - 2026-08-31
 
 - Codex speech-to-text streams local audio uploads through a BodyPublisher instead of buffering the whole file.
 - Mistral image generation writes a unique `image-<uuid>.png` when `targetFile` is omitted.
