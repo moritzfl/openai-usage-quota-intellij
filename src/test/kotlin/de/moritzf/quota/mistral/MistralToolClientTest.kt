@@ -59,7 +59,9 @@ class MistralToolClientTest {
     fun speechOutputDefaultsToProjectSpeechFile() {
         val dir = Path.of("/tmp/project")
         assertEquals(dir.resolve("out/hi.mp3"), MistralAudioClient.resolveOutput("out/hi.mp3", dir, "mp3"))
-        assertEquals(dir.resolve("speech.wav"), MistralAudioClient.resolveOutput(null, dir, "wav"))
+        val default = MistralAudioClient.resolveOutput(null, dir, "wav")
+        assertEquals(dir, default?.parent)
+        assertTrue(default!!.fileName.toString().matches(Regex("speech-[0-9a-f-]{36}\\.wav")))
         assertEquals(null, MistralAudioClient.resolveOutput(null, null, "mp3"))
     }
 

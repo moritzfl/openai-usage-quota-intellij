@@ -196,7 +196,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_document_to_markdown")
-    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex and SuperGrok convert the document through their chat APIs and do not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md.")
+    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex and SuperGrok convert the document through their chat APIs and do not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md. Extracted images are written to disk with the markdown; they are never returned as base64.")
     fun subscription_document_to_markdown(
         @McpDescription(description = "Provider to use. Supported providers are derived from the DocumentToMarkdownProvider enum.") provider: DocumentToMarkdownProvider = DocumentToMarkdownProvider.MISTRAL,
         @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
@@ -264,11 +264,11 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_text_to_speech")
-    @McpDescription(description = "Generates speech audio with a subscription-backed provider and writes it to disk. Pass targetFile or a project is used as speech.mp3. Optional voiceId or refAudioFile selects the voice.")
+    @McpDescription(description = "Generates speech audio with a subscription-backed provider and writes it to disk. Pass targetFile or a unique speech-<uuid>.mp3 is written in the project. Optional voiceId or refAudioFile selects the voice.")
     fun subscription_text_to_speech(
         @McpDescription(description = "Text to speak.") text: String,
         @McpDescription(description = "Provider to use. Supported providers are derived from the TextToSpeechProvider enum.") provider: TextToSpeechProvider = TextToSpeechProvider.OPEN_AI,
-        @McpDescription(description = "Optional relative project path for the audio file (for example out/speech.mp3). Defaults to speech.mp3 in the project.") targetFile: String? = null,
+        @McpDescription(description = "Optional relative project path for the audio file (for example out/speech.mp3). Defaults to a unique speech-<uuid> file in the project.") targetFile: String? = null,
         @McpDescription(description = "Optional saved voice id. When blank, the first preset voice is used unless refAudioFile is set.") voiceId: String? = null,
         @McpDescription(description = "Optional local reference audio for one-off voice cloning.") refAudioFile: String? = null,
         @McpDescription(description = "Speech model id. Leave blank for the provider default.") model: String = "",

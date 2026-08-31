@@ -1,7 +1,9 @@
 package de.moritzf.quota.supergrok
 
+import de.moritzf.quota.shared.DefaultOutputFiles
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
+import de.moritzf.quota.shared.MultipartFilePublisher
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -103,31 +105,18 @@ open class SuperGrokAudioClient(
         diarize: Boolean,
     ): HttpRequest {
         val boundary = "----GrokAudio${UUID.randomUUID().toString().replace("-", "")}"
-        val fields = buildString {
-            language?.trim()?.takeIf { it.isNotEmpty() }?.let { appendFormField(boundary, "language", it) }
-            if (diarize) appendFormField(boundary, "diarize", "true")
-            url?.let { appendFormField(boundary, "url", it) }
-        }.toByteArray()
-        val filePart = if (localFile != null) {
-            val filename = localFile.fileName.toString()
-            val header = buildString {
-                append("--").append(boundary).append("\r\n")
-                append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
-                append("Content-Type: application/octet-stream\r\n\r\n")
-            }.toByteArray()
-            header + Files.readAllBytes(localFile)
-        } else {
-            ByteArray(0)
+        val fields = buildList {
+            language?.trim()?.takeIf { it.isNotEmpty() }?.let { add("language" to it) }
+            if (diarize) add("diarize" to "true")
+            url?.let { add("url" to it) }
         }
-        val closing = "\r\n--$boundary--\r\n".toByteArray()
-        val payload = fields + filePart + closing
         return HttpRequest.newBuilder()
             .uri(baseUri.resolve(STT_PATH))
             .timeout(Duration.ofSeconds(180))
             .header("Authorization", "Bearer $token")
             .header("Content-Type", "multipart/form-data; boundary=$boundary")
             .header("User-Agent", USER_AGENT)
-            .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+            .POST(MultipartFilePublisher.of(boundary, fields, localFile))
             .build()
     }
 
@@ -203,13 +192,7 @@ open class SuperGrokAudioClient(
                 val path = Path.of(trimmed)
                 return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path).normalize()
             }
-            return baseDirectory?.resolve("speech.$format")
-        }
-
-        private fun StringBuilder.appendFormField(boundary: String, name: String, value: String) {
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"").append(name).append("\"\r\n\r\n")
-            append(value).append("\r\n")
+            return baseDirectory?.resolve(DefaultOutputFiles.speech(format))
         }
 
         private fun defaultHttpClient(): HttpClient =

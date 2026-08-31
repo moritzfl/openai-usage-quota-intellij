@@ -8,6 +8,7 @@ import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.openai.proxy.OpenAiProxyServer
 import de.moritzf.quota.openai.proxy.QuotaCodexCredentialsProvider
+import de.moritzf.quota.shared.DefaultOutputFiles
 import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.DocumentMarkdown
 import de.moritzf.quota.shared.JsonSupport
@@ -863,7 +864,7 @@ class CodexMcpClient(
                 val path = Path.of(trimmed)
                 return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path).normalize()
             }
-            return baseDirectory?.resolve("speech.$format")
+            return baseDirectory?.resolve(DefaultOutputFiles.speech(format))
         }
 
         internal val CODEX_VOICES = listOf(

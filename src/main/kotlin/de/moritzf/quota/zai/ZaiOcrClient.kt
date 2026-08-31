@@ -38,11 +38,12 @@ open class ZaiOcrClient(
         }
         val file = resolveFile(documentUrl, localFile)
         val markdownOutput = outputFile ?: defaultMarkdownOutput(localFile)
+        val writeImages = includeImages && markdownOutput != null
         val body = JsonSupport.json.encodeToString(
             ZaiLayoutParsingRequestDto(
                 model = model.trim().ifBlank { DEFAULT_MODEL },
                 file = file,
-                returnCropImages = includeImages,
+                returnCropImages = writeImages,
             ),
         )
         val response = send(postJson(token, body))
@@ -57,7 +58,7 @@ open class ZaiOcrClient(
         if (markdownOutput == null) {
             return McpJson.providerJsonOrRaw(responseBody)
         }
-        val written = writeMarkdown(responseBody, markdownOutput, includeImages) { url -> downloadBytes(url) }
+        val written = writeMarkdown(responseBody, markdownOutput, writeImages) { url -> downloadBytes(url) }
         return JsonSupport.json.encodeToString(written)
     }
 

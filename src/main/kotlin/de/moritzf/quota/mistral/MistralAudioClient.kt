@@ -1,7 +1,9 @@
 package de.moritzf.quota.mistral
 
+import de.moritzf.quota.shared.DefaultOutputFiles
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
+import de.moritzf.quota.shared.MultipartFilePublisher
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonArray
@@ -138,27 +140,17 @@ open class MistralAudioClient(
             throw MistralQuotaException("Local audio file was not found.")
         }
         val boundary = "----MistralAudio${UUID.randomUUID().toString().replace("-", "")}"
-        val filename = path.fileName.toString()
-        val fileBytes = Files.readAllBytes(path)
-        val fields = buildString {
-            appendFormField(boundary, "model", model.trim().ifBlank { DEFAULT_TRANSCRIBE_MODEL })
-            appendFormField(boundary, "diarize", diarize.toString())
-            language?.trim()?.takeIf { it.isNotEmpty() }?.let { appendFormField(boundary, "language", it) }
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
-            append("Content-Type: application/octet-stream\r\n\r\n")
-        }.toByteArray()
-        val closing = "\r\n--$boundary--\r\n".toByteArray()
-        val payload = ByteArray(fields.size + fileBytes.size + closing.size)
-        System.arraycopy(fields, 0, payload, 0, fields.size)
-        System.arraycopy(fileBytes, 0, payload, fields.size, fileBytes.size)
-        System.arraycopy(closing, 0, payload, fields.size + fileBytes.size, closing.size)
+        val fields = buildList {
+            add("model" to model.trim().ifBlank { DEFAULT_TRANSCRIBE_MODEL })
+            add("diarize" to diarize.toString())
+            language?.trim()?.takeIf { it.isNotEmpty() }?.let { add("language" to it) }
+        }
         return HttpRequest.newBuilder()
             .uri(transcriptionsUri)
             .timeout(Duration.ofSeconds(180))
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "multipart/form-data; boundary=$boundary")
-            .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+            .POST(MultipartFilePublisher.of(boundary, fields, path))
             .build()
     }
 
@@ -223,7 +215,7 @@ open class MistralAudioClient(
                 return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path)
                     .normalize()
             }
-            return baseDirectory?.resolve("speech.$format")
+            return baseDirectory?.resolve(DefaultOutputFiles.speech(format))
         }
 
         private fun requireApiKey(apiKey: String): String {
@@ -238,12 +230,6 @@ open class MistralAudioClient(
                 throw MistralQuotaException("Reference audio file was not found.")
             }
             return Base64.getEncoder().encodeToString(Files.readAllBytes(path))
-        }
-
-        private fun StringBuilder.appendFormField(boundary: String, name: String, value: String) {
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"").append(name).append("\"\r\n\r\n")
-            append(value).append("\r\n")
         }
 
         private fun defaultHttpClient(): HttpClient =

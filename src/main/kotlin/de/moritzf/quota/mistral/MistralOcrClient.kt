@@ -38,11 +38,12 @@ open class MistralOcrClient(
         }
         val document = resolveDocument(token, documentUrl, localFile)
         val markdownOutput = outputFile ?: defaultMarkdownOutput(localFile, includeImages)
+        val writeImages = includeImages && markdownOutput != null
         val body = JsonSupport.json.encodeToString(
             MistralOcrRequestDto(
                 model = model.trim().ifBlank { DEFAULT_MODEL },
                 document = document,
-                includeImageBase64 = includeImages,
+                includeImageBase64 = writeImages,
             ),
         )
         val response = sendString(postJson(token, ocrUri, body))
@@ -57,7 +58,7 @@ open class MistralOcrClient(
         if (markdownOutput == null) {
             return McpJson.providerJsonOrRaw(responseBody)
         }
-        val written = writeMarkdown(responseBody, markdownOutput, includeImages)
+        val written = writeMarkdown(responseBody, markdownOutput, writeImages)
         return JsonSupport.json.encodeToString(written)
     }
 

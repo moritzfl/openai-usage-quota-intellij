@@ -37,8 +37,10 @@ class SuperGrokAudioClientTest {
             val client = SuperGrokAudioClient(httpClient = httpClient, baseUri = server.baseUri)
             val result = client.synthesize(accessToken = "grok-token", text = "Hi", baseDirectory = dir)
             val written = JsonSupport.json.parseToJsonElement(result).jsonObject
-            assertEquals(dir.resolve("speech.mp3").toString(), written["output_file"]!!.jsonPrimitive.content)
-            assertEquals(audio.toList(), Files.readAllBytes(dir.resolve("speech.mp3")).toList())
+            val output = java.nio.file.Path.of(written["output_file"]!!.jsonPrimitive.content)
+            assertEquals(dir.toAbsolutePath().normalize(), output.parent)
+            assertTrue(output.fileName.toString().matches(Regex("speech-[0-9a-f-]{36}\\.mp3")))
+            assertEquals(audio.toList(), Files.readAllBytes(output).toList())
             val request = assertNotNull(server.requests.poll(2, TimeUnit.SECONDS))
             assertEquals("/tts", request.path)
             assertTrue(request.body.contains("eve"))

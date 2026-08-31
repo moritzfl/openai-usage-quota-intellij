@@ -1,6 +1,7 @@
 package de.moritzf.quota.zai
 
 import de.moritzf.quota.shared.McpJson
+import de.moritzf.quota.shared.MultipartFilePublisher
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -32,24 +33,19 @@ open class ZaiAudioClient(
             throw ZaiQuotaException("Z.ai speech-to-text requires a local audio file.")
         }
         val boundary = "----ZaiAudio${UUID.randomUUID().toString().replace("-", "")}"
-        val filename = path.fileName.toString()
-        val bytes = Files.readAllBytes(path)
-        val preamble = buildString {
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"model\"\r\n\r\n")
-            append(model.trim().ifBlank { DEFAULT_MODEL }).append("\r\n")
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
-            append("Content-Type: application/octet-stream\r\n\r\n")
-        }.toByteArray()
-        val closing = "\r\n--$boundary--\r\n".toByteArray()
         val response = send(
             HttpRequest.newBuilder()
                 .uri(transcriptionsUri)
                 .timeout(Duration.ofSeconds(120))
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "multipart/form-data; boundary=$boundary")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(preamble + bytes + closing))
+                .POST(
+                    MultipartFilePublisher.of(
+                        boundary,
+                        listOf("model" to model.trim().ifBlank { DEFAULT_MODEL }),
+                        path,
+                    ),
+                )
                 .build(),
         )
         val status = response.statusCode()

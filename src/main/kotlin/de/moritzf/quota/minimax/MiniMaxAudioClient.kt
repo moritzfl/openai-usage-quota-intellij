@@ -1,5 +1,6 @@
 package de.moritzf.quota.minimax
 
+import de.moritzf.quota.shared.DefaultOutputFiles
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import java.io.IOException
@@ -163,7 +164,7 @@ open class MiniMaxAudioClient(
                 val path = Path.of(trimmed)
                 return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path).normalize()
             }
-            return baseDirectory?.resolve("speech.$format")
+            return baseDirectory?.resolve(DefaultOutputFiles.speech(format))
         }
 
         private fun defaultHttpClient(): HttpClient =

@@ -1,5 +1,11 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+- MCP text-to-speech writes a unique `speech-<uuid>` file when `targetFile` is omitted, so parallel generations do not overwrite each other.
+- MCP document-to-markdown does not request or return embedded image base64 unless it is writing markdown and images to disk.
+- Mistral, SuperGrok, and Z.ai speech-to-text stream local audio uploads instead of loading the whole file into memory.
+
 ## [1.10.3] - 2026-08-31
 
 - MCP image generation never returns base64. SuperGrok always requests a download URL and fetches it when writing `targetFile`. OpenAI/Codex has no image URL and writes a unique `image-<uuid>.png` in the project when `targetFile` is omitted.
