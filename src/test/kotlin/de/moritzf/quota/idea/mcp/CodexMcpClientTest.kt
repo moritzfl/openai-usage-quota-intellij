@@ -2,6 +2,8 @@ package de.moritzf.quota.idea.mcp
 
 import com.sun.net.httpserver.HttpServer
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.DocumentLimits
+import java.io.RandomAccessFile
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URI
@@ -92,6 +94,22 @@ class CodexMcpClientTest {
             assertEquals("doc.pdf", content[0].jsonObject["filename"]!!.jsonPrimitive.content)
             assertTrue(content[0].jsonObject["file_data"]!!.jsonPrimitive.content.startsWith("data:application/pdf;base64,"))
             assertEquals("# Converted", Files.readString(dir.resolve("doc.md")))
+        }
+    }
+
+    @Test
+    fun rejectsOversizedLocalDocumentBeforeUpstream() {
+        TestUpstream().use { upstream ->
+            val client = newClient(upstream.baseUri)
+            val dir = Files.createTempDirectory("codex-doc-big")
+            val pdf = dir.resolve("big.pdf")
+            RandomAccessFile(pdf.toFile(), "rw").use { it.setLength(DocumentLimits.MAX_INLINE_BYTES + 1) }
+
+            val response = client.documentToMarkdown(localFile = pdf)
+
+            assertTrue(response.isError)
+            assertTrue(parseObject(response.body)["error"]!!.jsonPrimitive.content.contains("too large"))
+            assertNull(upstream.requests.poll(300, TimeUnit.MILLISECONDS))
         }
     }
 

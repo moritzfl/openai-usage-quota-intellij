@@ -1,7 +1,9 @@
 package de.moritzf.quota.supergrok
 
 import com.sun.net.httpserver.HttpServer
+import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.JsonSupport
+import java.io.RandomAccessFile
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.URI
@@ -10,6 +12,7 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.jsonArray
@@ -25,6 +28,17 @@ class SuperGrokDocumentClientTest {
 
         val uploaded = SuperGrokDocumentClient.documentInput(null, null, "file-abc")
         assertEquals("file-abc", uploaded["file_id"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun documentInputRejectsOversizedLocalFileWithoutFileId() {
+        val dir = Files.createTempDirectory("grok-doc-big")
+        val pdf = dir.resolve("big.pdf")
+        RandomAccessFile(pdf.toFile(), "rw").use { it.setLength(DocumentLimits.MAX_INLINE_BYTES + 1) }
+        val exception = assertFailsWith<SuperGrokQuotaException> {
+            SuperGrokDocumentClient.documentInput(null, pdf, null)
+        }
+        assertTrue(exception.message!!.contains("too large"))
     }
 
     @Test

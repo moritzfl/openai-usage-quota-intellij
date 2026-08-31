@@ -1,9 +1,12 @@
 package de.moritzf.quota.zai
 
+import de.moritzf.quota.shared.DocumentLimits
+import java.io.RandomAccessFile
 import java.nio.file.Files
 import java.util.Base64
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class ZaiOcrClientTest {
@@ -15,6 +18,17 @@ class ZaiOcrClientTest {
         Files.write(pdf, "%PDF-1.4".toByteArray())
         val encoded = ZaiOcrClient.resolveFile(null, pdf)
         assertTrue(encoded.startsWith("data:application/pdf;base64,"))
+    }
+
+    @Test
+    fun resolveFileRejectsOversizedLocalDocument() {
+        val dir = Files.createTempDirectory("zai-ocr-big")
+        val pdf = dir.resolve("big.pdf")
+        RandomAccessFile(pdf.toFile(), "rw").use { it.setLength(DocumentLimits.MAX_INLINE_BYTES + 1) }
+        val exception = assertFailsWith<ZaiQuotaException> {
+            ZaiOcrClient.resolveFile(null, pdf)
+        }
+        assertTrue(exception.message!!.contains("too large"))
     }
 
     @Test

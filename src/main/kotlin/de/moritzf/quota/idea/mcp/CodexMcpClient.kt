@@ -8,6 +8,7 @@ import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.openai.proxy.OpenAiProxyServer
 import de.moritzf.quota.openai.proxy.QuotaCodexCredentialsProvider
+import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.DocumentMarkdown
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
@@ -103,6 +104,11 @@ class CodexMcpClient(
         outputFile: Path? = null,
         model: String = RESPONSES_MODEL,
     ): CodexMcpResponse {
+        if (documentUrl.isNullOrBlank() && localFile != null && Files.isRegularFile(localFile)) {
+            DocumentLimits.inlineOverflowMessage(localFile)?.let {
+                return CodexMcpResponse(errorJson(it), true)
+            }
+        }
         val fileContent = documentInput(documentUrl, localFile)
             ?: return CodexMcpResponse(errorJson("Provide documentUrl or a local file path."), true)
         val markdownOutput = outputFile ?: DocumentMarkdown.defaultOutput(localFile)

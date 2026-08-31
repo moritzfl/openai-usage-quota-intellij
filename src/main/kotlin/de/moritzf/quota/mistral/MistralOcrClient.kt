@@ -2,6 +2,7 @@ package de.moritzf.quota.mistral
 
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
+import de.moritzf.quota.shared.MultipartFilePublisher
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -75,26 +76,12 @@ open class MistralOcrClient(
 
     private fun uploadFile(apiKey: String, path: Path): String {
         val boundary = "----MistralOcr${UUID.randomUUID().toString().replace("-", "")}"
-        val filename = path.fileName.toString()
-        val bytes = Files.readAllBytes(path)
-        val preamble = buildString {
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"purpose\"\r\n\r\nocr\r\n")
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
-            append("Content-Type: application/octet-stream\r\n\r\n")
-        }.toByteArray()
-        val closing = "\r\n--$boundary--\r\n".toByteArray()
-        val payload = ByteArray(preamble.size + bytes.size + closing.size)
-        System.arraycopy(preamble, 0, payload, 0, preamble.size)
-        System.arraycopy(bytes, 0, payload, preamble.size, bytes.size)
-        System.arraycopy(closing, 0, payload, preamble.size + bytes.size, closing.size)
         val request = HttpRequest.newBuilder()
             .uri(filesUri)
             .timeout(Duration.ofSeconds(120))
             .header("Authorization", "Bearer $apiKey")
             .header("Content-Type", "multipart/form-data; boundary=$boundary")
-            .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+            .POST(MultipartFilePublisher.of(boundary, listOf("purpose" to "ocr"), path))
             .build()
         val response = sendString(request)
         if (response.statusCode() !in 200..299) {

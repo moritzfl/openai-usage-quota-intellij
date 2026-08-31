@@ -1,5 +1,6 @@
 package de.moritzf.quota.zai
 
+import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import java.io.IOException
@@ -111,6 +112,7 @@ open class ZaiOcrClient(
             if (!Files.isRegularFile(path)) {
                 throw ZaiQuotaException("Local document was not found.")
             }
+            DocumentLimits.inlineOverflowMessage(path)?.let { throw ZaiQuotaException(it) }
             val bytes = Files.readAllBytes(path)
             return "data:${mimeType(path, bytes)};base64,${Base64.getEncoder().encodeToString(bytes)}"
         }

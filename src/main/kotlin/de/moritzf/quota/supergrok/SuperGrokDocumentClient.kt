@@ -1,7 +1,9 @@
 package de.moritzf.quota.supergrok
 
+import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.DocumentMarkdown
 import de.moritzf.quota.shared.JsonSupport
+import de.moritzf.quota.shared.MultipartFilePublisher
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -66,19 +68,6 @@ open class SuperGrokDocumentClient(
             throw SuperGrokQuotaException("Local document was not found.")
         }
         val boundary = "----GrokDoc${UUID.randomUUID().toString().replace("-", "")}"
-        val filename = path.fileName.toString()
-        val bytes = Files.readAllBytes(path)
-        val preamble = buildString {
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"expires_after\"\r\n\r\n3600\r\n")
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"purpose\"\r\n\r\nassistants\r\n")
-            append("--").append(boundary).append("\r\n")
-            append("Content-Disposition: form-data; name=\"file\"; filename=\"").append(filename).append("\"\r\n")
-            append("Content-Type: application/octet-stream\r\n\r\n")
-        }.toByteArray()
-        val closing = "\r\n--$boundary--\r\n".toByteArray()
-        val payload = preamble + bytes + closing
         val response = send(
             HttpRequest.newBuilder()
                 .uri(baseUri.resolve(FILES_PATH))
@@ -86,7 +75,13 @@ open class SuperGrokDocumentClient(
                 .header("Authorization", "Bearer $token")
                 .header("Content-Type", "multipart/form-data; boundary=$boundary")
                 .header("User-Agent", USER_AGENT)
-                .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+                .POST(
+                    MultipartFilePublisher.of(
+                        boundary,
+                        listOf("expires_after" to "3600", "purpose" to "assistants"),
+                        path,
+                    ),
+                )
                 .build(),
         )
         if (response.statusCode() !in 200..299) {
@@ -176,6 +171,7 @@ open class SuperGrokDocumentClient(
             if (!Files.isRegularFile(path)) {
                 throw SuperGrokQuotaException("Local document was not found.")
             }
+            DocumentLimits.inlineOverflowMessage(path)?.let { throw SuperGrokQuotaException(it) }
             val bytes = Files.readAllBytes(path)
             val mime = mimeType(path, bytes)
             val dataUrl = "data:$mime;base64,${Base64.getEncoder().encodeToString(bytes)}"
