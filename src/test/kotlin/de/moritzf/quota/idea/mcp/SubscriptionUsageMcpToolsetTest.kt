@@ -56,6 +56,7 @@ class SubscriptionUsageMcpToolsetTest {
                 String::class.java,
                 Boolean::class.java,
                 Int::class.java,
+                String::class.java,
             ),
             videoTools.single().parameterTypes.toList(),
         )
