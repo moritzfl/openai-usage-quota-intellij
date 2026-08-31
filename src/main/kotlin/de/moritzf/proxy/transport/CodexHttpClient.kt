@@ -56,7 +56,7 @@ open class CodexHttpClient {
         val logRequestId = requestId ?: requestLogger.nextRequestId()
         val authHeaders = credentialsProvider.getAuthHeaders()
         var response = httpClient.send(
-            buildRequest(path, method, body, null, extraHeaders, promptCacheKey, logRequestId, authHeaders),
+            buildRequest(path, method, body, extraHeaders, promptCacheKey, logRequestId, authHeaders, null),
             HttpResponse.BodyHandlers.ofInputStream(),
         )
         if (response.statusCode() == 401 && refreshAfterUnauthorized(authHeaders)) {
@@ -67,11 +67,11 @@ open class CodexHttpClient {
                     path,
                     method,
                     body,
-                    null,
                     extraHeaders,
                     promptCacheKey,
                     logRequestId,
                     credentialsProvider.getAuthHeaders(),
+                    null,
                 ),
                 HttpResponse.BodyHandlers.ofInputStream(),
             )
@@ -110,12 +110,12 @@ open class CodexHttpClient {
         val requestId = requestLogger.nextRequestId()
         val authHeaders = credentialsProvider.getAuthHeaders()
         var response = httpClient.send(
-            buildRequest(path, method, body, null, extraHeaders, null, requestId, authHeaders),
+            buildRequest(path, method, body, extraHeaders, null, requestId, authHeaders, null),
             HttpResponse.BodyHandlers.ofString(),
         )
         if (response.statusCode() == 401 && refreshAfterUnauthorized(authHeaders)) {
             response = httpClient.send(
-                buildRequest(path, method, body, null, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders()),
+                buildRequest(path, method, body, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders(), null),
                 HttpResponse.BodyHandlers.ofString(),
             )
         }
@@ -129,15 +129,38 @@ open class CodexHttpClient {
         body: ByteArray?,
         extraHeaders: Map<String, String>?,
     ): HttpResponse<ByteArray> {
+        return requestBytes(
+            path,
+            method,
+            extraHeaders,
+            body?.let { HttpRequest.BodyPublishers.ofByteArray(it) },
+        )
+    }
+
+    open fun requestBytes(
+        path: String,
+        method: String?,
+        extraHeaders: Map<String, String>?,
+        bodyPublisher: HttpRequest.BodyPublisher?,
+    ): HttpResponse<ByteArray> {
         val requestId = requestLogger.nextRequestId()
         val authHeaders = credentialsProvider.getAuthHeaders()
         var response = httpClient.send(
-            buildRequest(path, method, null, body, extraHeaders, null, requestId, authHeaders),
+            buildRequest(path, method, null, extraHeaders, null, requestId, authHeaders, bodyPublisher),
             HttpResponse.BodyHandlers.ofByteArray(),
         )
         if (response.statusCode() == 401 && refreshAfterUnauthorized(authHeaders)) {
             response = httpClient.send(
-                buildRequest(path, method, null, body, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders()),
+                buildRequest(
+                    path,
+                    method,
+                    null,
+                    extraHeaders,
+                    null,
+                    requestId,
+                    credentialsProvider.getAuthHeaders(),
+                    bodyPublisher,
+                ),
                 HttpResponse.BodyHandlers.ofByteArray(),
             )
         }
@@ -168,11 +191,11 @@ open class CodexHttpClient {
         path: String,
         method: String?,
         body: String?,
-        bodyBytes: ByteArray?,
         extraHeaders: Map<String, String>?,
         promptCacheKey: String?,
         requestId: String,
         authHeaders: Map<String, String>,
+        bodyPublisher: HttpRequest.BodyPublisher?,
     ): HttpRequest {
         val targetUrl = UrlResolver.resolveTargetUrl(path, baseUrl)
         val loggedHeaders = LinkedHashMap<String, String>()
@@ -197,15 +220,13 @@ open class CodexHttpClient {
             loggedHeaders[CONVERSATION_ID_HEADER] = promptCacheKey
             loggedHeaders[SESSION_ID_HEADER] = promptCacheKey
         }
-        if (bodyBytes != null) {
-            builder.method(method ?: "POST", HttpRequest.BodyPublishers.ofByteArray(bodyBytes))
-        } else if (!body.isNullOrEmpty()) {
-            builder.method(method ?: "POST", HttpRequest.BodyPublishers.ofString(body))
-        } else {
-            builder.method(method ?: "GET", HttpRequest.BodyPublishers.noBody())
+        when {
+            bodyPublisher != null -> builder.method(method ?: "POST", bodyPublisher)
+            !body.isNullOrEmpty() -> builder.method(method ?: "POST", HttpRequest.BodyPublishers.ofString(body))
+            else -> builder.method(method ?: "GET", HttpRequest.BodyPublishers.noBody())
         }
         val loggedBody = when {
-            bodyBytes != null -> "[binary ${bodyBytes.size} bytes]"
+            bodyPublisher != null -> "[streaming body]"
             else -> body
         }
         requestLogger.logUpstreamRequest(requestId, method ?: "GET", path, loggedHeaders, loggedBody)

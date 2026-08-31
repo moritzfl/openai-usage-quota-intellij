@@ -165,11 +165,11 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_image_generation")
-    @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok, Z.ai, and MiniMax return an image URL; Mistral returns a file id; OpenAI/Codex writes a unique image-<uuid>.png in the project. With targetFile, the image is written to that path. Never returns base64.")
+    @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok, Z.ai, and MiniMax return an image URL; OpenAI/Codex and Mistral write a unique image-<uuid>.png in the project. With targetFile, the image is written to that path. Never returns base64.")
     fun subscription_image_generation(
         @McpDescription(description = "Image prompt.") prompt: String,
         @McpDescription(description = "Provider to use. Supported providers are derived from the ImageGenerationProvider enum.") provider: ImageGenerationProvider = ImageGenerationProvider.OPEN_AI,
-        @McpDescription(description = "Optional relative project path for the generated image (for example out/image.png). Leave blank for a download URL, or a unique image-<uuid>.png for OpenAI/Codex.") targetFile: String? = null,
+        @McpDescription(description = "Optional relative project path for the generated image (for example out/image.png). Leave blank for a download URL, or a unique image-<uuid>.png for OpenAI/Codex and Mistral.") targetFile: String? = null,
     ): String {
         return when (provider) {
             ImageGenerationProvider.OPEN_AI ->
@@ -322,7 +322,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_video_generation")
-    @McpDescription(description = "Generates a video through a subscription-backed provider. SuperGrok uses Imagine; Z.ai uses CogVideoX. By default waits/polls until completion and returns the final provider JSON.")
+    @McpDescription(description = "Generates a video through a subscription-backed provider. SuperGrok uses Imagine; Z.ai uses CogVideoX. By default waits/polls until completion and returns the provider JSON with a download URL. Pass targetFile to download the video to disk.")
     fun subscription_video_generation(
         @McpDescription(description = "Video prompt.") prompt: String,
         @McpDescription(description = "Provider to use. Supported providers are derived from the VideoGenerationProvider enum.") provider: VideoGenerationProvider = VideoGenerationProvider.SUPERGROK,
@@ -331,6 +331,7 @@ class SubscriptionUsageMcpToolset(
         @McpDescription(description = "Optional public image URL used as the starting frame.") imageUrl: String? = null,
         @McpDescription(description = "When true, poll until the video finishes or times out. When false, return the initial request id immediately.") waitForCompletion: Boolean = true,
         @McpDescription(description = "Maximum seconds to wait when waitForCompletion is true.") pollTimeoutSeconds: Int = SuperGrokImagineClient.DEFAULT_VIDEO_POLL_TIMEOUT_SECONDS,
+        @McpDescription(description = "Optional relative project path for the video (for example out/clip.mp4). Leave blank to return a download URL.") targetFile: String? = null,
     ): String {
         return when (provider) {
             VideoGenerationProvider.SUPERGROK ->
@@ -341,6 +342,7 @@ class SubscriptionUsageMcpToolset(
                     imageUrl,
                     waitForCompletion,
                     pollTimeoutSeconds,
+                    targetFile,
                 )
             VideoGenerationProvider.ZAI ->
                 zaiVideoGeneration(
@@ -349,6 +351,7 @@ class SubscriptionUsageMcpToolset(
                     imageUrl,
                     waitForCompletion,
                     pollTimeoutSeconds,
+                    targetFile,
                 )
         }
     }
@@ -362,8 +365,9 @@ class SubscriptionUsageMcpToolset(
         @McpDescription(description = "Optional public image URL or data URI used as the starting frame for image-to-video.") imageUrl: String? = null,
         @McpDescription(description = "When true, poll until the video finishes or times out. When false, return the initial request_id response immediately.") waitForCompletion: Boolean = true,
         @McpDescription(description = "Maximum seconds to wait when waitForCompletion is true.") pollTimeoutSeconds: Int = SuperGrokImagineClient.DEFAULT_VIDEO_POLL_TIMEOUT_SECONDS,
+        @McpDescription(description = "Optional relative project path for the video (for example out/clip.mp4). Leave blank to return a download URL.") targetFile: String? = null,
     ): String {
-        return superGrokVideoGeneration(prompt, model, duration, imageUrl, waitForCompletion, pollTimeoutSeconds)
+        return superGrokVideoGeneration(prompt, model, duration, imageUrl, waitForCompletion, pollTimeoutSeconds, targetFile)
     }
 
     private fun quotaResult(type: QuotaProviderType, accountParam: String? = null): String {
@@ -519,6 +523,7 @@ class SubscriptionUsageMcpToolset(
         imageUrl: String?,
         waitForCompletion: Boolean,
         pollTimeoutSeconds: Int,
+        targetFile: String? = null,
     ): String {
         return withSuperGrokAuth("Grok video generation failed.") { accessToken ->
             superGrokImagineClient.generateVideo(
@@ -529,6 +534,8 @@ class SubscriptionUsageMcpToolset(
                 imageUrl = imageUrl,
                 waitForCompletion = waitForCompletion,
                 pollTimeoutSeconds = pollTimeoutSeconds,
+                targetFile = targetFile,
+                baseDirectory = projectBaseDirectory(),
             )
         }
     }
@@ -697,13 +704,23 @@ class SubscriptionUsageMcpToolset(
         imageUrl: String?,
         waitForCompletion: Boolean,
         pollTimeoutSeconds: Int,
+        targetFile: String? = null,
     ): String {
         val apiKey = resolvedApiKey(QuotaProviderType.ZAI) { ZaiApiKeyStore.forAccount(it).loadBlocking() }
         if (apiKey.isNullOrBlank()) {
             return errorResult("Z.ai API key missing. Add a Z.ai API key in settings.")
         }
         return try {
-            zaiVideoClient.generateVideo(apiKey, prompt, model, imageUrl, waitForCompletion, pollTimeoutSeconds)
+            zaiVideoClient.generateVideo(
+                apiKey,
+                prompt,
+                model,
+                imageUrl,
+                waitForCompletion,
+                pollTimeoutSeconds,
+                targetFile,
+                projectBaseDirectory(),
+            )
         } catch (exception: ZaiQuotaException) {
             errorResult(exception.message ?: "Z.ai video generation failed.")
         } catch (exception: Exception) {

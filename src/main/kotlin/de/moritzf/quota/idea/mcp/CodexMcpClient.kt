@@ -13,6 +13,7 @@ import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.DocumentMarkdown
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
+import de.moritzf.quota.shared.MultipartFilePublisher
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -125,24 +126,33 @@ class CodexMcpClient(
         diarize: Boolean = false,
         model: String = DEFAULT_TRANSCRIBE_MODEL,
     ): CodexMcpResponse {
-        val audio = resolveAudioBytes(audioUrl, localFile)
-            ?: return CodexMcpResponse(errorJson("Provide audioUrl or a local audio file path."), true)
-        val filename = localFile?.fileName?.toString() ?: "audio.mp3"
         val selectedModel = if (diarize) {
             DIARIZE_TRANSCRIBE_MODEL
         } else {
             model.trim().ifBlank { DEFAULT_TRANSCRIBE_MODEL }
         }
-        val multipart = transcriptionMultipart(audio, filename, selectedModel, language, diarize)
+        val fields = transcriptionFields(selectedModel, language, diarize)
+        val boundary: String
+        val publisher: HttpRequest.BodyPublisher
+        if (localFile != null && Files.isRegularFile(localFile)) {
+            boundary = "----CodexAudio${UUID.randomUUID().toString().replace("-", "")}"
+            publisher = MultipartFilePublisher.of(boundary, fields, localFile)
+        } else {
+            val audio = resolveAudioBytes(audioUrl, null)
+                ?: return CodexMcpResponse(errorJson("Provide audioUrl or a local audio file path."), true)
+            val multipart = transcriptionMultipart(audio, "audio.mp3", selectedModel, language, diarize)
+            boundary = multipart.boundary
+            publisher = HttpRequest.BodyPublishers.ofByteArray(multipart.body)
+        }
         return try {
             val response = client.requestBytes(
                 TRANSCRIPTIONS_PATH,
                 "POST",
-                multipart.body,
                 mapOf(
-                    "Content-Type" to "multipart/form-data; boundary=${multipart.boundary}",
+                    "Content-Type" to "multipart/form-data; boundary=$boundary",
                     "Accept" to "application/json",
                 ),
+                publisher,
             )
             if (response.statusCode() in 200..299) {
                 CodexMcpResponse(McpJson.providerJsonOrRaw(String(response.body(), Charsets.UTF_8)), false)
@@ -825,6 +835,18 @@ class CodexMcpClient(
                 put("voice", voice)
                 put("response_format", format)
             }.toString()
+        }
+
+        internal fun transcriptionFields(
+            model: String,
+            language: String?,
+            diarize: Boolean,
+        ): List<Pair<String, String>> {
+            return buildList {
+                add("model" to model)
+                if (diarize) add("response_format" to "diarized_json")
+                language?.trim()?.takeIf { it.isNotEmpty() }?.let { add("language" to it) }
+            }
         }
 
         internal fun transcriptionMultipart(

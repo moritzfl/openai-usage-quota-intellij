@@ -22,6 +22,16 @@ class MistralToolClientTest {
     }
 
     @Test
+    fun imageOutputDefaultsToUniqueProjectFile() {
+        val dir = Path.of("/tmp/project")
+        val default = MistralImageClient.resolveOutput(null, dir)
+        assertEquals(dir, default?.parent)
+        assertTrue(default!!.fileName.toString().matches(Regex("image-[0-9a-f-]{36}\\.png")))
+        assertEquals(dir.resolve("out/hi.png"), MistralImageClient.resolveOutput("out/hi.png", dir))
+        assertEquals(null, MistralImageClient.resolveOutput(null, null))
+    }
+
+    @Test
     fun firstToolFileIdReadsNestedConversationOutput() {
         val body = """
             {

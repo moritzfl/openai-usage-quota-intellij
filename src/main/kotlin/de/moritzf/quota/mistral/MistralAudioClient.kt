@@ -1,6 +1,7 @@
 package de.moritzf.quota.mistral
 
 import de.moritzf.quota.shared.DefaultOutputFiles
+import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import de.moritzf.quota.shared.MultipartFilePublisher
@@ -229,6 +230,7 @@ open class MistralAudioClient(
             if (!Files.isRegularFile(path)) {
                 throw MistralQuotaException("Reference audio file was not found.")
             }
+            DocumentLimits.inlineOverflowMessage(path)?.let { throw MistralQuotaException(it) }
             return Base64.getEncoder().encodeToString(Files.readAllBytes(path))
         }
 

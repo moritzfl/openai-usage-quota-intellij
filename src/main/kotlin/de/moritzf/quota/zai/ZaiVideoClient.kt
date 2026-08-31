@@ -1,5 +1,6 @@
 package de.moritzf.quota.zai
 
+import de.moritzf.quota.shared.HttpJsonUrls
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import java.io.IOException
@@ -7,8 +8,12 @@ import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
+import java.nio.file.Files
+import java.nio.file.Path
 import java.time.Duration
 import java.util.Locale
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.JsonObject
@@ -28,6 +33,8 @@ open class ZaiVideoClient(
         imageUrl: String? = null,
         waitForCompletion: Boolean = true,
         pollTimeoutSeconds: Int = DEFAULT_POLL_TIMEOUT_SECONDS,
+        targetFile: String? = null,
+        baseDirectory: Path? = null,
     ): String {
         val trimmedPrompt = prompt.trim()
         if (trimmedPrompt.isBlank()) {
@@ -56,7 +63,52 @@ open class ZaiVideoClient(
         }
         val id = taskId(startBody)
             ?: throw ZaiQuotaException("Z.ai video generation returned no task id.", 200, startBody)
-        return poll(token, id, pollTimeoutSeconds.coerceIn(5, MAX_POLL_TIMEOUT_SECONDS))
+        val json = poll(token, id, pollTimeoutSeconds.coerceIn(5, MAX_POLL_TIMEOUT_SECONDS))
+        return writeVideoIfRequested(json, targetFile, baseDirectory)
+    }
+
+    private fun writeVideoIfRequested(body: String, targetFile: String?, baseDirectory: Path?): String {
+        val output = resolveVideoOutput(targetFile, baseDirectory) ?: return body
+        val url = HttpJsonUrls.first(body)
+            ?: throw ZaiQuotaException("Z.ai video generation returned no video URL.", 200, body)
+        val bytes = download(url)
+        val parent = output.parent
+        if (parent != null) {
+            Files.createDirectories(parent)
+        }
+        Files.write(output, bytes)
+        return buildJsonObject {
+            put("output_file", output.toString())
+            put("bytes", bytes.size.toLong())
+        }.toString()
+    }
+
+    private fun resolveVideoOutput(targetFile: String?, baseDirectory: Path?): Path? {
+        val trimmed = targetFile?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val path = Path.of(trimmed)
+        return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path).normalize()
+    }
+
+    private fun download(url: String): ByteArray {
+        val response = try {
+            httpClient.send(
+                HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(180))
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray(),
+            )
+        } catch (exception: IOException) {
+            throw ZaiQuotaException("Request failed. Check your connection.", 0, null, exception)
+        } catch (exception: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw ZaiQuotaException("Request failed. Check your connection.", 0, null, exception)
+        }
+        if (response.statusCode() !in 200..299) {
+            throw ZaiQuotaException("Z.ai video download failed (HTTP ${response.statusCode()}).", response.statusCode())
+        }
+        return response.body()
     }
 
     private fun poll(token: String, id: String, timeoutSeconds: Int): String {

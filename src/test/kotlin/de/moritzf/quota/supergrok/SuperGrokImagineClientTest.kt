@@ -133,6 +133,34 @@ class SuperGrokImagineClientTest {
     }
 
     @Test
+    fun writesVideoToTargetFileByDownloadingUrl() {
+        val video = byteArrayOf(0, 1, 2, 3)
+        TestGrokServer(files = mapOf("/v.mp4" to video)).use { server ->
+            server.responseBody = """{"request_id":"vid-1","status":"done","video":{"url":"${server.baseUri}v.mp4"}}"""
+            val client = SuperGrokImagineClient(
+                httpClient = httpClient,
+                baseUri = server.baseUri,
+                sleeper = { },
+            )
+            val dir = Files.createTempDirectory("grok-vid")
+            try {
+                val result = client.generateVideo(
+                    accessToken = "grok-token",
+                    prompt = "clip",
+                    targetFile = "out/clip.mp4",
+                    baseDirectory = dir,
+                )
+                val written = parseObject(result)
+                val output = dir.resolve("out/clip.mp4")
+                assertEquals(output.toString(), written["output_file"]!!.jsonPrimitive.content)
+                assertEquals(video.toList(), Files.readAllBytes(output).toList())
+            } finally {
+                dir.toFile().deleteRecursively()
+            }
+        }
+    }
+
+    @Test
     fun videoGenerationCanReturnRequestImmediately() {
         MultiResponseGrokServer(
             postBody = """{"request_id":"vid-9","status":"pending"}""",

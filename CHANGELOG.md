@@ -1,5 +1,12 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+- Codex speech-to-text streams local audio uploads through a BodyPublisher instead of buffering the whole file.
+- Mistral image generation writes a unique `image-<uuid>.png` when `targetFile` is omitted.
+- Mistral TTS reference audio is rejected above the 1 GB inline limit.
+- MCP video generation can download the result to `targetFile` instead of only returning a URL.
+
 ## [1.10.4] - 2026-08-31
 
 - MCP text-to-speech writes a unique `speech-<uuid>` file when `targetFile` is omitted, so parallel generations do not overwrite each other.

@@ -1,5 +1,6 @@
 package de.moritzf.quota.supergrok
 
+import de.moritzf.quota.shared.HttpJsonUrls
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
 import java.io.IOException
@@ -71,6 +72,8 @@ open class SuperGrokImagineClient(
         imageUrl: String? = null,
         waitForCompletion: Boolean = true,
         pollTimeoutSeconds: Int = DEFAULT_VIDEO_POLL_TIMEOUT_SECONDS,
+        targetFile: String? = null,
+        baseDirectory: Path? = null,
     ): String {
         val trimmedPrompt = prompt.trim()
         if (trimmedPrompt.isBlank()) {
@@ -96,7 +99,30 @@ open class SuperGrokImagineClient(
         }
         val requestId = extractRequestId(startBody)
             ?: throw SuperGrokQuotaException("Grok video generation did not return a request_id.", 200, startBody)
-        return pollVideo(token, requestId, pollTimeoutSeconds.coerceIn(5, MAX_VIDEO_POLL_TIMEOUT_SECONDS))
+        val json = pollVideo(token, requestId, pollTimeoutSeconds.coerceIn(5, MAX_VIDEO_POLL_TIMEOUT_SECONDS))
+        return writeVideoIfRequested(json, targetFile, baseDirectory)
+    }
+
+    private fun writeVideoIfRequested(body: String, targetFile: String?, baseDirectory: Path?): String {
+        val output = resolveVideoOutput(targetFile, baseDirectory) ?: return body
+        val url = HttpJsonUrls.first(body)
+            ?: throw SuperGrokQuotaException("Grok video generation returned no video URL.", 200, body)
+        val bytes = download(url)
+        val parent = output.parent
+        if (parent != null) {
+            Files.createDirectories(parent)
+        }
+        Files.write(output, bytes)
+        return buildJsonObject {
+            put("output_file", output.toString())
+            put("bytes", bytes.size.toLong())
+        }.toString()
+    }
+
+    private fun resolveVideoOutput(targetFile: String?, baseDirectory: Path?): Path? {
+        val trimmed = targetFile?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val path = Path.of(trimmed)
+        return if (path.isAbsolute || baseDirectory == null) path.normalize() else baseDirectory.resolve(path).normalize()
     }
 
     private fun pollVideo(accessToken: String, requestId: String, timeoutSeconds: Int): String {
@@ -151,14 +177,14 @@ open class SuperGrokImagineClient(
                 HttpResponse.BodyHandlers.ofByteArray(),
             )
         } catch (exception: IOException) {
-            throw SuperGrokQuotaException("Grok image download failed. Check your connection.", 0, null, exception)
+            throw SuperGrokQuotaException("Grok download failed. Check your connection.", 0, null, exception)
         } catch (exception: InterruptedException) {
             Thread.currentThread().interrupt()
-            throw SuperGrokQuotaException("Grok image download failed. Check your connection.", 0, null, exception)
+            throw SuperGrokQuotaException("Grok download failed. Check your connection.", 0, null, exception)
         }
         if (response.statusCode() !in 200..299) {
             throw SuperGrokQuotaException(
-                "Grok image download failed (HTTP ${response.statusCode()}).",
+                "Grok download failed (HTTP ${response.statusCode()}).",
                 response.statusCode(),
             )
         }
