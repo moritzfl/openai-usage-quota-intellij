@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-- MCP image generation never returns base64. SuperGrok always requests a download URL and fetches it when writing `targetFile`. OpenAI/Codex has no image URL and writes `image.png` in the project when `targetFile` is omitted.
+- MCP image generation never returns base64. SuperGrok always requests a download URL and fetches it when writing `targetFile`. OpenAI/Codex has no image URL and writes a unique `image-<uuid>.png` in the project when `targetFile` is omitted.
 
 ## [1.10.2] - 2026-08-28
 

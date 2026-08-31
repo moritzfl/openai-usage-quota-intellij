@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -177,8 +178,9 @@ class CodexMcpClientTest {
 
             assertFalse(response.isError)
             val responseBody = parseObject(response.body)
-            val targetFile = tempDir.resolve(CodexMcpClient.DEFAULT_IMAGE_FILE)
-            assertEquals(targetFile.toString(), responseBody["output_file"]!!.jsonPrimitive.content)
+            val targetFile = Path.of(responseBody["output_file"]!!.jsonPrimitive.content)
+            assertEquals(tempDir.toAbsolutePath().normalize(), targetFile.parent)
+            assertTrue(targetFile.fileName.toString().matches(Regex("image-[0-9a-f-]{36}\\.png")))
             assertEquals("png", responseBody["format"]!!.jsonPrimitive.content)
             assertEquals(
                 "draw a tiny robot",
@@ -207,6 +209,11 @@ class CodexMcpClientTest {
             assertEquals("image_generation", tool["type"]!!.jsonPrimitive.content)
             assertEquals("png", tool["output_format"]!!.jsonPrimitive.content)
         }
+    }
+
+    @Test
+    fun defaultImageFileNamesAreUnique() {
+        assertNotEquals(CodexMcpClient.defaultImageFileName(), CodexMcpClient.defaultImageFileName())
     }
 
     @Test

@@ -580,7 +580,7 @@ class CodexMcpClient(
         if (trimmed == null && baseDirectory == null) {
             return null
         }
-        return resolveImageOutputTarget(trimmed ?: DEFAULT_IMAGE_FILE, baseDirectory)
+        return resolveImageOutputTarget(trimmed ?: defaultImageFileName(), baseDirectory)
     }
 
     private fun resolveImageOutputTarget(targetFile: String, baseDirectory: Path?): ImageOutputTarget? {
@@ -701,7 +701,6 @@ class CodexMcpClient(
         const val DEFAULT_SPEECH_MODEL = "gpt-4o-mini-tts"
         const val DEFAULT_SPEECH_FORMAT = "mp3"
         const val DEFAULT_SPEECH_VOICE = "coral"
-        const val DEFAULT_IMAGE_FILE = "image.png"
         private const val DIARIZE_TRANSCRIBE_MODEL = "gpt-4o-transcribe-diarize"
         private const val DEFAULT_SEARCH_CONTEXT_SIZE = "medium"
         private const val MAX_SEARCH_FILTER_DOMAINS = 100
@@ -712,6 +711,8 @@ class CodexMcpClient(
             "Convert the attached document to markdown. Preserve headings, lists, tables, and code. Return only markdown."
         private const val DOCUMENT_PROMPT = "Convert this document to markdown. Return only the markdown."
         private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp")
+
+        internal fun defaultImageFileName(): String = "image-${UUID.randomUUID()}.png"
 
         internal fun isImageName(value: String): Boolean {
             val name = value.substringAfterLast('/').substringBefore('?').lowercase(Locale.ROOT)
