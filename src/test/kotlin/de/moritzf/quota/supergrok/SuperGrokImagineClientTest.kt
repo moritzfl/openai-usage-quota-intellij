@@ -9,7 +9,6 @@ import java.net.InetSocketAddress
 import java.net.URI
 import java.net.http.HttpClient
 import java.nio.file.Files
-import java.util.Base64
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -52,11 +51,10 @@ class SuperGrokImagineClientTest {
     }
 
     @Test
-    fun writesImageToRelativeProjectPathUsingB64() {
-        val pngB64 = tinyPngBase64()
-        TestGrokServer(
-            responseBody = """{"created":1,"data":[{"b64_json":"$pngB64"}]}""",
-        ).use { server ->
+    fun writesImageToRelativeProjectPathByDownloadingUrl() {
+        val png = tinyPng()
+        TestGrokServer(files = mapOf("/cat.png" to png)).use { server ->
+            server.responseBody = """{"created":1,"data":[{"url":"${server.baseUri}cat.png"}]}"""
             val client = SuperGrokImagineClient(httpClient = httpClient, baseUri = server.baseUri)
             val projectDir = Files.createTempDirectory("supergrok-imagine-test")
             try {
@@ -69,13 +67,18 @@ class SuperGrokImagineClientTest {
                 val response = parseObject(result)
                 val output = response["output_file"]!!.jsonPrimitive.content
                 assertTrue(output.endsWith("out/logo.png") || output.endsWith("out\\logo.png"))
-                assertTrue(Files.exists(projectDir.resolve("out/logo.png")))
+                val written = projectDir.resolve("out/logo.png")
+                assertTrue(Files.exists(written))
+                assertEquals(png.toList(), Files.readAllBytes(written).toList())
                 assertTrue(response["bytes"]!!.jsonPrimitive.int > 0)
 
-                val request = assertNotNull(server.requests.poll(2, TimeUnit.SECONDS))
-                val body = parseObject(request.body)
-                assertEquals("b64_json", body["response_format"]!!.jsonPrimitive.content)
+                val generate = assertNotNull(server.requests.poll(2, TimeUnit.SECONDS))
+                val body = parseObject(generate.body)
+                assertEquals("url", body["response_format"]!!.jsonPrimitive.content)
                 assertEquals(1, body["n"]!!.jsonPrimitive.int)
+                val download = assertNotNull(server.requests.poll(2, TimeUnit.SECONDS))
+                assertEquals("GET", download.method)
+                assertEquals("/cat.png", download.path)
             } finally {
                 projectDir.toFile().deleteRecursively()
             }
@@ -147,21 +150,21 @@ class SuperGrokImagineClientTest {
         }
     }
 
-    private fun tinyPngBase64(): String {
+    private fun tinyPng(): ByteArray {
         val image = BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB)
         image.setRGB(0, 0, 0xFF0000)
         image.setRGB(1, 1, 0x00FF00)
-        val bytes = ByteArrayOutputStream().use { output ->
+        return ByteArrayOutputStream().use { output ->
             ImageIO.write(image, "png", output)
             output.toByteArray()
         }
-        return Base64.getEncoder().encodeToString(bytes)
     }
 
     private fun parseObject(value: String) = JsonSupport.json.parseToJsonElement(value).jsonObject
 
     private class TestGrokServer(
-        private val responseBody: String = """{"data":[]}""",
+        var responseBody: String = """{"data":[]}""",
+        private val files: Map<String, ByteArray> = emptyMap(),
         private val responseStatus: Int = 200,
     ) : AutoCloseable {
         val requests = LinkedBlockingQueue<CapturedRequest>()
@@ -171,12 +174,20 @@ class SuperGrokImagineClientTest {
         init {
             server.createContext("/") { exchange ->
                 val body = exchange.requestBody.use { it.readBytes().toString(Charsets.UTF_8) }
+                val path = exchange.requestURI.rawPath
                 requests += CapturedRequest(
                     method = exchange.requestMethod,
-                    path = exchange.requestURI.rawPath,
+                    path = path,
                     headers = exchange.requestHeaders.mapValues { it.value.toList() },
                     body = body,
                 )
+                val file = files[path]
+                if (file != null) {
+                    exchange.responseHeaders.set("Content-Type", "image/png")
+                    exchange.sendResponseHeaders(200, file.size.toLong())
+                    exchange.responseBody.use { output -> output.write(file) }
+                    return@createContext
+                }
                 val response = responseBody.toByteArray(Charsets.UTF_8)
                 exchange.responseHeaders.set("Content-Type", "application/json")
                 exchange.sendResponseHeaders(responseStatus, response.size.toLong())

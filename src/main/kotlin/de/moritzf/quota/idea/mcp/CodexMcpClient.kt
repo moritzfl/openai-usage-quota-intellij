@@ -88,12 +88,8 @@ class CodexMcpClient(
         if (trimmedPrompt.isBlank()) {
             return CodexMcpResponse(errorJson("Image prompt is required."), true)
         }
-        val trimmedTarget = targetFile?.trim()
-        if (trimmedTarget.isNullOrBlank()) {
-            return postResponses(imageGenerationRequest(trimmedPrompt), ::parseImageGenerationResponse)
-        }
-        val outputTarget = resolveImageOutputTarget(trimmedTarget, baseDirectory)
-            ?: return CodexMcpResponse(errorJson("Image target file is required."), true)
+        val outputTarget = resolveImageOutput(targetFile, baseDirectory)
+            ?: return CodexMcpResponse(errorJson("Provide targetFile so the image is written to disk."), true)
         outputTarget.error?.let { return CodexMcpResponse(errorJson(it), true) }
 
         return postResponses(imageGenerationRequest(trimmedPrompt)) { body ->
@@ -524,23 +520,6 @@ class CodexMcpClient(
         return domains.takeIf { list -> list.all { DOMAIN_PATTERN.matches(it) } }
     }
 
-    private fun parseImageGenerationResponse(body: String): CodexMcpResponse {
-        firstFailedMessage(body)?.let { return CodexMcpResponse(errorJson(it), true) }
-        val imageResult = imageGenerationResult(body)
-            ?: return CodexMcpResponse(errorJson("Codex image generation returned no image data."), true)
-
-        return CodexMcpResponse(buildJsonObject {
-            imageResult.responseId?.let { put("response_id", it) }
-            putJsonArray("data") {
-                add(buildJsonObject {
-                    put("b64_json", imageResult.b64Json)
-                    imageResult.revisedPrompt?.let { put("revised_prompt", it) }
-                })
-            }
-            imageResult.toolUsage?.let { put("tool_usage", it) }
-        }.toString(), false)
-    }
-
     private fun parseImageGenerationToFileResponse(
         body: String,
         targetFile: Path,
@@ -594,6 +573,14 @@ class CodexMcpClient(
 
     private fun firstFailedMessage(body: String): String? {
         return responsesDataEvents(body).firstNotNullOfOrNull(::failedMessage)
+    }
+
+    private fun resolveImageOutput(targetFile: String?, baseDirectory: Path?): ImageOutputTarget? {
+        val trimmed = targetFile?.trim()?.takeIf { it.isNotBlank() }
+        if (trimmed == null && baseDirectory == null) {
+            return null
+        }
+        return resolveImageOutputTarget(trimmed ?: DEFAULT_IMAGE_FILE, baseDirectory)
     }
 
     private fun resolveImageOutputTarget(targetFile: String, baseDirectory: Path?): ImageOutputTarget? {
@@ -714,6 +701,7 @@ class CodexMcpClient(
         const val DEFAULT_SPEECH_MODEL = "gpt-4o-mini-tts"
         const val DEFAULT_SPEECH_FORMAT = "mp3"
         const val DEFAULT_SPEECH_VOICE = "coral"
+        const val DEFAULT_IMAGE_FILE = "image.png"
         private const val DIARIZE_TRANSCRIBE_MODEL = "gpt-4o-transcribe-diarize"
         private const val DEFAULT_SEARCH_CONTEXT_SIZE = "medium"
         private const val MAX_SEARCH_FILTER_DOMAINS = 100

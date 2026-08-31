@@ -165,11 +165,11 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_image_generation")
-    @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok and Z.ai return an image URL and OpenAI/Codex returns provider JSON (including b64). With targetFile, the image is written to disk so agents avoid large base64 payloads.")
+     @McpDescription(description = "Generates one image through a subscription-backed provider. Without targetFile, SuperGrok, Z.ai, and MiniMax return an image URL; Mistral returns a file id; OpenAI/Codex writes image.png in the project. With targetFile, the image is written to disk. Never returns base64.")
     fun subscription_image_generation(
         @McpDescription(description = "Image prompt.") prompt: String,
         @McpDescription(description = "Provider to use. Supported providers are derived from the ImageGenerationProvider enum.") provider: ImageGenerationProvider = ImageGenerationProvider.OPEN_AI,
-        @McpDescription(description = "Optional relative project path for the generated image (for example out/image.png). Leave blank to return provider JSON/URL instead of writing a file.") targetFile: String? = null,
+        @McpDescription(description = "Optional relative project path for the generated image (for example out/image.png). Leave blank for a download URL, or image.png for OpenAI/Codex.") targetFile: String? = null,
     ): String {
         return when (provider) {
             ImageGenerationProvider.OPEN_AI ->

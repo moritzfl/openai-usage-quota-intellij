@@ -164,24 +164,29 @@ class CodexMcpClientTest {
     }
 
     @Test
-    fun postsImageGenerationToCodexResponsesEndpointWithQuotaAuth() {
+    fun postsImageGenerationToCodexResponsesEndpointWithQuotaAuth(@TempDir tempDir: Path) {
         TestUpstream(
             responseBody = sse(
-                """{"type":"response.output_item.done","item":{"type":"image_generation_call","id":"ig_1","status":"generating","revised_prompt":"draw a tiny robot","result":"cG5n"}}""",
+                """{"type":"response.output_item.done","item":{"type":"image_generation_call","id":"ig_1","status":"generating","revised_prompt":"draw a tiny robot","result":"$TEST_PNG_BASE64"}}""",
                 """{"type":"response.completed","response":{"id":"resp_1","tool_usage":{"image_gen":{"total_tokens":12}}}}""",
             ),
         ).use { upstream ->
             val client = newClient(upstream.baseUri)
 
-            val response = client.imageGeneration("draw a tiny robot")
+            val response = client.imageGeneration("draw a tiny robot", baseDirectory = tempDir)
 
             assertFalse(response.isError)
             val responseBody = parseObject(response.body)
-            assertEquals("cG5n", responseBody["data"]!!.jsonArray[0].jsonObject["b64_json"]!!.jsonPrimitive.content)
+            val targetFile = tempDir.resolve(CodexMcpClient.DEFAULT_IMAGE_FILE)
+            assertEquals(targetFile.toString(), responseBody["output_file"]!!.jsonPrimitive.content)
+            assertEquals("png", responseBody["format"]!!.jsonPrimitive.content)
             assertEquals(
                 "draw a tiny robot",
-                responseBody["data"]!!.jsonArray[0].jsonObject["revised_prompt"]!!.jsonPrimitive.content,
+                responseBody["revised_prompt"]!!.jsonPrimitive.content,
             )
+            assertFalse("data" in responseBody)
+            assertFalse("b64_json" in responseBody.toString())
+            assertTrue(Files.exists(targetFile))
             val request = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
             assertEquals("POST", request.method)
             assertEquals("/backend-api/codex/responses", request.path)
@@ -201,6 +206,19 @@ class CodexMcpClientTest {
             val tool = body["tools"]!!.jsonArray[0].jsonObject
             assertEquals("image_generation", tool["type"]!!.jsonPrimitive.content)
             assertEquals("png", tool["output_format"]!!.jsonPrimitive.content)
+        }
+    }
+
+    @Test
+    fun requiresImageTargetFileWhenNoProjectDirectory() {
+        TestUpstream().use { upstream ->
+            val client = newClient(upstream.baseUri)
+
+            val response = client.imageGeneration("draw a tiny robot")
+
+            assertTrue(response.isError)
+            assertTrue(parseObject(response.body)["error"]!!.jsonPrimitive.content.contains("targetFile"))
+            assertNull(upstream.requests.poll(500, TimeUnit.MILLISECONDS))
         }
     }
 

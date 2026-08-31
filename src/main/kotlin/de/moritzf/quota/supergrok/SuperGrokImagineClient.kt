@@ -2,7 +2,6 @@ package de.moritzf.quota.supergrok
 
 import de.moritzf.quota.shared.JsonSupport
 import de.moritzf.quota.shared.McpJson
-import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -12,7 +11,6 @@ import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
 import java.time.Duration
-import java.util.Base64
 import java.util.Locale
 import javax.imageio.ImageIO
 import kotlinx.serialization.SerialName
@@ -50,15 +48,12 @@ open class SuperGrokImagineClient(
         if (outputTarget?.error != null) {
             throw SuperGrokQuotaException(outputTarget.error)
         }
-        // Prefer URL when returning to the agent. Use b64 only when writing a local file
-        // so agents do not have to ingest large base64 payloads.
-        val responseFormat = if (outputTarget?.path != null) "b64_json" else "url"
         val body = JsonSupport.json.encodeToString(
             GrokImageGenerationRequestDto(
                 model = trimmedModel,
                 prompt = trimmedPrompt,
                 n = 1,
-                responseFormat = responseFormat,
+                responseFormat = "url",
             ),
         )
         val responseBody = postJson(token, IMAGES_GENERATIONS_PATH, body, requestTimeoutSeconds = 120)
@@ -126,19 +121,48 @@ open class SuperGrokImagineClient(
     }
 
     private fun writeFirstImageToFile(responseBody: String, targetFile: Path, format: String): String {
-        val b64 = extractFirstB64Image(responseBody)
+        val url = extractFirstImageUrl(responseBody)
             ?: throw SuperGrokQuotaException(
-                "Grok image generation returned no b64_json image data.",
+                "Grok image generation returned no image URL.",
                 200,
                 responseBody,
             )
-        val bytes = writeImageFile(b64, targetFile, format)
-            ?: throw SuperGrokQuotaException("Could not write generated image as $format.")
+        val bytes = download(url)
+        val parent = targetFile.parent
+        if (parent != null) {
+            Files.createDirectories(parent)
+        }
+        Files.write(targetFile, bytes)
         return buildJsonObject {
             put("output_file", targetFile.toString())
             put("format", format)
-            put("bytes", bytes)
+            put("bytes", bytes.size.toLong())
         }.toString()
+    }
+
+    private fun download(url: String): ByteArray {
+        val response = try {
+            httpClient.send(
+                HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .timeout(Duration.ofSeconds(90))
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofByteArray(),
+            )
+        } catch (exception: IOException) {
+            throw SuperGrokQuotaException("Grok image download failed. Check your connection.", 0, null, exception)
+        } catch (exception: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw SuperGrokQuotaException("Grok image download failed. Check your connection.", 0, null, exception)
+        }
+        if (response.statusCode() !in 200..299) {
+            throw SuperGrokQuotaException(
+                "Grok image download failed (HTTP ${response.statusCode()}).",
+                response.statusCode(),
+            )
+        }
+        return response.body()
     }
 
     private fun postJson(
@@ -248,14 +272,14 @@ open class SuperGrokImagineClient(
             return ImageOutputTarget(path = resolved, format = format)
         }
 
-        fun extractFirstB64Image(responseBody: String): String? {
+        fun extractFirstImageUrl(responseBody: String): String? {
             val root = runCatching { JsonSupport.json.parseToJsonElement(responseBody) as? JsonObject }.getOrNull()
                 ?: return null
             val data = root["data"] as? JsonArray ?: return null
             for (item in data) {
                 val obj = item as? JsonObject ?: continue
-                val b64 = (obj["b64_json"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
-                if (b64 != null) return b64
+                val url = (obj["url"] as? JsonPrimitive)?.contentOrNull?.takeIf { it.isNotBlank() }
+                if (url != null) return url
             }
             return null
         }
@@ -271,19 +295,6 @@ open class SuperGrokImagineClient(
             val root = runCatching { JsonSupport.json.parseToJsonElement(responseBody) as? JsonObject }.getOrNull()
                 ?: return null
             return (root["status"] as? JsonPrimitive)?.contentOrNull
-        }
-
-        fun writeImageFile(b64Json: String, targetFile: Path, format: String): Long? {
-            val imageBytes = runCatching { Base64.getDecoder().decode(b64Json) }.getOrNull() ?: return null
-            val image = ImageIO.read(ByteArrayInputStream(imageBytes)) ?: return null
-            val parent = targetFile.parent
-            if (parent != null) {
-                Files.createDirectories(parent)
-            }
-            if (!ImageIO.write(image, format, targetFile.toFile())) {
-                return null
-            }
-            return Files.size(targetFile)
         }
 
         private fun defaultHttpClient(): HttpClient {
