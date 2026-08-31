@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.10.4] - 2026-08-31
 
 - MCP text-to-speech writes a unique `speech-<uuid>` file when `targetFile` is omitted, so parallel generations do not overwrite each other.
 - MCP document-to-markdown does not request or return embedded image base64 unless it is writing markdown and images to disk.
