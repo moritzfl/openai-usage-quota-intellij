@@ -1,6 +1,6 @@
 # LLM Subscription Usage Changelog
 
-## [Unreleased]
+## [1.10.3] - 2026-08-31
 
 - MCP image generation never returns base64. SuperGrok always requests a download URL and fetches it when writing `targetFile`. OpenAI/Codex has no image URL and writes a unique `image-<uuid>.png` in the project when `targetFile` is omitted.
 - MCP document-to-markdown streams Mistral and SuperGrok file uploads. OpenAI/Codex and Z.ai still inline local files and reject anything over 1 GB.
