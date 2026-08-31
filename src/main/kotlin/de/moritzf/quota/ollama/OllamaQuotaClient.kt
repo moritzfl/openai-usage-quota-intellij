@@ -6,7 +6,12 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -38,7 +43,7 @@ open class OllamaQuotaClient(
             throw OllamaQuotaException("Ollama usage response changed.", 200, body, exception)
         }
         quota.fetchedAt = Clock.System.now()
-        quota.rawJson = body
+        quota.rawJson = buildRawResponse(body, quota.sessionUsage?.resetsAt, quota.weeklyUsage?.resetsAt)
         return quota
     }
 
@@ -90,6 +95,36 @@ open class OllamaQuotaClient(
     companion object {
         @JvmField
         val DEFAULT_ENDPOINT: URI = URI.create("https://ollama.com/api/usage")
+
+        internal fun buildRawResponse(
+            usageBody: String,
+            sessionResetsAt: Instant?,
+            weeklyResetsAt: Instant?,
+        ): String {
+            val usage = jsonOrRaw(usageBody)
+            val resets = buildJsonObject {
+                sessionResetsAt?.let { put("session", it.toString()) }
+                weeklyResetsAt?.let { put("weekly", it.toString()) }
+            }
+            return JsonSupport.json.encodeToString(
+                JsonObject.serializer(),
+                buildJsonObject {
+                    when (usage) {
+                        is JsonObject -> usage.forEach { (key, value) -> put(key, value) }
+                        null -> Unit
+                        else -> put("usage", usage)
+                    }
+                    if (resets.isNotEmpty()) {
+                        put("resets_at", resets)
+                    }
+                },
+            )
+        }
+
+        private fun jsonOrRaw(body: String): JsonElement? {
+            val value = body.trim().takeIf { it.isNotEmpty() } ?: return null
+            return runCatching { JsonSupport.json.parseToJsonElement(value) }.getOrElse { JsonPrimitive(value) }
+        }
 
         fun parseQuota(usageJson: String, now: Instant = Clock.System.now()): OllamaQuota {
             // Each limit window is decoded on its own so one reshaped or unparsable block (for

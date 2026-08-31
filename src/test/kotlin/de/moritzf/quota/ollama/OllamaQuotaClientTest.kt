@@ -1,13 +1,47 @@
 package de.moritzf.quota.ollama
 
+import de.moritzf.quota.shared.JsonSupport
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlin.time.Instant
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 class OllamaQuotaClientTest {
+    @Test
+    fun buildRawResponseAddsResetsAtRoot() {
+        val usage = """{"activity":{"cost":"0"},"limits":{"session":{"usage":0.1},"weekly":{"usage":0.2}}}"""
+        val raw = OllamaQuotaClient.buildRawResponse(
+            usage,
+            Instant.parse("2026-08-10T10:00:00Z"),
+            Instant.parse("2026-08-17T00:00:00Z"),
+        )
+        val parsed = JsonSupport.json.parseToJsonElement(raw).jsonObject
+        assertEquals("0", parsed["activity"]!!.jsonObject["cost"]!!.jsonPrimitive.content)
+        assertEquals(0.1, parsed["limits"]!!.jsonObject["session"]!!.jsonObject["usage"]!!.jsonPrimitive.content.toDouble(), absoluteTolerance = 0.0001)
+        val resets = parsed["resets_at"]!!.jsonObject
+        assertEquals("2026-08-10T10:00:00Z", resets["session"]!!.jsonPrimitive.content)
+        assertEquals("2026-08-17T00:00:00Z", resets["weekly"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun buildRawResponseOmitsMissingResetWindows() {
+        val raw = OllamaQuotaClient.buildRawResponse(
+            """{"limits":{"session":{"usage":0.9}}}""",
+            Instant.parse("2026-08-10T10:00:00Z"),
+            null,
+        )
+        val parsed = JsonSupport.json.parseToJsonElement(raw).jsonObject
+        val resets = parsed["resets_at"]!!.jsonObject
+        assertEquals("2026-08-10T10:00:00Z", resets["session"]!!.jsonPrimitive.content)
+        assertNull(resets["weekly"])
+        assertTrue("limits" in parsed)
+    }
+
     @Test
     fun parseQuotaConvertsUsageFractionsToPercent() {
         val json = """
