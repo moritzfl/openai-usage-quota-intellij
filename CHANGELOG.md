@@ -1,5 +1,15 @@
 # LLM Subscription Usage Changelog
 
+## [Unreleased]
+
+## [1.11.0] - 2026-09-02
+
+- OpenAI/Codex and SuperGrok document-to-markdown can extract embedded figures. For a local PDF with `includeImages=true`, the vision model emits a normalized bounding box per figure and the plugin renders that exact page region (via bundled PDFBox) to `image-p<page>-<index>.png`. When an image file is not written, the alt text becomes a `**Figure.**` caption instead of a dangling image link. Coordinates are model-estimated and can be imprecise; crops never fall back to a whole page. Extraction stays optional via `includeImages`.
+- Codex/SuperGrok document-to-markdown accept 1-based `pageFrom`/`pageTo` on local PDFs so an agent can convert a large file in slices. Results include `page_count`. Overflow still fails that slice; there is no automatic chunking.
+- PDFBox for document figure crops is 3.0.8, with JPEG2000 and JBIG2 ImageIO plugins (jbig2-imageio 3.0.5). Those readers are registered on the plugin classloader. A page that cannot be rasterized skips that crop instead of failing the whole conversion.
+- OpenAI/Codex MCP document-to-markdown defaults to `gpt-5.6-sol`. Web search and image generation default to `gpt-5.6-luna`.
+- SuperGrok document-to-markdown defaults to `grok-4.6`. Web search defaults to `grok-4.3`.
+
 ## [1.10.5] - 2026-08-31
 
 - Codex speech-to-text streams local audio uploads through a BodyPublisher instead of buffering the whole file.
