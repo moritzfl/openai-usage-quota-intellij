@@ -1,5 +1,6 @@
 package de.moritzf.quota.supergrok
 
+import de.moritzf.quota.openai.proxy.pdf.PdfPages
 import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.DocumentMarkdown
 import de.moritzf.quota.shared.JsonSupport
@@ -34,19 +35,50 @@ open class SuperGrokDocumentClient(
         documentUrl: String? = null,
         localFile: Path? = null,
         outputFile: Path? = null,
+        includeImages: Boolean = true,
         model: String = DEFAULT_MODEL,
+        pageFrom: Int? = null,
+        pageTo: Int? = null,
     ): String {
         val token = accessToken.trim().ifBlank {
             throw SuperGrokQuotaException("Grok login required. Log in from SuperGrok settings.")
         }
+        if (pageFrom != null || pageTo != null) {
+            if (localFile == null || !PdfPages.isPdf(localFile)) {
+                throw SuperGrokQuotaException("pageFrom and pageTo require a local PDF.")
+            }
+        }
+        val range = if (localFile != null && PdfPages.isPdf(localFile)) {
+            val count = PdfPages.pageCount(localFile)
+            if (count == null) {
+                if (pageFrom != null || pageTo != null) {
+                    throw SuperGrokQuotaException("Could not read PDF page count.")
+                }
+                null
+            } else {
+                PdfPages.resolve(count, pageFrom, pageTo)
+                    ?: throw SuperGrokQuotaException("pageFrom/pageTo out of range (document has $count pages).")
+            }
+        } else {
+            null
+        }
+        val slice = range?.takeUnless { it.isFullDocument }?.let { pages ->
+            val temp = Files.createTempFile("quota-pdf-slice", ".pdf")
+            if (!PdfPages.writeSlice(localFile!!, pages.from, pages.to, temp)) {
+                Files.deleteIfExists(temp)
+                throw SuperGrokQuotaException("Could not extract the requested PDF page range.")
+            }
+            temp
+        }
+        val sendFile = slice ?: localFile
         val markdownOutput = outputFile ?: DocumentMarkdown.defaultOutput(localFile)
-        val uploadedId = if (documentUrl.isNullOrBlank() && localFile != null) {
-            uploadFile(token, localFile)
+        val uploadedId = if (documentUrl.isNullOrBlank() && sendFile != null) {
+            uploadFile(token, sendFile)
         } else {
             null
         }
         return try {
-            val fileContent = documentInput(documentUrl, localFile, uploadedId)
+            val fileContent = documentInput(documentUrl, sendFile, uploadedId)
             val response = send(postJson(token, requestJson(model.trim().ifBlank { DEFAULT_MODEL }, fileContent)))
             val status = response.statusCode()
             val body = response.body()
@@ -56,10 +88,24 @@ open class SuperGrokDocumentClient(
             if (status !in 200..299) {
                 throw SuperGrokQuotaException("Grok document conversion failed (HTTP $status). Try again later.", status, body)
             }
-            val markdown = parseMarkdown(body)
-            DocumentMarkdown.resultJson(markdown, markdownOutput)
+            val applied = de.moritzf.quota.idea.mcp.DocumentImageGrounding.apply(
+                parseMarkdown(body),
+                if (includeImages) localFile else null,
+                markdownOutput?.parent ?: localFile?.parent,
+                includeImages,
+                pageOffset = range?.offset ?: 0,
+            )
+            DocumentMarkdown.resultJson(
+                applied.markdown,
+                markdownOutput,
+                applied.imageFiles,
+                range?.pageCount,
+                range?.from,
+                range?.to,
+            )
         } finally {
             uploadedId?.let { runCatching { deleteFile(token, it) } }
+            slice?.let { Files.deleteIfExists(it) }
         }
     }
 
@@ -135,14 +181,13 @@ open class SuperGrokDocumentClient(
     }
 
     companion object {
-        const val DEFAULT_MODEL = SuperGrokWebSearchClient.DEFAULT_MODEL
+        const val DEFAULT_MODEL = "grok-4.6"
         private const val RESPONSES_PATH = "responses"
         private const val FILES_PATH = "files"
         private const val USER_AGENT = "openai-usage-quota-intellij"
         private val DEFAULT_BASE_URI = URI.create("https://api.x.ai/v1/")
         private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp")
-        private const val DOCUMENT_PROMPT =
-            "Convert this document to markdown. Preserve headings, lists, tables, and code. Return only the markdown."
+        private const val DOCUMENT_PROMPT = de.moritzf.quota.idea.mcp.DocumentImageGrounding.PROMPT
 
         fun createDefault(): SuperGrokDocumentClient = SuperGrokDocumentClient()
 

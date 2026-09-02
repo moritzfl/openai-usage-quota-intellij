@@ -196,7 +196,7 @@ class SubscriptionUsageMcpToolset(
     }
 
     @McpTool(name = "subscription_document_to_markdown")
-    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR. OpenAI/Codex and SuperGrok convert the document through their chat APIs and do not extract embedded images. Pass a public documentUrl or a localFile path. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md. Extracted images are written to disk with the markdown; they are never returned as base64.")
+    @McpDescription(description = "Converts a PDF or image to markdown. Mistral and Z.ai use dedicated OCR and extract embedded images to disk. OpenAI/Codex and SuperGrok send the original document to their vision models and, for a local PDF with includeImages=true, render cropped image regions to disk as image-p<page>-<index>.png. For large PDFs on Codex/SuperGrok, pass 1-based pageFrom/pageTo to convert a slice (the whole file is one model request; overflow fails). The result includes page_count so you can walk remaining pages. If outputFile is omitted and localFile is set, markdown is written beside the source as <name>.md. Images are never returned as base64.")
     fun subscription_document_to_markdown(
         @McpDescription(description = "Provider to use. Supported providers are derived from the DocumentToMarkdownProvider enum.") provider: DocumentToMarkdownProvider = DocumentToMarkdownProvider.MISTRAL,
         @McpDescription(description = "Public document URL. Leave blank when localFile is set.") documentUrl: String? = null,
@@ -204,6 +204,8 @@ class SubscriptionUsageMcpToolset(
         @McpDescription(description = "Optional markdown output path. Defaults to <localFile>.md beside the source.") outputFile: String? = null,
         @McpDescription(description = "Keep extracted images when the provider returns them.") includeImages: Boolean = true,
         @McpDescription(description = "OCR model id. Leave blank for the provider default.") model: String = "",
+        @McpDescription(description = "Optional 1-based first page for Codex/SuperGrok local PDFs. Leave 0 for the start of the document.") pageFrom: Int = 0,
+        @McpDescription(description = "Optional 1-based last page for Codex/SuperGrok local PDFs. Leave 0 for the end of the document.") pageTo: Int = 0,
     ): String {
         return when (provider) {
             DocumentToMarkdownProvider.MISTRAL ->
@@ -228,7 +230,10 @@ class SubscriptionUsageMcpToolset(
                         documentUrl,
                         resolveOptionalPath(localFile),
                         resolveOptionalPath(outputFile),
+                        includeImages,
                         model,
+                        pageFrom.takeIf { it > 0 },
+                        pageTo.takeIf { it > 0 },
                     ),
                 )
             DocumentToMarkdownProvider.SUPERGROK ->
@@ -236,7 +241,10 @@ class SubscriptionUsageMcpToolset(
                     documentUrl,
                     localFile,
                     outputFile,
+                    includeImages,
                     model.ifBlank { SuperGrokDocumentClient.DEFAULT_MODEL },
+                    pageFrom.takeIf { it > 0 },
+                    pageTo.takeIf { it > 0 },
                 )
         }
     }
@@ -492,7 +500,10 @@ class SubscriptionUsageMcpToolset(
         documentUrl: String?,
         localFile: String?,
         outputFile: String?,
+        includeImages: Boolean,
         model: String,
+        pageFrom: Int? = null,
+        pageTo: Int? = null,
     ): String {
         return withSuperGrokAuth("Grok document conversion failed.") { accessToken ->
             superGrokDocumentClient.convertDocument(
@@ -500,7 +511,10 @@ class SubscriptionUsageMcpToolset(
                 documentUrl = documentUrl,
                 localFile = resolveOptionalPath(localFile),
                 outputFile = resolveOptionalPath(outputFile),
+                includeImages = includeImages,
                 model = model,
+                pageFrom = pageFrom,
+                pageTo = pageTo,
             )
         }
     }

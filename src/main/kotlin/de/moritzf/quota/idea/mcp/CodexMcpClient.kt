@@ -8,6 +8,7 @@ import de.moritzf.quota.idea.auth.QuotaAuthService
 import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.openai.proxy.OpenAiProxyServer
 import de.moritzf.quota.openai.proxy.QuotaCodexCredentialsProvider
+import de.moritzf.quota.openai.proxy.pdf.PdfPages
 import de.moritzf.quota.shared.DefaultOutputFiles
 import de.moritzf.quota.shared.DocumentLimits
 import de.moritzf.quota.shared.DocumentMarkdown
@@ -104,18 +105,50 @@ class CodexMcpClient(
         documentUrl: String? = null,
         localFile: Path? = null,
         outputFile: Path? = null,
-        model: String = RESPONSES_MODEL,
+        includeImages: Boolean = true,
+        model: String = DEFAULT_CHAT_MODEL,
+        pageFrom: Int? = null,
+        pageTo: Int? = null,
     ): CodexMcpResponse {
         if (documentUrl.isNullOrBlank() && localFile != null && Files.isRegularFile(localFile)) {
             DocumentLimits.inlineOverflowMessage(localFile)?.let {
                 return CodexMcpResponse(errorJson(it), true)
             }
         }
-        val fileContent = documentInput(documentUrl, localFile)
-            ?: return CodexMcpResponse(errorJson("Provide documentUrl or a local file path."), true)
+        documentPdfRangeError(localFile, pageFrom, pageTo)?.let {
+            return CodexMcpResponse(errorJson(it), true)
+        }
+        val range = documentPdfRange(localFile, pageFrom, pageTo)
+        val slice = range?.takeUnless { it.isFullDocument }?.let { pages ->
+            val temp = Files.createTempFile("quota-pdf-slice", ".pdf")
+            if (!PdfPages.writeSlice(localFile!!, pages.from, pages.to, temp)) {
+                Files.deleteIfExists(temp)
+                return CodexMcpResponse(errorJson("Could not extract the requested PDF page range."), true)
+            }
+            temp
+        }
+        val sendFile = slice ?: localFile
+        val fileContent = documentInput(documentUrl, sendFile)
+            ?: run {
+                slice?.let { Files.deleteIfExists(it) }
+                return CodexMcpResponse(errorJson("Provide documentUrl or a local file path."), true)
+            }
         val markdownOutput = outputFile ?: DocumentMarkdown.defaultOutput(localFile)
-        return postResponses(documentRequest(fileContent, model)) { body ->
-            parseDocumentResponse(body, markdownOutput)
+        return try {
+            postResponses(documentRequest(fileContent, model)) { body ->
+                parseDocumentResponse(
+                    body,
+                    markdownOutput,
+                    if (includeImages) localFile else null,
+                    includeImages,
+                    pageOffset = range?.offset ?: 0,
+                    pageCount = range?.pageCount,
+                    pageFrom = range?.from,
+                    pageTo = range?.to,
+                )
+            }
+        } finally {
+            slice?.let { Files.deleteIfExists(it) }
         }
     }
 
@@ -276,7 +309,7 @@ class CodexMcpClient(
 
     private fun searchRequest(query: String, options: WebSearchOptions): JsonObject {
         return buildJsonObject {
-            put("model", RESPONSES_MODEL)
+            put("model", FAST_CHAT_MODEL)
             put("instructions", SEARCH_INSTRUCTIONS)
             putJsonArray("input") {
                 add(messageInput("Search the web for: $query"))
@@ -313,7 +346,7 @@ class CodexMcpClient(
 
     private fun imageGenerationRequest(prompt: String): JsonObject {
         return buildJsonObject {
-            put("model", RESPONSES_MODEL)
+            put("model", FAST_CHAT_MODEL)
             put("instructions", IMAGE_GENERATION_INSTRUCTIONS)
             putJsonArray("input") {
                 add(messageInput(prompt))
@@ -331,7 +364,7 @@ class CodexMcpClient(
 
     private fun documentRequest(fileContent: JsonObject, model: String): JsonObject {
         return buildJsonObject {
-            put("model", model.trim().ifBlank { RESPONSES_MODEL })
+            put("model", model.trim().ifBlank { DEFAULT_CHAT_MODEL })
             put("instructions", DOCUMENT_INSTRUCTIONS)
             putJsonArray("input") {
                 add(buildJsonObject {
@@ -387,7 +420,16 @@ class CodexMcpClient(
         }
     }
 
-    private fun parseDocumentResponse(body: String, outputFile: Path?): CodexMcpResponse {
+    private fun parseDocumentResponse(
+        body: String,
+        outputFile: Path?,
+        sourceFile: Path?,
+        includeImages: Boolean = true,
+        pageOffset: Int = 0,
+        pageCount: Int? = null,
+        pageFrom: Int? = null,
+        pageTo: Int? = null,
+    ): CodexMcpResponse {
         val output = StringBuilder()
         var outputTextDone: String? = null
         for (event in responsesDataEvents(body)) {
@@ -402,10 +444,47 @@ class CodexMcpClient(
             return CodexMcpResponse(errorJson("Codex document conversion returned no output."), true)
         }
         return try {
-            CodexMcpResponse(DocumentMarkdown.resultJson(text, outputFile), false)
+            val applied = DocumentImageGrounding.apply(
+                text,
+                sourceFile,
+                outputFile?.parent ?: sourceFile?.parent,
+                includeImages,
+                pageOffset,
+            )
+            CodexMcpResponse(
+                DocumentMarkdown.resultJson(
+                    applied.markdown,
+                    outputFile,
+                    applied.imageFiles,
+                    pageCount,
+                    pageFrom,
+                    pageTo,
+                ),
+                false,
+            )
         } catch (exception: Exception) {
             CodexMcpResponse(errorJson(exception.message ?: "Could not write markdown."), true)
         }
+    }
+
+    private fun documentPdfRange(localFile: Path?, pageFrom: Int?, pageTo: Int?): PdfPages.Range? {
+        if (localFile == null || !PdfPages.isPdf(localFile)) return null
+        val count = PdfPages.pageCount(localFile) ?: return null
+        return PdfPages.resolve(count, pageFrom, pageTo)
+    }
+
+    private fun documentPdfRangeError(localFile: Path?, pageFrom: Int?, pageTo: Int?): String? {
+        if (pageFrom == null && pageTo == null) {
+            return null
+        }
+        if (localFile == null || !PdfPages.isPdf(localFile)) {
+            return "pageFrom and pageTo require a local PDF."
+        }
+        val count = PdfPages.pageCount(localFile) ?: return "Could not read PDF page count."
+        if (PdfPages.resolve(count, pageFrom, pageTo) == null) {
+            return "pageFrom/pageTo out of range (document has $count pages)."
+        }
+        return null
     }
 
     private fun messageInput(text: String): JsonObject {
@@ -713,7 +792,8 @@ class CodexMcpClient(
         private const val RESPONSES_PATH = "/responses"
         private const val TRANSCRIPTIONS_PATH = "/audio/transcriptions"
         private const val SPEECH_PATH = "/audio/speech"
-        private const val RESPONSES_MODEL = "gpt-5.5"
+        private const val DEFAULT_CHAT_MODEL = "gpt-5.6-sol"
+        private const val FAST_CHAT_MODEL = "gpt-5.6-luna"
         const val DEFAULT_TRANSCRIBE_MODEL = "gpt-transcribe"
         const val DEFAULT_SPEECH_MODEL = "gpt-4o-mini-tts"
         const val DEFAULT_SPEECH_FORMAT = "mp3"
@@ -724,9 +804,8 @@ class CodexMcpClient(
         private const val SEARCH_INSTRUCTIONS = "You are a concise assistant. Use web search when needed."
         private const val IMAGE_GENERATION_INSTRUCTIONS =
             "Use the image_generation tool to satisfy image requests. Return no extra commentary."
-        private const val DOCUMENT_INSTRUCTIONS =
-            "Convert the attached document to markdown. Preserve headings, lists, tables, and code. Return only markdown."
-        private const val DOCUMENT_PROMPT = "Convert this document to markdown. Return only the markdown."
+        private const val DOCUMENT_INSTRUCTIONS = DocumentImageGrounding.INSTRUCTIONS
+        private const val DOCUMENT_PROMPT = DocumentImageGrounding.PROMPT
         private val IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "gif", "webp")
 
         internal fun defaultImageFileName(): String = "image-${UUID.randomUUID()}.png"
@@ -802,7 +881,7 @@ class CodexMcpClient(
             return ServerConfig(
                 "127.0.0.1",
                 1,
-                listOf(RESPONSES_MODEL),
+                listOf(DEFAULT_CHAT_MODEL, FAST_CHAT_MODEL),
                 null,
                 upstreamBaseUri.toString(),
                 ServerConfig.DEFAULT_CLIENT_ID,

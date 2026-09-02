@@ -164,6 +164,8 @@ class SubscriptionUsageMcpToolsetTest {
                 String::class.java,
                 Boolean::class.java,
                 String::class.java,
+                Int::class.java,
+                Int::class.java,
             ),
             tools.single().parameterTypes.toList(),
         )

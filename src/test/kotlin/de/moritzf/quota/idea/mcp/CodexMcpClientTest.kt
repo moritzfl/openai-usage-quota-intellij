@@ -54,7 +54,7 @@ class CodexMcpClientTest {
             assertEquals("text/event-stream", request.firstHeader("Accept"))
 
             val body = parseObject(request.body)
-            assertEquals("gpt-5.5", body["model"]!!.jsonPrimitive.content)
+            assertEquals("gpt-5.6-luna", body["model"]!!.jsonPrimitive.content)
             assertTrue(body["stream"]!!.jsonPrimitive.boolean)
             assertFalse(body["store"]!!.jsonPrimitive.boolean)
             assertEquals(
@@ -89,6 +89,7 @@ class CodexMcpClientTest {
             val request = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
             assertEquals("/backend-api/codex/responses", request.path)
             val body = parseObject(request.body)
+            assertEquals("gpt-5.6-sol", body["model"]!!.jsonPrimitive.content)
             val content = body["input"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
             assertEquals("input_file", content[0].jsonObject["type"]!!.jsonPrimitive.content)
             assertEquals("doc.pdf", content[0].jsonObject["filename"]!!.jsonPrimitive.content)
@@ -110,6 +111,127 @@ class CodexMcpClientTest {
             assertTrue(response.isError)
             assertTrue(parseObject(response.body)["error"]!!.jsonPrimitive.content.contains("too large"))
             assertNull(upstream.requests.poll(300, TimeUnit.MILLISECONDS))
+        }
+    }
+
+    @Test
+    fun rejectsPageRangeOutsideTheDocument() {
+        TestUpstream().use { upstream ->
+            val client = newClient(upstream.baseUri)
+            val dir = Files.createTempDirectory("codex-doc-pages")
+            val pdf = dir.resolve("one.pdf")
+            org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+                doc.addPage(org.apache.pdfbox.pdmodel.PDPage())
+                doc.save(pdf.toFile())
+            }
+
+            val response = client.documentToMarkdown(localFile = pdf, pageFrom = 2, pageTo = 2)
+
+            assertTrue(response.isError)
+            assertTrue(parseObject(response.body)["error"]!!.jsonPrimitive.content.contains("out of range"))
+            assertNull(upstream.requests.poll(300, TimeUnit.MILLISECONDS))
+        }
+    }
+
+    @Test
+    fun sendsImagePlaceholderInstructionsForDocumentConversion() {
+        TestUpstream(
+            responseBody = sse(
+                """{"type":"response.output_text.done","text":"# Doc\n\n![A bar chart of Q3 revenue by region](image-p1-1.png)"}""",
+                """{"type":"response.completed","response":{"id":"resp_doc"}}""",
+            ),
+        ).use { upstream ->
+            val client = newClient(upstream.baseUri)
+            val dir = Files.createTempDirectory("codex-doc-img")
+            val pdf = dir.resolve("doc.pdf")
+            Files.write(pdf, "%PDF-1.4".toByteArray())
+
+            val response = client.documentToMarkdown(localFile = pdf)
+
+            assertFalse(response.isError)
+            val request = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            val body = parseObject(request.body)
+            val instructions = body["instructions"]!!.jsonPrimitive.content
+            assertTrue(instructions.contains("image-p<page>-<index>.png"))
+            assertTrue(instructions.contains("<!-- img page="))
+            assertTrue(instructions.contains("<x0> <y0> <x1> <y1>"))
+            val userText = body["input"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray[1]
+                .jsonObject["text"]!!.jsonPrimitive.content
+            assertTrue(userText.contains("image-p<page>-<index>.png"))
+            assertTrue(userText.contains("<!-- img page="))
+            val markdown = Files.readString(dir.resolve("doc.md"))
+            assertFalse(markdown.contains("<!-- img page="))
+            assertFalse(markdown.contains("](image-p1-1.png)"))
+            assertTrue(markdown.contains("**Figure.** A bar chart of Q3 revenue by region"))
+        }
+    }
+
+    @Test
+    fun extractsCroppedImageRegionFromLocalPdf() {
+        val dir = Files.createTempDirectory("codex-doc-crop")
+        val pdf = dir.resolve("fig.pdf")
+        org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+            val page = org.apache.pdfbox.pdmodel.PDPage(org.apache.pdfbox.pdmodel.common.PDRectangle(612f, 792f))
+            doc.addPage(page)
+            org.apache.pdfbox.pdmodel.PDPageContentStream(doc, page).use { cs ->
+                cs.setNonStrokingColor(java.awt.Color.RED)
+                // top-left quadrant in PDF user space (origin bottom-left): 612x792 page
+                cs.addRect(0f, 792f / 2f, 612f / 2f, 792f / 2f)
+                cs.fill()
+            }
+            doc.save(pdf.toFile())
+        }
+        TestUpstream(
+            responseBody = sse(
+                """{"type":"response.output_text.done","text":"# With Figure\n\n![red box](image-p1-1.png)\n<!-- img page=1 0.0 0.0 0.5 0.5 -->\n"}""",
+                """{"type":"response.completed","response":{"id":"resp_doc"}}""",
+            ),
+        ).use { upstream ->
+            val client = newClient(upstream.baseUri)
+
+            val response = client.documentToMarkdown(localFile = pdf)
+
+            assertFalse(response.isError)
+            val png = dir.resolve("image-p1-1.png")
+            assertTrue(Files.isRegularFile(png), "cropped region image should exist")
+            val image = javax.imageio.ImageIO.read(png.toFile())
+            val scale = 150f / 72f
+            val expectedWidth = (612 * scale / 2).toInt()
+            val expectedHeight = (792 * scale / 2).toInt()
+            assertTrue(kotlin.math.abs(image.width - expectedWidth) <= expectedWidth / 20 + 6, "width ${image.width} != $expectedWidth")
+            assertTrue(kotlin.math.abs(image.height - expectedHeight) <= expectedHeight / 20 + 6, "height ${image.height} != $expectedHeight")
+            val markdown = Files.readString(dir.resolve("fig.md"))
+            assertTrue(markdown.contains("![red box](image-p1-1.png)"))
+            assertFalse(markdown.contains("<!-- img"))
+            val images = parseObject(response.body)["image_files"]!!.jsonArray.map { it.jsonPrimitive.content }
+            assertEquals(listOf(png.toString()), images)
+        }
+    }
+
+    @Test
+    fun skipsImageExtractionWhenIncludeImagesFalse() {
+        val dir = Files.createTempDirectory("codex-doc-nocrop")
+        val pdf = dir.resolve("fig.pdf")
+        org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+            doc.addPage(org.apache.pdfbox.pdmodel.PDPage())
+            doc.save(pdf.toFile())
+        }
+        TestUpstream(
+            responseBody = sse(
+                """{"type":"response.output_text.done","text":"![fig](image-p1-1.png)\n<!-- img page=1 0.0 0.0 0.5 0.5 -->"}""",
+                """{"type":"response.completed","response":{"id":"resp_doc"}}""",
+            ),
+        ).use { upstream ->
+            val client = newClient(upstream.baseUri)
+
+            val response = client.documentToMarkdown(localFile = pdf, includeImages = false)
+
+            assertFalse(response.isError)
+            assertFalse(Files.isRegularFile(dir.resolve("image-p1-1.png")))
+            val markdown = Files.readString(dir.resolve("fig.md"))
+            assertFalse(markdown.contains("<!-- img"))
+            assertFalse(markdown.contains("](image-p1-1.png)"))
+            assertTrue(markdown.contains("**Figure.** fig"))
         }
     }
 
@@ -216,7 +338,7 @@ class CodexMcpClientTest {
             assertNull(request.firstHeader("OpenAI-Beta"))
 
             val body = parseObject(request.body)
-            assertEquals("gpt-5.5", body["model"]!!.jsonPrimitive.content)
+            assertEquals("gpt-5.6-luna", body["model"]!!.jsonPrimitive.content)
             assertTrue(body["stream"]!!.jsonPrimitive.boolean)
             assertEquals(
                 "draw a tiny robot",

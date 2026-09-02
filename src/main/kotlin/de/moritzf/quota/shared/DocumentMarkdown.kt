@@ -21,7 +21,14 @@ internal object DocumentMarkdown {
         return localFile.resolveSibling("$stem.md")
     }
 
-    fun resultJson(markdown: String, outputFile: Path?): String {
+    fun resultJson(
+        markdown: String,
+        outputFile: Path?,
+        imageFiles: List<String> = emptyList(),
+        pageCount: Int? = null,
+        pageFrom: Int? = null,
+        pageTo: Int? = null,
+    ): String {
         val cleaned = unwrap(markdown)
         if (outputFile != null) {
             val parent = outputFile.parent
@@ -29,18 +36,27 @@ internal object DocumentMarkdown {
                 Files.createDirectories(parent)
             }
             Files.writeString(outputFile, cleaned)
-            return JsonSupport.json.encodeToString(DocumentMarkdownWriteResult(outputFile.toString()))
+            return JsonSupport.json.encodeToString(
+                DocumentMarkdownWriteResult(outputFile.toString(), imageFiles, pageCount, pageFrom, pageTo),
+            )
         }
-        return JsonSupport.json.encodeToString(DocumentMarkdownTextResult(cleaned))
+        return JsonSupport.json.encodeToString(DocumentMarkdownTextResult(cleaned, pageCount, pageFrom, pageTo))
     }
 }
 
 @Serializable
 internal data class DocumentMarkdownWriteResult(
     @SerialName("output_file") val outputFile: String,
+    @SerialName("image_files") val imageFiles: List<String> = emptyList(),
+    @SerialName("page_count") val pageCount: Int? = null,
+    @SerialName("page_from") val pageFrom: Int? = null,
+    @SerialName("page_to") val pageTo: Int? = null,
 )
 
 @Serializable
 internal data class DocumentMarkdownTextResult(
     val markdown: String,
+    @SerialName("page_count") val pageCount: Int? = null,
+    @SerialName("page_from") val pageFrom: Int? = null,
+    @SerialName("page_to") val pageTo: Int? = null,
 )

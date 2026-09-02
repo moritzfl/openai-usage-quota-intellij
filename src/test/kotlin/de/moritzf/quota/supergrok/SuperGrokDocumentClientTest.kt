@@ -13,6 +13,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.jsonArray
@@ -70,11 +71,62 @@ class SuperGrokDocumentClientTest {
             val convert = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
             assertEquals("/v1/responses", convert.path)
             val body = JsonSupport.json.parseToJsonElement(convert.body).jsonObject
+            assertEquals("grok-4.6", body["model"]!!.jsonPrimitive.content)
             val content = body["input"]!!.jsonArray[0].jsonObject["content"]!!.jsonArray
             assertEquals("input_file", content[0].jsonObject["type"]!!.jsonPrimitive.content)
             assertEquals("file-1", content[0].jsonObject["file_id"]!!.jsonPrimitive.content)
             assertTrue(result.contains("output_file"))
             assertEquals("# Converted", Files.readString(dir.resolve("doc.md")))
+        }
+    }
+
+    @Test
+    fun extractsCroppedImageRegionFromLocalPdf() {
+        TestUpstream(
+            uploadBody = """{"id":"file-1"}""",
+            responseBody = """{"output":[{"content":[{"type":"output_text","text":"![red box](image-p1-1.png)\n<!-- img page=1 0.0 0.0 0.5 0.5 -->"}]}]}""",
+        ).use { upstream ->
+            val client = SuperGrokDocumentClient(baseUri = upstream.baseUri)
+            val dir = Files.createTempDirectory("grok-doc-crop")
+            val pdf = dir.resolve("fig.pdf")
+            org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+                val page = org.apache.pdfbox.pdmodel.PDPage(org.apache.pdfbox.pdmodel.common.PDRectangle(612f, 792f))
+                doc.addPage(page)
+                doc.save(pdf.toFile())
+            }
+
+            val result = client.convertDocument("grok-token", localFile = pdf)
+
+            assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            val png = dir.resolve("image-p1-1.png")
+            assertTrue(Files.isRegularFile(png), "cropped region image should exist")
+            assertFalse(Files.readString(dir.resolve("fig.md")).contains("<!-- img"))
+            assertTrue(result.contains("image_files"))
+        }
+    }
+
+    @Test
+    fun skipsImageExtractionWhenIncludeImagesFalse() {
+        TestUpstream(
+            uploadBody = """{"id":"file-1"}""",
+            responseBody = """{"output":[{"content":[{"type":"output_text","text":"![fig](image-p1-1.png)\n<!-- img page=1 0.0 0.0 0.5 0.5 -->"}]}]}""",
+        ).use { upstream ->
+            val client = SuperGrokDocumentClient(baseUri = upstream.baseUri)
+            val dir = Files.createTempDirectory("grok-doc-nocrop")
+            val pdf = dir.resolve("fig.pdf")
+            org.apache.pdfbox.pdmodel.PDDocument().use { doc ->
+                doc.addPage(org.apache.pdfbox.pdmodel.PDPage())
+                doc.save(pdf.toFile())
+            }
+
+            client.convertDocument("grok-token", localFile = pdf, includeImages = false)
+
+            assertFalse(Files.isRegularFile(dir.resolve("image-p1-1.png")))
+            val markdown = Files.readString(dir.resolve("fig.md"))
+            assertFalse(markdown.contains("<!-- img"))
+            assertFalse(markdown.contains("](image-p1-1.png)"))
+            assertTrue(markdown.contains("**Figure.** fig"))
         }
     }
 
