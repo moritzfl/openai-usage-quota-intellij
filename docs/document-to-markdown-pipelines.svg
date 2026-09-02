@@ -1,0 +1,137 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 920" width="1120" height="920" role="img" aria-labelledby="title desc">
+  <title id="title">PDF to markdown pipelines</title>
+  <desc id="desc">Mistral and Z.ai use native OCR. OpenAI/Codex and SuperGrok send the original PDF in one vision request, then crop figure regions locally from estimated boxes. That vision path does not split pages; context overflow or timeout fails the whole conversion.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#64748B"/>
+    </marker>
+    <marker id="arrow-ocr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#0F766E"/>
+    </marker>
+    <marker id="arrow-vision" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#1D4ED8"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="116%">
+      <feDropShadow dx="0" dy="1" stdDeviation="1.4" flood-color="#0F172A" flood-opacity="0.07"/>
+    </filter>
+  </defs>
+
+  <rect width="1120" height="920" fill="#F8FAFC"/>
+
+  <text x="560" y="36" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="22" font-weight="650" fill="#0F172A">subscription_document_to_markdown</text>
+  <text x="560" y="58" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" fill="#64748B">One MCP tool, two pipelines. Image bytes are written to disk; they are never returned as base64.</text>
+
+  <rect x="370" y="76" width="380" height="58" rx="10" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow)"/>
+  <text x="560" y="99" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em" fill="#64748B">INPUT</text>
+  <text x="560" y="119" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="15" fill="#0F172A">local PDF / image, or public URL</text>
+
+  <line x1="560" y1="134" x2="560" y2="164" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="250" y1="166" x2="870" y2="166" stroke="#94A3B8" stroke-width="2"/>
+  <line x1="250" y1="166" x2="250" y2="196" stroke="#0F766E" stroke-width="2" marker-end="url(#arrow-ocr)"/>
+  <line x1="870" y1="166" x2="870" y2="196" stroke="#1D4ED8" stroke-width="2" marker-end="url(#arrow-vision)"/>
+
+  <!-- OCR column -->
+  <g>
+    <rect x="40" y="204" width="420" height="528" rx="14" fill="#F0FDFA" stroke="#99F6E4"/>
+    <rect x="40" y="204" width="420" height="36" rx="14" fill="#0F766E"/>
+    <rect x="40" y="222" width="420" height="18" fill="#0F766E"/>
+    <text x="250" y="232" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">Native OCR  ·  Mistral · Z.ai</text>
+
+    <rect x="70" y="252" width="360" height="58" rx="8" fill="#FFFFFF" stroke="#5EEAD4"/>
+    <circle cx="94" cy="281" r="11" fill="#0F766E"/>
+    <text x="94" y="285" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="116" y="276" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#134E4A">Upload or pass URL</text>
+    <text x="116" y="294" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Files API, or document_url unchanged</text>
+
+    <line x1="250" y1="310" x2="250" y2="332" stroke="#0F766E" stroke-width="2" marker-end="url(#arrow-ocr)"/>
+
+    <rect x="70" y="336" width="360" height="58" rx="8" fill="#FFFFFF" stroke="#5EEAD4"/>
+    <circle cx="94" cy="365" r="11" fill="#0F766E"/>
+    <text x="94" y="369" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="116" y="360" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#134E4A">Dedicated OCR endpoint</text>
+    <text x="116" y="378" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Mistral OCR / Z.ai GLM-OCR — not chat</text>
+
+    <line x1="250" y1="394" x2="250" y2="416" stroke="#0F766E" stroke-width="2" marker-end="url(#arrow-ocr)"/>
+
+    <rect x="70" y="420" width="360" height="74" rx="8" fill="#FFFFFF" stroke="#5EEAD4"/>
+    <circle cx="94" cy="445" r="11" fill="#0F766E"/>
+    <text x="94" y="449" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="116" y="444" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#134E4A">Page markdown + extracted images</text>
+    <text x="116" y="462" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Provider crops real figures (b64 only on the wire)</text>
+    <text x="116" y="478" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Text drawn in a shape often becomes text, not an image</text>
+
+    <line x1="250" y1="494" x2="250" y2="516" stroke="#0F766E" stroke-width="2" marker-end="url(#arrow-ocr)"/>
+
+    <rect x="70" y="520" width="360" height="58" rx="8" fill="#FFFFFF" stroke="#5EEAD4"/>
+    <circle cx="94" cy="549" r="11" fill="#0F766E"/>
+    <text x="94" y="553" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">4</text>
+    <text x="116" y="544" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#134E4A">Write files, drop base64</text>
+    <text x="116" y="562" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Markdown + sibling images when includeImages</text>
+
+    <rect x="70" y="596" width="360" height="112" rx="8" fill="#ECFDF5" stroke="#6EE7B7"/>
+    <text x="86" y="618" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#047857">LIMITS · COST</text>
+    <text x="86" y="640" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#134E4A">Billed per page on an OCR API — typically cents</text>
+    <text x="86" y="656" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#134E4A">per thousand pages (e.g. Mistral OCR). Cheap.</text>
+    <text x="86" y="676" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#134E4A">Labeled shapes often become text, not images.</text>
+    <text x="86" y="692" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#134E4A">Provider page caps, not chat context.</text>
+  </g>
+
+  <!-- Vision column -->
+  <g>
+    <rect x="660" y="204" width="420" height="528" rx="14" fill="#EFF6FF" stroke="#BFDBFE"/>
+    <rect x="660" y="204" width="420" height="36" rx="14" fill="#1D4ED8"/>
+    <rect x="660" y="222" width="420" height="18" fill="#1D4ED8"/>
+    <text x="870" y="232" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#FFFFFF">Vision + local crop  ·  Codex · SuperGrok</text>
+
+    <rect x="690" y="252" width="360" height="58" rx="8" fill="#FFFFFF" stroke="#93C5FD"/>
+    <circle cx="714" cy="281" r="11" fill="#1D4ED8"/>
+    <text x="714" y="285" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="736" y="276" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1E3A8A">Send the original PDF in one request</text>
+    <text x="736" y="294" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">No page split. No pre-rasterize.</text>
+
+    <line x1="870" y1="310" x2="870" y2="332" stroke="#1D4ED8" stroke-width="2" marker-end="url(#arrow-vision)"/>
+
+    <rect x="690" y="336" width="360" height="58" rx="8" fill="#FFFFFF" stroke="#93C5FD"/>
+    <circle cx="714" cy="365" r="11" fill="#1D4ED8"/>
+    <text x="714" y="369" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="736" y="360" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1E3A8A">Vision model writes markdown</text>
+    <text x="736" y="378" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Chat / Responses API — not an OCR product</text>
+
+    <line x1="870" y1="394" x2="870" y2="416" stroke="#1D4ED8" stroke-width="2" marker-end="url(#arrow-vision)"/>
+
+    <rect x="690" y="420" width="360" height="74" rx="8" fill="#FFFFFF" stroke="#93C5FD"/>
+    <circle cx="714" cy="445" r="11" fill="#1D4ED8"/>
+    <text x="714" y="449" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="736" y="444" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1E3A8A">Grounding comment per figure</text>
+    <text x="736" y="462" font-family="IBM Plex Sans, Consolas, Menlo, monospace" font-size="11" fill="#334155">&lt;!-- img page=N x0 y0 x1 y1 --&gt;</text>
+    <text x="736" y="478" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Guessed box, origin top-left. Can miss.</text>
+
+    <line x1="870" y1="494" x2="870" y2="516" stroke="#1D4ED8" stroke-width="2" marker-end="url(#arrow-vision)"/>
+
+    <rect x="690" y="520" width="360" height="58" rx="8" fill="#FFFFFF" stroke="#93C5FD"/>
+    <circle cx="714" cy="549" r="11" fill="#1D4ED8"/>
+    <text x="714" y="553" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" fill="#FFFFFF">4</text>
+    <text x="736" y="544" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="13" font-weight="600" fill="#1E3A8A">PDFBox crops only that region</text>
+    <text x="736" y="562" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#64748B">Missing file → **Figure.** caption, never a whole page</text>
+
+    <rect x="690" y="596" width="360" height="112" rx="8" fill="#FFF7ED" stroke="#FDBA74"/>
+    <text x="706" y="618" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="0.06em" fill="#C2410C">LIMITS · COST</text>
+    <text x="706" y="640" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9A3412">Burns ChatGPT / SuperGrok quota. The whole</text>
+    <text x="706" y="656" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9A3412">PDF is one vision request — far more expensive</text>
+    <text x="706" y="672" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9A3412">per document than OCR. Pass pageFrom/pageTo to</text>
+    <text x="706" y="688" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#9A3412">slice; overflow still fails that slice. Files &gt; 1 GB rejected.</text>
+  </g>
+
+  <line x1="250" y1="732" x2="250" y2="758" stroke="#0F766E" stroke-width="2"/>
+  <line x1="870" y1="732" x2="870" y2="758" stroke="#1D4ED8" stroke-width="2"/>
+  <line x1="250" y1="758" x2="870" y2="758" stroke="#94A3B8" stroke-width="2"/>
+  <line x1="560" y1="758" x2="560" y2="782" stroke="#64748B" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <rect x="300" y="786" width="520" height="58" rx="10" fill="#FFFFFF" stroke="#CBD5E1" filter="url(#shadow)"/>
+  <text x="560" y="808" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" font-weight="700" letter-spacing="0.08em" fill="#64748B">OUTPUT</text>
+  <text x="560" y="828" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="14" fill="#0F172A">&lt;name&gt;.md   +   image files beside it</text>
+
+  <rect x="280" y="856" width="560" height="44" rx="9" fill="#EEF2FF"/>
+  <text x="560" y="874" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="12" fill="#3730A3">includeImages=false  →  markdown only (vision path uses **Figure.** captions, not dangling image links)</text>
+  <text x="560" y="890" text-anchor="middle" font-family="IBM Plex Sans, Segoe UI, Helvetica, Arial, sans-serif" font-size="11" fill="#6366F1">Prefer OCR when you have an API key (cheaper, more reliable figures). Vision+crop when you only have Codex/Grok.</text>
+</svg>

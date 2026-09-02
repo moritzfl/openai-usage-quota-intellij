@@ -52,7 +52,7 @@ Track and use your LLM subscriptions directly in IntelliJ IDEA.
 - **Web search** — MCP tool that searches the web with your subscription. Copilot Chat can Bing-search in GitHub's own UI, but Copilot has no callable search API we can wrap.
 - **Images** / **Video** — MCP tools that generate images or video with your subscription.
 - **Voice** — MCP tools for speech-to-text and text-to-speech. (✓) means only one of the two.
-- **Docs** — MCP tool that converts a PDF or image to markdown. ✓ also extracts images from the document; (✓) is markdown only.
+- **Docs** — MCP tool that converts a PDF or image to markdown. ✓ uses a dedicated OCR API that returns figures. (✓) uses a chat/vision API and reconstructs figure images locally from estimated page boxes.
 - **Proxy** — available through the local OpenAI-compatible proxy (for use of subscriptions in tools like Jetbrains AI Chat and other tools that require authentication by endpoint and API key).
 
 Claude is quota-only. Anthropic does not allow using a Claude subscription outside their own apps, so this plugin only shows usage and does not wrap Claude search, media, documents, or a proxy.
@@ -91,7 +91,7 @@ The plugin registers subscription-backed tools with IntelliJ's built-in MCP serv
 | `supergrok_web_search` | Web search answered by Grok (model selection, domain filters) |
 | `mistral_web_search` | Answer-style web search via Mistral Conversations |
 | `subscription_web_search` | Result-list web search via Kimi, Z.ai, MiniMax, or Ollama |
-| `subscription_document_to_markdown` | Convert a PDF/image to markdown via Mistral OCR, Z.ai GLM-OCR, OpenAI/Codex, or SuperGrok |
+| `subscription_document_to_markdown` | Convert a PDF/image to markdown via Mistral OCR, Z.ai GLM-OCR, OpenAI/Codex, or SuperGrok. Native OCR providers extract figures; Codex/SuperGrok crop figure regions locally from vision-estimated boxes |
 | `subscription_image_generation` | Image generation via OpenAI/Codex, SuperGrok/xAI Imagine, Mistral, Z.ai GLM-Image, or MiniMax. Returns a download URL or writes a file; never base64 |
 | `subscription_speech_to_text` | Transcribe audio via OpenAI/Codex, SuperGrok/xAI, Mistral, or Z.ai |
 | `subscription_text_to_speech` | Generate speech audio via OpenAI/Codex, SuperGrok/xAI, Mistral, or MiniMax and write it to a file |
@@ -100,6 +100,8 @@ The plugin registers subscription-backed tools with IntelliJ's built-in MCP serv
 | `supergrok_video_generation` | SuperGrok/xAI Imagine video (same as `subscription_video_generation` with SUPERGROK) |
 
 Individual tools can be enabled or disabled under `Settings` > `Tools` > `MCP Server` > `Exposed Tools`.
+
+![PDF to markdown pipelines](docs/document-to-markdown-pipelines.svg)
 
 ![MCP integration](docs/quota-mcp-integration.png)
 
