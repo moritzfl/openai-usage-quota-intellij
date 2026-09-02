@@ -61,6 +61,10 @@ dependencies {
     implementation(libs.snakeyaml.engine)
     implementation(libs.tomlj)
     implementation(libs.picocli)
+    implementation(libs.pdfbox)
+    implementation(libs.pdfbox.io)
+    implementation(libs.jai.imageio.jpeg2000)
+    implementation(libs.jbig2.imageio)
     implementation(libs.kotlinx.serialization.json) {
         excludeKotlinStdlib()
         excludeCoroutines()
