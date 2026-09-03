@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-- Ollama Cloud credit plans (`limits.monthly`) parse as a monthly usage window. Legacy session/weekly limits still work. Countdown uses `activity.period.starting_at` plus one month (`ending_at` is the as-of time, not the reset).
+## [1.11.1] - 2026-09-03
+
+- Ollama Cloud credit plans (`limits.monthly`) parse as a monthly usage window. Legacy session/weekly limits still work. Countdown uses `activity.period.ending_at`; `starting_at` is the period start.
 
 ## [1.11.0] - 2026-09-02
 
