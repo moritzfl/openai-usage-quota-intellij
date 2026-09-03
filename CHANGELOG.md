@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Ollama monthly credit-plan no longer guesses a reset time. `/api/usage` has no subscription-anniversary stamp, so the bar shows percent and the 30-day window length until the API includes a real reset.
+
 ## [1.11.1] - 2026-09-03
 
 - Ollama Cloud credit plans (`limits.monthly`) parse as a monthly usage window. Legacy session/weekly limits still work. Countdown uses `activity.period.ending_at`; `starting_at` is the period start.

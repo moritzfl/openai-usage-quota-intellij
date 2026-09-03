@@ -151,7 +151,7 @@ open class OllamaQuotaClient(
                 (root["activity"] as? JsonObject)?.get("period"),
                 OllamaActivityPeriodDto.serializer(),
             )
-            val monthlyUsage = window("monthly")?.withMonthlyPeriod(activityPeriod)
+            val monthlyUsage = window("monthly")?.withMonthlyPeriod(activityPeriod, now)
             if (sessionUsage == null && weeklyUsage == null && monthlyUsage == null) {
                 throw OllamaQuotaException("Ollama usage response changed.", 200, usageJson)
             }
@@ -166,14 +166,17 @@ open class OllamaQuotaClient(
         private fun OllamaUsageWindow.withDefaultReset(defaultReset: Instant): OllamaUsageWindow =
             if (resetsAt != null) this else copy(resetsAt = defaultReset)
 
-        private fun OllamaUsageWindow.withMonthlyPeriod(period: OllamaActivityPeriodDto?): OllamaUsageWindow {
-            val startedAt = parseInstant(period?.startingAt)
-            val endedAt = parseInstant(period?.endingAt)
-            if (startedAt == null && endedAt == null) return this
-            return copy(
-                periodStartedAt = startedAt,
-                resetsAt = resetsAt ?: endedAt,
-            )
+        private fun OllamaUsageWindow.withMonthlyPeriod(
+            period: OllamaActivityPeriodDto?,
+            now: Instant,
+        ): OllamaUsageWindow {
+            if (resetsAt != null) return this
+            val endedAt = parseInstant(period?.endingAt) ?: return this
+            // last_4_weeks.ending_at is the as-of time (now), not billing reset.
+            if (endedAt.toEpochMilliseconds() - now.toEpochMilliseconds() <= FUTURE_END_SLACK_MS) {
+                return this
+            }
+            return copy(resetsAt = endedAt)
         }
 
         private fun parseInstant(raw: String?): Instant? {
@@ -193,6 +196,8 @@ open class OllamaQuotaClient(
                 resetsAt = parseInstant(resetsAt),
             )
         }
+
+        private const val FUTURE_END_SLACK_MS = 60L * 60L * 1000L
     }
 }
 

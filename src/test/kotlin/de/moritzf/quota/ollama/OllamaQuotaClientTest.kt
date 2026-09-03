@@ -140,14 +140,8 @@ class OllamaQuotaClientTest {
         assertNull(quota.weeklyUsage)
         val monthly = assertNotNull(quota.monthlyUsage)
         assertEquals(0.0, monthly.usagePercent, absoluteTolerance = 0.0001)
-        assertEquals(Instant.parse("2026-08-10T00:00:00Z"), monthly.periodStartedAt)
-        assertEquals(
-            Instant.fromEpochSeconds(
-                java.time.Instant.parse("2026-09-03T17:42:59.21950703Z").epochSecond,
-                java.time.Instant.parse("2026-09-03T17:42:59.21950703Z").nano.toLong(),
-            ),
-            monthly.resetsAt,
-        )
+        assertNull(monthly.periodStartedAt)
+        assertNull(monthly.resetsAt)
         assertTrue(quota.hasUsageState())
         assertEquals(0.0, quota.usageFraction()!!, absoluteTolerance = 0.0001)
         assertEquals(mapOf("monthly" to 0.0), quota.activityWindows())
@@ -161,7 +155,7 @@ class OllamaQuotaClientTest {
         )
 
         val monthly = assertNotNull(quota.monthlyUsage)
-        assertEquals(Instant.parse("2026-08-10T00:00:00Z"), monthly.periodStartedAt)
+        assertNull(monthly.periodStartedAt)
         assertEquals(Instant.parse("2026-09-20T00:00:00Z"), monthly.resetsAt)
     }
 
