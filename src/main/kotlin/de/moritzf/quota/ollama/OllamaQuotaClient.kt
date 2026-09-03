@@ -19,6 +19,7 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
 import java.time.Duration
+import java.time.ZoneOffset
 
 /**
  * HTTP client for Ollama Cloud subscription usage via the official API key endpoint.
@@ -43,7 +44,12 @@ open class OllamaQuotaClient(
             throw OllamaQuotaException("Ollama usage response changed.", 200, body, exception)
         }
         quota.fetchedAt = Clock.System.now()
-        quota.rawJson = buildRawResponse(body, quota.sessionUsage?.resetsAt, quota.weeklyUsage?.resetsAt)
+        quota.rawJson = buildRawResponse(
+            body,
+            quota.sessionUsage?.resetsAt,
+            quota.weeklyUsage?.resetsAt,
+            quota.monthlyUsage?.resetsAt,
+        )
         return quota
     }
 
@@ -100,11 +106,13 @@ open class OllamaQuotaClient(
             usageBody: String,
             sessionResetsAt: Instant?,
             weeklyResetsAt: Instant?,
+            monthlyResetsAt: Instant? = null,
         ): String {
             val usage = jsonOrRaw(usageBody)
             val resets = buildJsonObject {
                 sessionResetsAt?.let { put("session", it.toString()) }
                 weeklyResetsAt?.let { put("weekly", it.toString()) }
+                monthlyResetsAt?.let { put("monthly", it.toString()) }
             }
             return JsonSupport.json.encodeToString(
                 JsonObject.serializer(),
@@ -140,18 +148,62 @@ open class OllamaQuotaClient(
 
             val sessionUsage = window("session")?.withDefaultReset(OllamaResetSchedule.sessionResetsAt(now))
             val weeklyUsage = window("weekly")?.withDefaultReset(OllamaResetSchedule.weeklyResetsAt(now))
-            if (sessionUsage == null && weeklyUsage == null) {
+            val activityPeriod = JsonSupport.decodeSectionOrNull(
+                (root["activity"] as? JsonObject)?.get("period"),
+                OllamaActivityPeriodDto.serializer(),
+            )
+            val monthlyUsage = window("monthly")?.withMonthlyPeriod(activityPeriod, now)
+            if (sessionUsage == null && weeklyUsage == null && monthlyUsage == null) {
                 throw OllamaQuotaException("Ollama usage response changed.", 200, usageJson)
             }
 
             return OllamaQuota(
                 sessionUsage = sessionUsage,
                 weeklyUsage = weeklyUsage,
+                monthlyUsage = monthlyUsage,
             )
         }
 
         private fun OllamaUsageWindow.withDefaultReset(defaultReset: Instant): OllamaUsageWindow =
             if (resetsAt != null) this else copy(resetsAt = defaultReset)
+
+        private fun OllamaUsageWindow.withMonthlyPeriod(
+            period: OllamaActivityPeriodDto?,
+            now: Instant,
+        ): OllamaUsageWindow {
+            val startedAt = parseInstant(period?.startingAt) ?: return this
+            val endedAt = parseInstant(period?.endingAt)
+            val reset = resetsAt ?: monthlyResetsAt(startedAt, endedAt, now)
+            return copy(periodStartedAt = startedAt, resetsAt = reset)
+        }
+
+        private fun monthlyResetsAt(startedAt: Instant, endedAt: Instant?, now: Instant): Instant {
+            // ending_at is the as-of timestamp (now), not a future reset. Only treat it as
+            // the period end when it is clearly still ahead.
+            if (endedAt != null && endedAt.toEpochMilliseconds() - now.toEpochMilliseconds() > FUTURE_END_SLACK_MS) {
+                return endedAt
+            }
+            return nextMonthlyAnniversary(startedAt, now)
+        }
+
+        private fun nextMonthlyAnniversary(startedAt: Instant, now: Instant): Instant {
+            val start = java.time.Instant.ofEpochMilli(startedAt.toEpochMilliseconds()).atZone(ZoneOffset.UTC)
+            val nowJava = java.time.Instant.ofEpochMilli(now.toEpochMilliseconds())
+            var months = 1L
+            var reset = start.plusMonths(months)
+            while (!reset.toInstant().isAfter(nowJava) && months < 24L) {
+                months++
+                reset = start.plusMonths(months)
+            }
+            return Instant.fromEpochMilliseconds(reset.toInstant().toEpochMilli())
+        }
+
+        private fun parseInstant(raw: String?): Instant? {
+            val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            runCatching { Instant.parse(value) }.getOrNull()?.let { return it }
+            val javaInstant = runCatching { java.time.Instant.parse(value) }.getOrNull() ?: return null
+            return Instant.fromEpochSeconds(javaInstant.epochSecond, javaInstant.nano.toLong())
+        }
 
         private fun OllamaLimitWindowDto.toWindow(): OllamaUsageWindow? {
             val usage = usage ?: return null
@@ -160,9 +212,11 @@ open class OllamaQuotaClient(
             val percent = if (usage <= 1.0) usage * 100.0 else usage
             return OllamaUsageWindow(
                 usagePercent = percent.coerceIn(0.0, 100.0),
-                resetsAt = resetsAt?.let { runCatching { Instant.parse(it) }.getOrNull() },
+                resetsAt = parseInstant(resetsAt),
             )
         }
+
+        private const val FUTURE_END_SLACK_MS = 60L * 60L * 1000L
     }
 }
 
@@ -171,4 +225,11 @@ private data class OllamaLimitWindowDto(
     @Serializable(with = LenientDoubleOrNullSerializer::class)
     val usage: Double? = null,
     @SerialName("resets_at") val resetsAt: String? = null,
+)
+
+@Serializable
+private data class OllamaActivityPeriodDto(
+    val type: String? = null,
+    @SerialName("starting_at") val startingAt: String? = null,
+    @SerialName("ending_at") val endingAt: String? = null,
 )

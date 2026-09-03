@@ -109,6 +109,70 @@ class OllamaQuotaClientTest {
     }
 
     @Test
+    fun parseQuotaAcceptsMonthlyCreditPlan() {
+        val json = """
+            {
+              "activity": {
+                "cost": "0.00000",
+                "period": {
+                  "type": "last_4_weeks",
+                  "starting_at": "2026-08-10T00:00:00Z",
+                  "ending_at": "2026-09-03T17:42:59.21950703Z"
+                },
+                "models": []
+              },
+              "limits": {
+                "monthly": {
+                  "usage": 0,
+                  "models": [
+                    { "name": "web search", "request_count": 1 },
+                    { "name": "deepseek-v4-flash:0731", "request_count": 1 }
+                  ]
+                }
+              }
+            }
+        """.trimIndent()
+
+        val now = Instant.parse("2026-09-03T17:42:59Z")
+        val quota = OllamaQuotaClient.parseQuota(json, now)
+
+        assertNull(quota.sessionUsage)
+        assertNull(quota.weeklyUsage)
+        val monthly = assertNotNull(quota.monthlyUsage)
+        assertEquals(0.0, monthly.usagePercent, absoluteTolerance = 0.0001)
+        assertEquals(Instant.parse("2026-08-10T00:00:00Z"), monthly.periodStartedAt)
+        assertEquals(Instant.parse("2026-09-10T00:00:00Z"), monthly.resetsAt)
+        assertTrue(quota.hasUsageState())
+        assertEquals(0.0, quota.usageFraction()!!, absoluteTolerance = 0.0001)
+        assertEquals(mapOf("monthly" to 0.0), quota.activityWindows())
+    }
+
+    @Test
+    fun parseQuotaUsesFutureActivityEndAsMonthlyReset() {
+        val quota = OllamaQuotaClient.parseQuota(
+            """{"activity":{"period":{"starting_at":"2026-08-10T00:00:00Z","ending_at":"2026-09-20T00:00:00Z"}},"limits":{"monthly":{"usage":0.1}}}""",
+            Instant.parse("2026-09-03T17:00:00Z"),
+        )
+
+        val monthly = assertNotNull(quota.monthlyUsage)
+        assertEquals(Instant.parse("2026-08-10T00:00:00Z"), monthly.periodStartedAt)
+        assertEquals(Instant.parse("2026-09-20T00:00:00Z"), monthly.resetsAt)
+    }
+
+    @Test
+    fun parseQuotaConvertsMonthlyUsageFractionToPercent() {
+        val quota = OllamaQuotaClient.parseQuota(
+            """{"limits":{"monthly":{"usage":0.25,"resets_at":"2026-09-10T00:00:00Z"}}}""",
+        )
+
+        val monthly = assertNotNull(quota.monthlyUsage)
+        assertEquals(25.0, monthly.usagePercent, absoluteTolerance = 0.0001)
+        assertEquals(Instant.parse("2026-09-10T00:00:00Z"), monthly.resetsAt)
+        assertNull(quota.sessionUsage)
+        assertNull(quota.weeklyUsage)
+    }
+
+    @Test
     fun parseQuotaAllowsSessionOnly() {
         val quota = OllamaQuotaClient.parseQuota(
             """{"limits":{"session":{"usage":0.9}}}""",
