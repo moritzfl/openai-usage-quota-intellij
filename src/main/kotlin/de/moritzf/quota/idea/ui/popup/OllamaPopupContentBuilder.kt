@@ -18,6 +18,7 @@ internal class OllamaPopupSection : ProviderPopupSection() {
     private val titleLabel = createSectionTitleLabel(OLLAMA_LABEL, QuotaIcons.OLLAMA).apply { border = JBUI.Borders.emptyTop(0) }
     private val sessionBlock = WindowBlockPanel(3)
     private val weeklyBlock = WindowBlockPanel(5)
+    private val monthlyBlock = WindowBlockPanel(5)
 
     init {
         isOpaque = false
@@ -26,6 +27,7 @@ internal class OllamaPopupSection : ProviderPopupSection() {
         add(titleLabel)
         add(sessionBlock)
         add(weeklyBlock)
+        add(monthlyBlock)
         hideAll()
     }
 
@@ -49,10 +51,12 @@ internal class OllamaPopupSection : ProviderPopupSection() {
                 titleLabel.text = sectionTitle(OLLAMA_LABEL)
                 sessionBlock.showLoading("Session")
                 weeklyBlock.showLoading("Weekly")
+                monthlyBlock.showLoading("Monthly")
             }
             else -> {
                 val limitReached = (quota.sessionUsage?.usagePercent ?: 0.0) >= 100.0 ||
-                    (quota.weeklyUsage?.usagePercent ?: 0.0) >= 100.0
+                    (quota.weeklyUsage?.usagePercent ?: 0.0) >= 100.0 ||
+                    (quota.monthlyUsage?.usagePercent ?: 0.0) >= 100.0
                 errorLabel.isVisible = limitReached
                 if (limitReached) {
                     errorLabel.text = "Ollama limit reached"
@@ -66,6 +70,9 @@ internal class OllamaPopupSection : ProviderPopupSection() {
                 quota.weeklyUsage?.let {
                     weeklyBlock.updateOllama(it, "Weekly", QuotaPeriodDurations.WEEKLY)
                 } ?: weeklyBlock.clear()
+                quota.monthlyUsage?.let {
+                    monthlyBlock.updateOllama(it, "Monthly", QuotaPeriodDurations.MONTHLY)
+                } ?: monthlyBlock.clear()
             }
         }
     }
@@ -79,6 +86,7 @@ internal class OllamaPopupSection : ProviderPopupSection() {
         titleLabel.isVisible = false
         sessionBlock.isVisible = false
         weeklyBlock.isVisible = false
+        monthlyBlock.isVisible = false
     }
 
     private fun WindowBlockPanel.updateOllama(

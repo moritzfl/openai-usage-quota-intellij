@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Ollama Cloud credit plans (`limits.monthly`) parse as a monthly usage window. Legacy session/weekly limits still work. Countdown uses `activity.period.starting_at` plus one month (`ending_at` is the as-of time, not the reset).
+
 ## [1.11.0] - 2026-09-02
 
 - OpenAI/Codex and SuperGrok document-to-markdown can extract embedded figures. For a local PDF with `includeImages=true`, the vision model emits a normalized bounding box per figure and the plugin renders that exact page region (via bundled PDFBox) to `image-p<page>-<index>.png`. When an image file is not written, the alt text becomes a `**Figure.**` caption instead of a dangling image link. Coordinates are model-estimated and can be imprecise; crops never fall back to a whole page. Extraction stays optional via `includeImages`.

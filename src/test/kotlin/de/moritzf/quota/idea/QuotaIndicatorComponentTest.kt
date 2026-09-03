@@ -257,6 +257,33 @@ class QuotaIndicatorComponentTest {
     }
 
     @Test
+    fun ollamaBarDisplayTextUsesMonthlyCreditPlan() {
+        val quota = OllamaQuota(
+            monthlyUsage = OllamaUsageWindow(usagePercent = 0.0),
+        )
+
+        assertEquals("0% (30d)", ollamaBarDisplayText(quota, error = null))
+        assertEquals("Ollama • 0% Monthly", tooltip(QuotaProviderType.OLLAMA, quota))
+    }
+
+    @Test
+    fun ollamaBarDisplayTextUsesMonthlyResetCountdown() {
+        val now = Clock.System.now()
+        val quota = OllamaQuota(
+            monthlyUsage = OllamaUsageWindow(
+                usagePercent = 12.0,
+                periodStartedAt = now.minus((24 * 24 * 3600).seconds),
+                resetsAt = now.plus((7 * 24 * 3600).seconds),
+            ),
+        )
+
+        val text = ollamaBarDisplayText(quota, error = null)
+        assertTrue(text.startsWith("12% •"))
+        val tooltip = tooltip(QuotaProviderType.OLLAMA, quota)
+        assertTrue(tooltip.startsWith("Ollama • 12% Monthly • Resets in "))
+    }
+
+    @Test
     fun ollamaTooltipPrefersResetCountdownOverWindowFallback() {
         val now = Clock.System.now()
         val quota = OllamaQuota(

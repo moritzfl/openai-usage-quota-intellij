@@ -500,6 +500,7 @@ internal fun ollamaIndicatorState(quota: de.moritzf.quota.ollama.OllamaQuota): O
     val windows = listOfNotNull(
         quota.sessionUsage?.let { it to QuotaPeriodDurations.ROLLING_5H },
         quota.weeklyUsage?.let { it to QuotaPeriodDurations.WEEKLY },
+        quota.monthlyUsage?.let { it to QuotaPeriodDurations.MONTHLY },
     )
     if (windows.isEmpty()) return null
 

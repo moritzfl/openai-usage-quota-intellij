@@ -83,6 +83,10 @@ internal fun OpenCodeUsageWindow.periodElapsedFraction(periodDuration: Duration)
 
 internal fun OllamaUsageWindow.periodElapsedFraction(periodDuration: Duration, now: Instant = Clock.System.now()): Double? {
     val resetAt = resetsAt ?: return null
+    val startedAt = periodStartedAt
+    if (startedAt != null) {
+        return computePeriodElapsedBetween(startedAt, resetAt, now)
+    }
     return computePeriodElapsedFraction(periodDuration.toMillis(), resetAt, now)
 }
 
@@ -188,6 +192,7 @@ internal fun ollamaPeriodElapsedFraction(quota: OllamaQuota?, error: String?): D
     val windows = listOfNotNull(
         quota.sessionUsage?.let { it to QuotaPeriodDurations.ROLLING_5H },
         quota.weeklyUsage?.let { it to QuotaPeriodDurations.WEEKLY },
+        quota.monthlyUsage?.let { it to QuotaPeriodDurations.MONTHLY },
     )
     if (windows.isEmpty()) {
         return null

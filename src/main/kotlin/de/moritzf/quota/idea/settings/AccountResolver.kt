@@ -132,7 +132,8 @@ internal object AccountResolver {
                     .any { it.isRateLimited || it.usagePercent >= 100 }
             is OllamaQuota ->
                 (quota.sessionUsage?.usagePercent ?: 0.0) >= 100.0 ||
-                    (quota.weeklyUsage?.usagePercent ?: 0.0) >= 100.0
+                    (quota.weeklyUsage?.usagePercent ?: 0.0) >= 100.0 ||
+                    (quota.monthlyUsage?.usagePercent ?: 0.0) >= 100.0
             is ZaiQuota ->
                 (quota.sessionUsage?.usagePercent ?: 0.0) >= 100.0 ||
                     (quota.weeklyUsage?.usagePercent ?: 0.0) >= 100.0

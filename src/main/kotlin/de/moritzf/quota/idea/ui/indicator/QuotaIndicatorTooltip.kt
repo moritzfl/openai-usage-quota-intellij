@@ -224,6 +224,7 @@ private fun ollamaWindowKind(period: Duration): String? {
     return when (period) {
         QuotaPeriodDurations.ROLLING_5H -> "Session"
         QuotaPeriodDurations.WEEKLY -> "Weekly"
+        QuotaPeriodDurations.MONTHLY -> "Monthly"
         else -> windowKindFromDuration(period)
     }
 }
