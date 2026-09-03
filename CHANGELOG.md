@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-09-03
+
 - Ollama monthly credit-plan no longer guesses a reset time. `/api/usage` has no subscription-anniversary stamp, so the bar shows percent and the 30-day window length until the API includes a real reset.
 
 ## [1.11.1] - 2026-09-03
