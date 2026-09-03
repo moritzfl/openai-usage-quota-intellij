@@ -19,7 +19,6 @@ import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.net.http.HttpTimeoutException
 import java.time.Duration
-import java.time.ZoneOffset
 
 /**
  * HTTP client for Ollama Cloud subscription usage via the official API key endpoint.
@@ -152,7 +151,7 @@ open class OllamaQuotaClient(
                 (root["activity"] as? JsonObject)?.get("period"),
                 OllamaActivityPeriodDto.serializer(),
             )
-            val monthlyUsage = window("monthly")?.withMonthlyPeriod(activityPeriod, now)
+            val monthlyUsage = window("monthly")?.withMonthlyPeriod(activityPeriod)
             if (sessionUsage == null && weeklyUsage == null && monthlyUsage == null) {
                 throw OllamaQuotaException("Ollama usage response changed.", 200, usageJson)
             }
@@ -167,35 +166,14 @@ open class OllamaQuotaClient(
         private fun OllamaUsageWindow.withDefaultReset(defaultReset: Instant): OllamaUsageWindow =
             if (resetsAt != null) this else copy(resetsAt = defaultReset)
 
-        private fun OllamaUsageWindow.withMonthlyPeriod(
-            period: OllamaActivityPeriodDto?,
-            now: Instant,
-        ): OllamaUsageWindow {
-            val startedAt = parseInstant(period?.startingAt) ?: return this
+        private fun OllamaUsageWindow.withMonthlyPeriod(period: OllamaActivityPeriodDto?): OllamaUsageWindow {
+            val startedAt = parseInstant(period?.startingAt)
             val endedAt = parseInstant(period?.endingAt)
-            val reset = resetsAt ?: monthlyResetsAt(startedAt, endedAt, now)
-            return copy(periodStartedAt = startedAt, resetsAt = reset)
-        }
-
-        private fun monthlyResetsAt(startedAt: Instant, endedAt: Instant?, now: Instant): Instant {
-            // ending_at is the as-of timestamp (now), not a future reset. Only treat it as
-            // the period end when it is clearly still ahead.
-            if (endedAt != null && endedAt.toEpochMilliseconds() - now.toEpochMilliseconds() > FUTURE_END_SLACK_MS) {
-                return endedAt
-            }
-            return nextMonthlyAnniversary(startedAt, now)
-        }
-
-        private fun nextMonthlyAnniversary(startedAt: Instant, now: Instant): Instant {
-            val start = java.time.Instant.ofEpochMilli(startedAt.toEpochMilliseconds()).atZone(ZoneOffset.UTC)
-            val nowJava = java.time.Instant.ofEpochMilli(now.toEpochMilliseconds())
-            var months = 1L
-            var reset = start.plusMonths(months)
-            while (!reset.toInstant().isAfter(nowJava) && months < 24L) {
-                months++
-                reset = start.plusMonths(months)
-            }
-            return Instant.fromEpochMilliseconds(reset.toInstant().toEpochMilli())
+            if (startedAt == null && endedAt == null) return this
+            return copy(
+                periodStartedAt = startedAt,
+                resetsAt = resetsAt ?: endedAt,
+            )
         }
 
         private fun parseInstant(raw: String?): Instant? {
@@ -215,8 +193,6 @@ open class OllamaQuotaClient(
                 resetsAt = parseInstant(resetsAt),
             )
         }
-
-        private const val FUTURE_END_SLACK_MS = 60L * 60L * 1000L
     }
 }
 
