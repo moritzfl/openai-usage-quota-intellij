@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.11.3] - 2026-09-06
+
 - OpenAI/Codex proxy advertises `gpt-6-astra` (Codex UI list, priority 1) with `low`/`medium`/`high`/`xhigh`/`max`/`ultra` reasoning tiers. Default advertised model is Astra.
 
 ## [1.11.2] - 2026-09-03
