@@ -116,7 +116,9 @@ internal object AccountResolver {
 
     fun isHardStop(quota: ProviderQuota): Boolean {
         return when (quota) {
-            is OpenAiCodexQuota -> quota.limitReached == true || quota.isCreditsDepleted()
+            is OpenAiCodexQuota ->
+                quota.isCreditsDepleted() ||
+                    (quota.limitReached == true && !quota.hasUnusedExtraRateLimits())
             is ClaudeQuota -> (
                 listOfNotNull(
                     quota.fiveHourUsage,

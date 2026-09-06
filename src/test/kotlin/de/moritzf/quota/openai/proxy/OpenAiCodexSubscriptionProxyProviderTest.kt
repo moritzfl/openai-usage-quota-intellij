@@ -16,6 +16,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -38,7 +39,9 @@ class OpenAiCodexSubscriptionProxyProviderTest {
                 assertTrue("oa-gpt-5.6-sol" in ids)
                 assertTrue("oa-gpt-5.6-terra" in ids)
                 assertTrue("oa-gpt-5.6-luna" in ids)
+                assertTrue("oa-gpt-reserve" in ids)
                 assertTrue("oa-gpt-5.5" in ids)
+                assertFalse(ids.any { "(" in it })
                 assertTrue(ids.all { it.startsWith(OpenAiCodexSubscriptionProxyProvider.PREFIX) })
             } finally {
                 proxy.stop()

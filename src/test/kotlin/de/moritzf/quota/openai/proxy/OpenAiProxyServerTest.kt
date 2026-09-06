@@ -1371,19 +1371,14 @@ class OpenAiProxyServerTest {
                 assertEquals(200, response.statusCode())
                 val root = parseObject(response.body())
                 val models = root["data"]!!.jsonArray.map { it.jsonObject["id"]!!.jsonPrimitive.content }
-                // Each base model is advertised bare plus one entry per supported reasoning tier
-                // so Junie can build its tier selector from the model names.
                 assertEquals(
                     listOf(
-                        "gpt-6-astra", "gpt-6-astra (low)", "gpt-6-astra (medium)", "gpt-6-astra (high)",
-                        "gpt-6-astra (xhigh)", "gpt-6-astra (max)", "gpt-6-astra (ultra)",
-                        "gpt-5.6-sol", "gpt-5.6-sol (low)", "gpt-5.6-sol (medium)", "gpt-5.6-sol (high)",
-                        "gpt-5.6-sol (xhigh)", "gpt-5.6-sol (max)", "gpt-5.6-sol (ultra)",
-                        "gpt-5.6-terra", "gpt-5.6-terra (low)", "gpt-5.6-terra (medium)", "gpt-5.6-terra (high)",
-                        "gpt-5.6-terra (xhigh)", "gpt-5.6-terra (max)", "gpt-5.6-terra (ultra)",
-                        "gpt-5.6-luna", "gpt-5.6-luna (low)", "gpt-5.6-luna (medium)", "gpt-5.6-luna (high)",
-                        "gpt-5.6-luna (xhigh)", "gpt-5.6-luna (max)",
-                        "gpt-5.5", "gpt-5.5 (low)", "gpt-5.5 (medium)", "gpt-5.5 (high)", "gpt-5.5 (xhigh)",
+                        "gpt-6-astra",
+                        "gpt-5.6-sol",
+                        "gpt-5.6-terra",
+                        "gpt-5.6-luna",
+                        "gpt-reserve",
+                        "gpt-5.5",
                     ),
                     models,
                 )
@@ -1939,6 +1934,44 @@ class OpenAiProxyServerTest {
                 assertEquals("insufficient_quota", error["code"]!!.jsonPrimitive.content)
                 assertTrue(error["message"]!!.jsonPrimitive.content.contains("usage limit"))
                 assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+                assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+            } finally {
+                proxy.stop()
+            }
+        }
+    }
+
+    @Test
+    fun hopsUsageLimitToGptReserveAndEchoesOriginalModel() {
+        TestUpstream(
+            responseBody = COMPLETED_RESPONSE_STREAM_WITH_TEXT,
+            failFirstRequests = 1,
+            failStatus = 404,
+            failBody = "{\"detail\":\"You've hit your usage limit. usage_limit_reached\"}",
+            failContentType = "application/json",
+        ).use { upstream ->
+            val proxy = newProxy(upstream.baseUri)
+            try {
+                proxy.start()
+                val response = httpClient.send(
+                    HttpRequest.newBuilder(URI.create("http://127.0.0.1:${proxy.port}/v1/chat/completions"))
+                        .header("Authorization", "Bearer local-key")
+                        .header("Content-Type", "application/json")
+                        .POST(
+                            HttpRequest.BodyPublishers.ofString(
+                                "{\"model\":\"gpt-5.6-sol\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+                            ),
+                        )
+                        .build(),
+                    HttpResponse.BodyHandlers.ofString(),
+                )
+
+                assertEquals(200, response.statusCode())
+                assertEquals("gpt-5.6-sol", parseObject(response.body())["model"]!!.jsonPrimitive.content)
+                val first = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+                val hop = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+                assertEquals("gpt-5.6-sol", parseObject(first.body)["model"]!!.jsonPrimitive.content)
+                assertEquals("gpt-reserve", parseObject(hop.body)["model"]!!.jsonPrimitive.content)
             } finally {
                 proxy.stop()
             }
@@ -2273,6 +2306,8 @@ class OpenAiProxyServerTest {
         private val responseStatus: Int = 200,
         private val failFirstRequests: Int = 0,
         private val failStatus: Int = 503,
+        private val failBody: String? = null,
+        private val failContentType: String? = null,
     ) : AutoCloseable {
         val requests = LinkedBlockingQueue<CapturedRequest>()
         private val requestCount = java.util.concurrent.atomic.AtomicInteger(0)
@@ -2290,9 +2325,20 @@ class OpenAiProxyServerTest {
                     body = body,
                 )
                 val failing = requestCount.incrementAndGet() <= failFirstRequests
-                val response = (if (failing) "{\"detail\":\"transient upstream failure\"}" else responseBody)
-                    .toByteArray(Charsets.UTF_8)
-                exchange.responseHeaders.set("Content-Type", if (failing) "application/json" else responseContentType)
+                val payload = when {
+                    failing && failBody != null -> failBody
+                    failing -> "{\"detail\":\"transient upstream failure\"}"
+                    else -> responseBody
+                }
+                val response = payload.toByteArray(Charsets.UTF_8)
+                exchange.responseHeaders.set(
+                    "Content-Type",
+                    when {
+                        failing && failContentType != null -> failContentType
+                        failing -> "application/json"
+                        else -> responseContentType
+                    },
+                )
                 if (!failing) {
                     responseHeaders.forEach { (name, value) -> exchange.responseHeaders.set(name, value) }
                 }

@@ -5,7 +5,9 @@ import de.moritzf.quota.idea.common.QuotaProviderType
 import de.moritzf.quota.idea.common.QuotaUsageSnapshot
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.openai.OpenAiCredits
+import de.moritzf.quota.openai.OpenAiExtraRateLimit
 import de.moritzf.quota.openai.OpenAiSpendControl
+import de.moritzf.quota.openai.UsageWindow
 import de.moritzf.quota.shared.ProviderQuota
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -135,6 +137,31 @@ class AccountResolverTest {
     fun openAiSpendCapIsHardStop() {
         assertTrue(AccountResolver.isHardStop(exhaustedOpenAi()))
         assertFalse(AccountResolver.isHardStop(OpenAiCodexQuota(limitReached = false)))
+    }
+
+    @Test
+    fun openAiCodexLimitIsNotHardStopWhileReserveRemains() {
+        assertFalse(
+            AccountResolver.isHardStop(
+                OpenAiCodexQuota(
+                    limitReached = true,
+                    extraRateLimits = listOf(
+                        OpenAiExtraRateLimit("gpt-reserve", "GPT Reserve Weekly", UsageWindow(usedPercent = 0.0)),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(
+            AccountResolver.isHardStop(
+                OpenAiCodexQuota(
+                    limitReached = true,
+                    extraRateLimits = listOf(
+                        OpenAiExtraRateLimit("gpt-reserve", "GPT Reserve Weekly", UsageWindow(usedPercent = 100.0)),
+                    ),
+                ),
+            ),
+        )
+        assertTrue(AccountResolver.isHardStop(OpenAiCodexQuota(limitReached = true)))
     }
 
     private fun twoOpenAi(): QuotaSettingsState {

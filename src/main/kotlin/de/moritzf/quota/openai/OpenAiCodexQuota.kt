@@ -33,6 +33,10 @@ class OpenAiCodexQuota(
         return primary != null || secondary != null || reviewPrimary != null || reviewSecondary != null || extraRateLimits.isNotEmpty()
     }
 
+    fun hasUnusedExtraRateLimits(): Boolean {
+        return extraRateLimits.any { it.window.usedPercent < 100.0 }
+    }
+
     override fun usageFraction(): Double? {
         val windows = listOfNotNull(
             primary?.usedPercent, secondary?.usedPercent,

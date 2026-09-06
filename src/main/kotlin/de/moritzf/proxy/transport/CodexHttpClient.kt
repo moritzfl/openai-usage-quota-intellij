@@ -2,6 +2,7 @@ package de.moritzf.proxy.transport
 import de.moritzf.proxy.auth.CredentialsProvider
 import de.moritzf.proxy.config.ServerConfig
 import de.moritzf.proxy.logging.RequestLogger
+import de.moritzf.proxy.model.CodexReserveHop
 import de.moritzf.proxy.util.ProxyVersion
 import java.io.ByteArrayOutputStream
 import java.io.FilterInputStream
@@ -22,6 +23,7 @@ open class CodexHttpClient {
     private val credentialsProvider: CredentialsProvider
     private val baseUrl: String
     private val requestLogger: RequestLogger
+    private val reserveHop = CodexReserveHop()
     constructor(config: ServerConfig, credentialsProvider: CredentialsProvider) : this(
         config,
         HttpClient.newBuilder()
@@ -76,6 +78,15 @@ open class CodexHttpClient {
                 HttpResponse.BodyHandlers.ofInputStream(),
             )
         }
+        response = hopToReserveIfUsageLimited(
+            path,
+            method,
+            body,
+            extraHeaders,
+            promptCacheKey,
+            logRequestId,
+            response,
+        )
         return withLoggedStreamingBody(response, logRequestId)
     }
     /**
@@ -119,6 +130,7 @@ open class CodexHttpClient {
                 HttpResponse.BodyHandlers.ofString(),
             )
         }
+        response = hopToReserveIfUsageLimitedString(path, method, body, extraHeaders, requestId, response)
         requestLogger.logUpstreamResponse(requestId, response.statusCode(), responseHeaders(response), response.body())
         return response
     }
@@ -186,6 +198,97 @@ open class CodexHttpClient {
         } catch (_: Exception) {
             false
         }
+    }
+
+    private fun hopToReserveIfUsageLimited(
+        path: String,
+        method: String?,
+        body: String?,
+        extraHeaders: Map<String, String>?,
+        promptCacheKey: String?,
+        requestId: String,
+        response: HttpResponse<InputStream>,
+    ): HttpResponse<InputStream> {
+        if (response.statusCode() in 200..<300 || !reserveHop.isEligibleRequest(path, method, body)) {
+            return response
+        }
+        val errorBody = response.body().use { it.readBytes().toString(StandardCharsets.UTF_8) }
+        if (!reserveHop.isUsageLimit(errorBody)) {
+            return BodyReplacingHttpResponse(response, errorBody.byteInputStream(StandardCharsets.UTF_8))
+        }
+        val rewritten = reserveHop.rewriteRequestToReserve(body!!) ?: return BodyReplacingHttpResponse(
+            response,
+            errorBody.byteInputStream(StandardCharsets.UTF_8),
+        )
+        var hop = sendOnce(path, method, rewritten, extraHeaders, promptCacheKey, requestId)
+        if (hop.statusCode() == 401 && refreshAfterUnauthorized(credentialsProvider.getAuthHeaders())) {
+            drainQuietly(hop)
+            hop = sendOnce(path, method, rewritten, extraHeaders, promptCacheKey, requestId)
+        }
+        if (hop.statusCode() in 200..<300) {
+            val original = reserveHop.originalModel(body) ?: return hop
+            return BodyReplacingHttpResponse(hop, reserveHop.rewritingStream(hop.body(), original))
+        }
+        return hop
+    }
+
+    private fun hopToReserveIfUsageLimitedString(
+        path: String,
+        method: String?,
+        body: String?,
+        extraHeaders: Map<String, String>?,
+        requestId: String,
+        response: HttpResponse<String>,
+    ): HttpResponse<String> {
+        if (response.statusCode() in 200..<300 || !reserveHop.isEligibleRequest(path, method, body)) {
+            return response
+        }
+        if (!reserveHop.isUsageLimit(response.body().orEmpty())) {
+            return response
+        }
+        val rewritten = reserveHop.rewriteRequestToReserve(body!!) ?: return response
+        var hop = httpClient.send(
+            buildRequest(path, method, rewritten, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders(), null),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+        if (hop.statusCode() == 401 && refreshAfterUnauthorized(credentialsProvider.getAuthHeaders())) {
+            hop = httpClient.send(
+                buildRequest(path, method, rewritten, extraHeaders, null, requestId, credentialsProvider.getAuthHeaders(), null),
+                HttpResponse.BodyHandlers.ofString(),
+            )
+        }
+        val original = reserveHop.originalModel(body)
+        if (hop.statusCode() in 200..<300 && original != null) {
+            return StringBodyHttpResponse(
+                hop,
+                reserveHop.rewritingStream(hop.body().byteInputStream(StandardCharsets.UTF_8), original)
+                    .use { it.readBytes().toString(StandardCharsets.UTF_8) },
+            )
+        }
+        return hop
+    }
+
+    private fun sendOnce(
+        path: String,
+        method: String?,
+        body: String?,
+        extraHeaders: Map<String, String>?,
+        promptCacheKey: String?,
+        requestId: String,
+    ): HttpResponse<InputStream> {
+        return httpClient.send(
+            buildRequest(
+                path,
+                method,
+                body,
+                extraHeaders,
+                promptCacheKey,
+                requestId,
+                credentialsProvider.getAuthHeaders(),
+                null,
+            ),
+            HttpResponse.BodyHandlers.ofInputStream(),
+        )
     }
     private fun buildRequest(
         path: String,
@@ -303,6 +406,20 @@ open class CodexHttpClient {
         override fun previousResponse(): Optional<HttpResponse<InputStream>> = delegate.previousResponse()
         override fun headers(): HttpHeaders = delegate.headers()
         override fun body(): InputStream = replacementBody
+        override fun sslSession(): Optional<SSLSession> = delegate.sslSession()
+        override fun uri(): URI = delegate.uri()
+        override fun version(): HttpClient.Version = delegate.version()
+    }
+
+    private class StringBodyHttpResponse(
+        private val delegate: HttpResponse<String>,
+        private val replacementBody: String,
+    ) : HttpResponse<String> {
+        override fun statusCode(): Int = delegate.statusCode()
+        override fun request(): HttpRequest = delegate.request()
+        override fun previousResponse(): Optional<HttpResponse<String>> = delegate.previousResponse()
+        override fun headers(): HttpHeaders = delegate.headers()
+        override fun body(): String = replacementBody
         override fun sslSession(): Optional<SSLSession> = delegate.sslSession()
         override fun uri(): URI = delegate.uri()
         override fun version(): HttpClient.Version = delegate.version()

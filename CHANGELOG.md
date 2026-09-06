@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+- OpenAI/Codex proxy lists base model ids only (`gpt-6-astra`, `gpt-5.6-*`, `gpt-reserve`, `gpt-5.5`). Reasoning-tier name aliases are gone; clients send `reasoning_effort`.
+- On Codex `usage_limit_reached`, the proxy retries once as `gpt-reserve` (Luna Reserve) and echoes the original model. Codex is not treated as exhausted while GPT Reserve still has room.
+
 ## [1.11.3] - 2026-09-06
 
 - OpenAI/Codex proxy advertises `gpt-6-astra` (Codex UI list, priority 1) with `low`/`medium`/`high`/`xhigh`/`max`/`ultra` reasoning tiers. Default advertised model is Astra.

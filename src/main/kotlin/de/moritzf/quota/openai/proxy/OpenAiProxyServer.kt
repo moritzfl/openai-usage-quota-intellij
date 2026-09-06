@@ -61,7 +61,7 @@ class OpenAiProxyServer(
         }
 
         try {
-            val models = ADVERTISED_MODELS
+            val models = advertisedModels()
             val config = serverConfig(localApiKey, models)
             val credentialsProvider = QuotaCodexCredentialsProvider(
                 accessTokenProvider,
@@ -201,36 +201,17 @@ class OpenAiProxyServer(
         // gpt-5.2 is still marked list upstream but is no longer a useful ChatGPT-subscription
         // choice; omit it. gpt-5.5-pro stays absent (backend rejects ChatGPT accounts).
         // Hidden/legacy slugs still work via fallbackModel if a client requests them.
+        // Advertise base ids only; harnesses send reasoning_effort themselves.
         private val ADVERTISED_BASE_MODELS = listOf(
             "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
+            "gpt-reserve",
             "gpt-5.5",
         )
 
-        // Reasoning tiers from models.json. Junie picks tier via "<base> (<level>)" model
-        // names; other clients send bare base + reasoning_effort.
-        private val GPT56_REASONING_TIERS = listOf("low", "medium", "high", "xhigh", "max", "ultra")
-        private val GPT56_LUNA_REASONING_TIERS = listOf("low", "medium", "high", "xhigh", "max")
-        private val LEGACY_REASONING_TIERS = listOf("low", "medium", "high", "xhigh")
-        private val MINI_REASONING_TIERS = listOf("medium", "high")
-
-        private val ADVERTISED_MODELS: List<String> = ADVERTISED_BASE_MODELS.flatMap { base ->
-            val tiers = reasoningTiersFor(base)
-            listOf(base) + tiers.map { tier -> "$base ($tier)" }
-        }
-
-        private fun reasoningTiersFor(base: String): List<String> {
-            return when {
-                base.endsWith("-mini") -> MINI_REASONING_TIERS
-                base == "gpt-5.6-luna" -> GPT56_LUNA_REASONING_TIERS
-                base.startsWith("gpt-5.6") || base.startsWith("gpt-6") -> GPT56_REASONING_TIERS
-                else -> LEGACY_REASONING_TIERS
-            }
-        }
-
-        fun advertisedModels(): List<String> = ADVERTISED_MODELS
+        fun advertisedModels(): List<String> = ADVERTISED_BASE_MODELS
 
         /** Flagship GPT-6 Astra when present; otherwise alphabetically latest base id. */
         fun defaultAdvertisedModel(): String =

@@ -41,6 +41,8 @@ class ModelAliasResolverTest {
     fun keepsMaxAndUltraForGpt56Family() {
         assertEquals("max", resolver.clampReasoningEffort("gpt-6-astra", "max"))
         assertEquals("ultra", resolver.clampReasoningEffort("gpt-6-astra", "ultra"))
+        assertEquals("max", resolver.clampReasoningEffort("gpt-reserve", "ultra"))
+        assertEquals("xhigh", resolver.clampReasoningEffort("gpt-reserve", "xhigh"))
         assertEquals("max", resolver.clampReasoningEffort("gpt-5.6-sol", "max"))
         assertEquals("ultra", resolver.clampReasoningEffort("gpt-5.6-terra", "ultra"))
         assertEquals("max", resolver.clampReasoningEffort("gpt-5.6-luna", "ultra"))
