@@ -22,7 +22,7 @@ internal class CodexReserveHop(
         if (normalized != "/responses" && !normalized.endsWith("/responses")) {
             return false
         }
-        return originalModel(body)?.let { !isReserveModel(it) } == true
+        return originalModel(body)?.let { isLunaModel(it) } == true
     }
 
     fun isUsageLimit(errorBody: String): Boolean {
@@ -41,7 +41,7 @@ internal class CodexReserveHop(
     fun rewriteRequestToReserve(body: String): String? {
         val root = parseObject(body) ?: return null
         val original = originalModel(body) ?: return null
-        if (isReserveModel(original)) {
+        if (!isLunaModel(original)) {
             return null
         }
         return JSON.encodeToString(
@@ -94,6 +94,10 @@ internal class CodexReserveHop(
         fun isReserveModel(model: String): Boolean {
             val name = model.trim().lowercase(Locale.ROOT)
             return name == RESERVE_MODEL || name.startsWith("$RESERVE_MODEL-")
+        }
+
+        fun isLunaModel(model: String): Boolean {
+            return model.trim().lowercase(Locale.ROOT).startsWith("gpt-5.6-luna")
         }
     }
 }

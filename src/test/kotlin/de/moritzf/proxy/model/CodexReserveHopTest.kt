@@ -12,10 +12,10 @@ class CodexReserveHopTest {
     private val hop = CodexReserveHop()
 
     @Test
-    fun rewritesNonReserveResponsesPostToGptReserve() {
-        assertTrue(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-5.6-sol"}"""))
+    fun rewritesLunaResponsesPostToGptReserve() {
+        assertTrue(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-5.6-luna"}"""))
         val rewritten = hop.rewriteRequestToReserve(
-            """{"model":"gpt-5.6-sol","reasoning":{"effort":"ultra"},"stream":true}""",
+            """{"model":"gpt-5.6-luna","reasoning":{"effort":"ultra"},"stream":true}""",
         )
         val root = de.moritzf.proxy.util.Json.INSTANCE.parseToJsonElement(rewritten!!).jsonObject
         assertEquals("gpt-reserve", root["model"]!!.jsonPrimitive.content)
@@ -26,6 +26,15 @@ class CodexReserveHopTest {
     fun doesNotHopWhenAlreadyReserve() {
         assertFalse(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-reserve"}"""))
         assertNull(hop.rewriteRequestToReserve("""{"model":"gpt-reserve"}"""))
+    }
+
+    @Test
+    fun doesNotHopHigherTierModels() {
+        assertFalse(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-5.6-sol"}"""))
+        assertFalse(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-5.6-terra"}"""))
+        assertFalse(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-6-astra"}"""))
+        assertFalse(hop.isEligibleRequest("/responses", "POST", """{"model":"gpt-5.5"}"""))
+        assertNull(hop.rewriteRequestToReserve("""{"model":"gpt-5.6-sol"}"""))
     }
 
     @Test

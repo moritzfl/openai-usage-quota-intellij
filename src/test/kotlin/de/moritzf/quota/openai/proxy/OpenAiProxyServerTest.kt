@@ -1934,7 +1934,7 @@ class OpenAiProxyServerTest {
                 assertEquals("insufficient_quota", error["code"]!!.jsonPrimitive.content)
                 assertTrue(error["message"]!!.jsonPrimitive.content.contains("usage limit"))
                 assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
-                assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
+                assertNull(upstream.requests.poll(200, TimeUnit.MILLISECONDS))
             } finally {
                 proxy.stop()
             }
@@ -1959,7 +1959,7 @@ class OpenAiProxyServerTest {
                         .header("Content-Type", "application/json")
                         .POST(
                             HttpRequest.BodyPublishers.ofString(
-                                "{\"model\":\"gpt-5.6-sol\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
+                                "{\"model\":\"gpt-5.6-luna\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}",
                             ),
                         )
                         .build(),
@@ -1967,10 +1967,10 @@ class OpenAiProxyServerTest {
                 )
 
                 assertEquals(200, response.statusCode())
-                assertEquals("gpt-5.6-sol", parseObject(response.body())["model"]!!.jsonPrimitive.content)
+                assertEquals("gpt-5.6-luna", parseObject(response.body())["model"]!!.jsonPrimitive.content)
                 val first = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
                 val hop = assertNotNull(upstream.requests.poll(2, TimeUnit.SECONDS))
-                assertEquals("gpt-5.6-sol", parseObject(first.body)["model"]!!.jsonPrimitive.content)
+                assertEquals("gpt-5.6-luna", parseObject(first.body)["model"]!!.jsonPrimitive.content)
                 assertEquals("gpt-reserve", parseObject(hop.body)["model"]!!.jsonPrimitive.content)
             } finally {
                 proxy.stop()

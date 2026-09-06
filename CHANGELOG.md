@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- OpenAI/Codex proxy hops `usage_limit_reached` to `gpt-reserve` only for Luna (`gpt-5.6-luna*`). Higher-tier models stay on the original error.
+
 ## [1.11.4] - 2026-09-06
 
 - OpenAI/Codex proxy lists base model ids only (`gpt-6-astra`, `gpt-5.6-*`, `gpt-reserve`, `gpt-5.5`). Reasoning-tier name aliases are gone; clients send `reasoning_effort`.
