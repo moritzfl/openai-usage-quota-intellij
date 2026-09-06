@@ -62,15 +62,16 @@ class ModelAliasResolver {
         return modelName.startsWith("gpt-5.6-luna")
     }
     private fun supportsXHigh(modelName: String): Boolean {
-        // Codex models.json: gpt-5.2+ and the 5.6 family accept xhigh.
+        // Codex models.json: gpt-5.2+ , the 5.6 family, and gpt-6 accept xhigh.
         return modelName.startsWith("gpt-5.2") ||
             modelName.startsWith("gpt-5.3") ||
             modelName.startsWith("gpt-5.4") ||
             modelName.startsWith("gpt-5.5") ||
-            modelName.startsWith("gpt-5.6")
+            modelName.startsWith("gpt-5.6") ||
+            modelName.startsWith("gpt-6")
     }
     private fun supportsMaxUltra(modelName: String): Boolean {
-        return modelName.startsWith("gpt-5.6")
+        return modelName.startsWith("gpt-5.6") || modelName.startsWith("gpt-6")
     }
     companion object {
         // Junie selects a reasoning tier by sending the model name with a "<base> (<level>)"

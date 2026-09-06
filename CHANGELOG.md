@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- OpenAI/Codex proxy advertises `gpt-6-astra` (Codex UI list, priority 1) with `low`/`medium`/`high`/`xhigh`/`max`/`ultra` reasoning tiers. Default advertised model is Astra.
+
 ## [1.11.2] - 2026-09-03
 
 - Ollama monthly credit-plan no longer guesses a reset time. `/api/usage` has no subscription-anniversary stamp, so the bar shows percent and the 30-day window length until the API includes a real reset.

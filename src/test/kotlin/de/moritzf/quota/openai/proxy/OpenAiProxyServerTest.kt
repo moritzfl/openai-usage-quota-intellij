@@ -1375,6 +1375,8 @@ class OpenAiProxyServerTest {
                 // so Junie can build its tier selector from the model names.
                 assertEquals(
                     listOf(
+                        "gpt-6-astra", "gpt-6-astra (low)", "gpt-6-astra (medium)", "gpt-6-astra (high)",
+                        "gpt-6-astra (xhigh)", "gpt-6-astra (max)", "gpt-6-astra (ultra)",
                         "gpt-5.6-sol", "gpt-5.6-sol (low)", "gpt-5.6-sol (medium)", "gpt-5.6-sol (high)",
                         "gpt-5.6-sol (xhigh)", "gpt-5.6-sol (max)", "gpt-5.6-sol (ultra)",
                         "gpt-5.6-terra", "gpt-5.6-terra (low)", "gpt-5.6-terra (medium)", "gpt-5.6-terra (high)",
@@ -1411,9 +1413,9 @@ class OpenAiProxyServerTest {
                 assertEquals(200, response.statusCode())
                 val root = parseObject(response.body())
                 val firstModel = root["data"]!!.jsonArray[0].jsonObject
-                assertEquals("gpt-5.6-sol", firstModel["id"]!!.jsonPrimitive.content)
-                assertEquals("gpt-5.6-sol", firstModel["model_name"]!!.jsonPrimitive.content)
-                assertEquals("gpt-5.6-sol", firstModel["litellm_params"]!!.jsonObject["model"]!!.jsonPrimitive.content)
+                assertEquals("gpt-6-astra", firstModel["id"]!!.jsonPrimitive.content)
+                assertEquals("gpt-6-astra", firstModel["model_name"]!!.jsonPrimitive.content)
+                assertEquals("gpt-6-astra", firstModel["litellm_params"]!!.jsonObject["model"]!!.jsonPrimitive.content)
                 assertEquals("chat", firstModel["model_info"]!!.jsonObject["mode"]!!.jsonPrimitive.content)
                 assertNull(upstream.requests.poll(200, TimeUnit.MILLISECONDS))
             } finally {

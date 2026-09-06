@@ -34,6 +34,7 @@ class OpenAiCodexSubscriptionProxyProviderTest {
                 assertEquals(200, response.statusCode())
                 val ids = JsonHelper.JSON.parseToJsonElement(response.body()).jsonObject["data"]!!.jsonArray
                     .map { it.jsonObject["id"]!!.jsonPrimitive.content }
+                assertTrue("oa-gpt-6-astra" in ids)
                 assertTrue("oa-gpt-5.6-sol" in ids)
                 assertTrue("oa-gpt-5.6-terra" in ids)
                 assertTrue("oa-gpt-5.6-luna" in ids)

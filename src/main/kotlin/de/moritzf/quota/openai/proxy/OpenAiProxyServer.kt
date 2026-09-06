@@ -202,6 +202,7 @@ class OpenAiProxyServer(
         // choice; omit it. gpt-5.5-pro stays absent (backend rejects ChatGPT accounts).
         // Hidden/legacy slugs still work via fallbackModel if a client requests them.
         private val ADVERTISED_BASE_MODELS = listOf(
+            "gpt-6-astra",
             "gpt-5.6-sol",
             "gpt-5.6-terra",
             "gpt-5.6-luna",
@@ -224,16 +225,16 @@ class OpenAiProxyServer(
             return when {
                 base.endsWith("-mini") -> MINI_REASONING_TIERS
                 base == "gpt-5.6-luna" -> GPT56_LUNA_REASONING_TIERS
-                base.startsWith("gpt-5.6") -> GPT56_REASONING_TIERS
+                base.startsWith("gpt-5.6") || base.startsWith("gpt-6") -> GPT56_REASONING_TIERS
                 else -> LEGACY_REASONING_TIERS
             }
         }
 
         fun advertisedModels(): List<String> = ADVERTISED_MODELS
 
-        /** Flagship GPT-5.6 Sol when present; otherwise alphabetically latest base id. */
+        /** Flagship GPT-6 Astra when present; otherwise alphabetically latest base id. */
         fun defaultAdvertisedModel(): String =
-            ADVERTISED_BASE_MODELS.firstOrNull { it == "gpt-5.6-sol" }
+            ADVERTISED_BASE_MODELS.firstOrNull { it == "gpt-6-astra" }
                 ?: ADVERTISED_BASE_MODELS.maxOrNull()
                 ?: ServerConfig.DEFAULT_MODEL
     }
