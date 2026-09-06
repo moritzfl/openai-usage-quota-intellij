@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.11.5] - 2026-09-06
+
 - OpenAI/Codex proxy hops `usage_limit_reached` to `gpt-reserve` only for Luna (`gpt-5.6-luna*`). Higher-tier models stay on the original error.
 
 ## [1.11.4] - 2026-09-06
