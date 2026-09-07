@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.11.6] - 2026-09-07
+
 - Codex popup no longer shows “Assigned credits: Depleted” when `credits.has_credits` is false but `spend_control` still has remaining assigned credits (for example Business Prolite 3.14 / 10).
 
 ## [1.11.5] - 2026-09-06
