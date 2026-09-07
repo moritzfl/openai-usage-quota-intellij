@@ -628,8 +628,65 @@ object OpenAiUsageResponseFixtures {
     fun businessMemberIndividualSpendLimitReached(): OpenAiCodexQuota =
         deserialize(BUSINESS_MEMBER_INDIVIDUAL_SPEND_LIMIT_REACHED)
 
+    /**
+     * Live business prolite (2026-09): weekly window still open, credits.has_credits=false
+     * (no prepaid overage), and spend_control still has remaining assigned credits.
+     */
+    @Language("JSON")
+    val BUSINESS_PROLITE_WITH_REMAINING_INDIVIDUAL_SPEND: String = """
+        {
+          "user_id": "user-anon-business-prolite-1",
+          "account_id": "account-anon-workspace-1",
+          "email": "member.prolite.spend@example.com",
+          "plan_type": "self_serve_business_prolite",
+          "rate_limit": {
+            "allowed": true,
+            "limit_reached": false,
+            "primary_window": {
+              "used_percent": 0,
+              "limit_window_seconds": 604800,
+              "reset_after_seconds": 602835,
+              "reset_at": 1789362732
+            },
+            "secondary_window": null
+          },
+          "code_review_rate_limit": null,
+          "additional_rate_limits": null,
+          "credits": {
+            "has_credits": false,
+            "unlimited": false,
+            "overage_limit_reached": false,
+            "balance": null,
+            "approx_local_messages": null,
+            "approx_cloud_messages": null
+          },
+          "spend_control": {
+            "reached": false,
+            "individual_limit": {
+              "source": "account_user_spend_controls",
+              "limit": "10",
+              "used": "3.140088677406311",
+              "remaining": "6.859911322593689",
+              "used_percent": 31,
+              "remaining_percent": 69,
+              "reset_after_seconds": 2052904,
+              "reset_at": 1790812801
+            }
+          },
+          "rate_limit_reached_type": null,
+          "promo": null,
+          "rate_limit_reset_credits": {
+            "available_count": 2,
+            "applicable_available_count": 0
+          }
+        }
+    """.trimIndent()
+
     fun teamWithObjectIndividualSpendLimit(): OpenAiCodexQuota =
         deserialize(TEAM_WITH_OBJECT_INDIVIDUAL_SPEND_LIMIT)
+
+    fun businessProliteWithRemainingIndividualSpend(): OpenAiCodexQuota =
+        deserialize(BUSINESS_PROLITE_WITH_REMAINING_INDIVIDUAL_SPEND)
 
     fun businessOwnerOverageLimitReached(): OpenAiCodexQuota =
         deserialize(BUSINESS_OWNER_OVERAGE_LIMIT_REACHED)

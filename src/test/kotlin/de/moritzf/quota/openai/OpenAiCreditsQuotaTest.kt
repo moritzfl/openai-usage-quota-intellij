@@ -116,6 +116,22 @@ class OpenAiCreditsQuotaTest {
     }
 
     @Test
+    fun businessProliteWithRemainingSpendIsNotDepleted() {
+        val quota = OpenAiUsageResponseFixtures.businessProliteWithRemainingIndividualSpend()
+
+        assertEquals("self_serve_business_prolite", quota.planType)
+        assertFalse(quota.isAssignedCreditsQuota())
+        assertFalse(quota.isCreditsDepleted())
+        assertTrue(quota.hasSpendControlDetail())
+        assertEquals(false, quota.credits?.hasCredits)
+        assertEquals(false, quota.spendControl?.reached)
+        assertEquals(10.0, quota.spendControl?.individualLimit ?: 0.0, 0.0)
+        assertEquals(3.140088677406311, quota.spendControl?.used ?: 0.0, 0.0)
+        assertEquals(31.0, quota.spendControl?.usedPercent ?: 0.0, 0.0)
+        assertNull(getLimitWarning(quota))
+    }
+
+    @Test
     fun businessMemberWithIndividualSpendLimitReportsWarning() {
         val quota = OpenAiUsageResponseFixtures.businessMemberIndividualSpendLimitReached()
 
