@@ -2,6 +2,7 @@ package de.moritzf.quota.idea.ui.popup
 
 import de.moritzf.quota.openai.OpenAiCodexQuota
 import de.moritzf.quota.openai.OpenAiExtraRateLimit
+import de.moritzf.quota.openai.OpenAiUsageResponseFixtures
 import de.moritzf.quota.openai.UsageWindow
 import java.awt.Container
 import java.time.Duration
@@ -50,6 +51,18 @@ class OpenAiPopupContentBuilderTest {
         section.update(quota, error = null, visible = true)
 
         assertTrue(section.components.any { it.containsLabel("Codex (Business Prolite)") })
+    }
+
+    @Test
+    fun showsRemainingSpendWhenHasCreditsIsFalse() {
+        val section = OpenAiPopupSection()
+        val quota = OpenAiUsageResponseFixtures.businessProliteWithRemainingIndividualSpend()
+
+        section.update(quota, error = null, visible = true)
+
+        assertTrue(section.components.any { it.containsLabel("Assigned credits") })
+        assertTrue(section.components.any { it.containsLabel("3.14 / 10 credits") })
+        assertTrue(section.components.none { it.containsLabel("Depleted") })
     }
 
     @Test

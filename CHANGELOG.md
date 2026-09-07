@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Codex popup no longer shows “Assigned credits: Depleted” when `credits.has_credits` is false but `spend_control` still has remaining assigned credits (for example Business Prolite 3.14 / 10).
+
 ## [1.11.5] - 2026-09-06
 
 - OpenAI/Codex proxy hops `usage_limit_reached` to `gpt-reserve` only for Luna (`gpt-5.6-luna*`). Higher-tier models stay on the original error.

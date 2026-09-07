@@ -14,6 +14,7 @@ import de.moritzf.quota.openai.RateLimitResetCredit
 import de.moritzf.quota.openai.OpenAiSpendControl
 import de.moritzf.quota.openai.UsageWindow
 import de.moritzf.quota.openai.formatApproxMessages
+import de.moritzf.quota.openai.hasDetail
 import de.moritzf.quota.openai.hasSpendControlDetail
 import de.moritzf.quota.openai.isAssignedCreditsQuota
 import com.intellij.util.ui.JBUI
@@ -248,9 +249,7 @@ internal class OpenAiPopupSection : ProviderPopupSection() {
             credits.unlimited == true -> return "Unlimited" to 0
             rateLimitReachedType == "workspace_member_credits_depleted" -> return "Assigned credits depleted" to 100
             credits.overageLimitReached == true -> return "Overage limit reached" to 100
-            spendControl?.reached == true -> {
-                return describeSpendControl(spendControl)
-            }
+            spendControl?.hasDetail() == true -> return describeSpendControl(spendControl)
             credits.hasCredits == false -> return "Depleted" to 100
             !credits.balance.isNullOrBlank() -> {
                 val balance = formatCreditsBalance(credits.balance)

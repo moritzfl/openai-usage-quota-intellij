@@ -77,12 +77,13 @@ fun OpenAiCodexQuota.creditsLimitWarning(): String? {
  * `{"reached": false}` (present in nearly every individual-plan payload) is not detail and must
  * not trigger assigned-credits/spend UI. Mirrors the gating in [creditsLimitWarning].
  */
-fun OpenAiCodexQuota.hasSpendControlDetail(): Boolean {
-    val spend = spendControl ?: return false
-    return (spend.individualLimit != null && spend.individualLimit > 0.0) ||
-        spend.usedPercent != null ||
-        spend.used != null
+fun OpenAiSpendControl.hasDetail(): Boolean {
+    return (individualLimit != null && individualLimit > 0.0) ||
+        usedPercent != null ||
+        used != null
 }
+
+fun OpenAiCodexQuota.hasSpendControlDetail(): Boolean = spendControl?.hasDetail() == true
 
 fun formatApproxMessages(range: List<Int>?): String? {
     if (range.isNullOrEmpty()) {
